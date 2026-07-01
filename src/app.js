@@ -1148,11 +1148,14 @@ class CodexLimitWatchApp {
   }
 
   canScheduleQueue() {
-    return !!this.app.sessionId && this.queue.some((i) => i.status === 'pending') && !this.currentItemId && !this.currentTurnId && !this.approval && (this.app.state === 'paused' || this.app.state === 'waiting-limits' || this.app.state === 'scheduled');
+    const hasPending = this.queue.some((i) => i.status === 'pending');
+    const hasSchedule = !!this.app.scheduledRunAt;
+    return !!this.app.sessionId && (hasPending || hasSchedule) && !this.currentItemId && !this.currentTurnId && !this.approval && (this.app.state === 'paused' || this.app.state === 'waiting-limits' || this.app.state === 'scheduled');
   }
 
   async setQueueSchedule(value) {
     if (!this.canScheduleQueue()) throw new Error('Queue can be scheduled only when it is paused, scheduled, or waiting for limits.');
+    if (!this.queue.some((i) => i.status === 'pending')) throw new Error('Queue has no pending prompts to schedule.');
     const ts = Date.parse(String(value || ''));
     if (!Number.isFinite(ts)) throw new Error('Invalid schedule time.');
     if (ts <= Date.now()) throw new Error('Schedule time must be in the future.');

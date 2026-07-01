@@ -12,6 +12,7 @@
   var renderKeys = Object.create(null);
   var confirmAction = null;
   var scheduleOpen = false;
+  var scheduleDraft = null;
   var composer = document.getElementById('composer');
   var outputEl = document.getElementById('output');
   var compactHeaderQuery = window.matchMedia ? window.matchMedia('(max-width: 1679px)') : null;
@@ -46,7 +47,7 @@
     return fmtRunAt(iso) + ' · in ' + fmtCountdownMinutes(((d.getTime() - Date.now()) / 60000));
   }
   function localDateValue(iso){
-    var d = iso ? new Date(iso) : new Date();
+    var d = iso ? new Date(iso) : new Date(Date.now() + 15 * 60000);
     if(Number.isNaN(d.getTime())) d = new Date();
     return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
   }
@@ -63,6 +64,11 @@
     if(!time) return null;
     var d = new Date(date + 'T' + time + ':00');
     return Number.isNaN(d.getTime()) ? null : d.toISOString();
+  }
+  function updateScheduleDraft(){
+    scheduleDraft = scheduleDraft || {};
+    scheduleDraft.date = document.getElementById('scheduleDateInput') ? document.getElementById('scheduleDateInput').value : localDateValue(null);
+    scheduleDraft.time = document.getElementById('scheduleTimeInput') ? document.getElementById('scheduleTimeInput').value : '';
   }
   function fmtCountdown(iso){
     if(!iso) return '15:00';
@@ -331,11 +337,17 @@
     else if(action === 'remove') api('/api/queue/remove', { id:data.id }).catch(function(e){ alert(e.message); });
   }
   function openScheduleModal(){
+    var app = snap && snap.app || {};
+    scheduleDraft = {
+      date: localDateValue(app.scheduledRunAt || null),
+      time: localTimeValue(app.scheduledRunAt || null)
+    };
     scheduleOpen = true;
     renderScheduleModal();
   }
   function closeScheduleModal(){
     scheduleOpen = false;
+    scheduleDraft = null;
     renderScheduleModal();
   }
   function renderScheduleModal(){
@@ -348,8 +360,8 @@
     box.innerHTML = '<div class="confirm-modal schedule-modal" role="dialog" aria-modal="true" aria-labelledby="scheduleTitle">' +
       '<div class="modal-head"><b id="scheduleTitle">Schedule queue</b><button id="scheduleCloseBtn" class="icon-only" title="Close">×</button></div>' +
       '<div class="schedule-fields">' +
-        '<label><span>Date</span><input id="scheduleDateInput" type="date" value="' + esc(localDateValue(scheduled)) + '"></label>' +
-        '<label><span>Time</span><input id="scheduleTimeInput" type="time" value="' + esc(localTimeValue(scheduled)) + '"></label>' +
+        '<label><span>Date</span><input id="scheduleDateInput" type="date" value="' + esc(scheduleDraft ? scheduleDraft.date : localDateValue(scheduled)) + '"></label>' +
+        '<label><span>Time</span><input id="scheduleTimeInput" type="time" value="' + esc(scheduleDraft ? scheduleDraft.time : localTimeValue(scheduled)) + '"></label>' +
       '</div>' +
       (scheduled ? '<div class="schedule-current">Current: ' + esc(fmtRunMeta(scheduled)) + '</div>' : '') +
       '<div class="actions schedule-actions">' +
@@ -552,11 +564,13 @@
   document.addEventListener('input', function(ev){
     var t = ev.target;
     if(t && t.dataset && t.dataset.editText) editDrafts[t.dataset.editText] = t.value;
+    if(t && (t.id === 'scheduleDateInput' || t.id === 'scheduleTimeInput')) updateScheduleDraft();
   });
   document.addEventListener('change', function(ev){
     var t = ev.target;
     if(t && t.id === 'modelSelect') api('/api/config/model', { model:t.value }).catch(function(e){ alert(e.message); getState(); });
     else if(t && t.id === 'effortSelect') api('/api/config/effort', { effort:t.value }).catch(function(e){ alert(e.message); getState(); });
+    else if(t && (t.id === 'scheduleDateInput' || t.id === 'scheduleTimeInput')) updateScheduleDraft();
   });
   document.addEventListener('keydown', function(ev){
     var t = ev.target;
