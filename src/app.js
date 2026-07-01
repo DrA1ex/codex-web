@@ -124,6 +124,7 @@ class CodexLimitWatchApp {
     };
     this.queue = [];
     this.output = [];
+    this.lastDiffOutputText = null;
     this.sessions = [];
     this.rateLimits = { status: 'unknown', message: 'not checked yet', buckets: [], resetAt: null, raw: null, updatedAt: null };
     this.approval = null;
@@ -921,6 +922,8 @@ class CodexLimitWatchApp {
   updateDiffOutput(text) {
     if (text === undefined || text === null || text === '') return;
     const limited = limitOutputText(text);
+    if (this.lastDiffOutputText === limited) return;
+    this.lastDiffOutputText = limited;
     const last = this.output[this.output.length - 1];
     if (last && last.type === 'diff') {
       if (last.text === limited) return;
@@ -945,6 +948,7 @@ class CodexLimitWatchApp {
   }
   clearOutput() {
     this.output = [];
+    this.lastDiffOutputText = null;
     this.broadcast('output', this.output);
     this.broadcastAll();
   }

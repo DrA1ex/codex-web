@@ -333,8 +333,9 @@
       renderQueue();
       return;
     }
-    if(t.dataset && t.dataset.outputDiff) {
-      expandedDiffOutput[t.dataset.outputDiff] = !expandedDiffOutput[t.dataset.outputDiff];
+    var diffToggle = t.closest && t.closest('[data-output-diff]');
+    if(diffToggle) {
+      expandedDiffOutput[diffToggle.dataset.outputDiff] = !expandedDiffOutput[diffToggle.dataset.outputDiff];
       renderOutput();
       return;
     }
