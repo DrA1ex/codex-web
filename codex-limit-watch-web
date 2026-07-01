@@ -1594,6 +1594,22 @@ function canAppendOutput(previousType, nextType) {
   if (!previousType || !nextType || previousType !== nextType) return false;
   return nextType === 'delta' || nextType === 'tool-delta' || nextType === 'reasoning-delta' || nextType === 'context-delta';
 }
+function limitOutputText(text) {
+  const s = String(text);
+  if (s.length <= MAX_OUTPUT_ENTRY_CHARS) return s;
+  return s.slice(0, Math.max(0, MAX_OUTPUT_ENTRY_CHARS - OUTPUT_TRUNCATED_MARKER.length)) + OUTPUT_TRUNCATED_MARKER;
+}
+function appendLimitedOutputText(current, addition) {
+  const base = String(current || '');
+  if (base.length >= MAX_OUTPUT_ENTRY_CHARS) return base;
+  const next = String(addition);
+  const room = MAX_OUTPUT_ENTRY_CHARS - base.length;
+  if (next.length <= room) return base + next;
+  if (room <= OUTPUT_TRUNCATED_MARKER.length) {
+    return base.slice(0, Math.max(0, MAX_OUTPUT_ENTRY_CHARS - OUTPUT_TRUNCATED_MARKER.length)) + OUTPUT_TRUNCATED_MARKER;
+  }
+  return base + next.slice(0, room - OUTPUT_TRUNCATED_MARKER.length) + OUTPUT_TRUNCATED_MARKER;
+}
 function extractDeltaText(method, params) {
   if (!params) return '';
   if (typeof params.delta === 'string') return params.delta;
