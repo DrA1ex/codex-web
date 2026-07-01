@@ -13,7 +13,9 @@ textarea:focus { border-color:#3f65a3; }
 .header { padding:8px 10px; border-bottom:1px solid var(--border); background:#0d131b; flex:0 0 auto; }
 .title { display:flex; gap:7px; align-items:center; flex-wrap:wrap; margin-bottom:5px; }
 .title h1 { font-size:14px; margin:0; font-weight:650; }
-.title-button { max-width:220px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; padding:1px 6px; border-radius:999px; font-size:11px; line-height:1.4; color:var(--accent); }
+.model-select-wrap { display:inline-flex; align-items:center; gap:5px; color:var(--muted); font-size:11px; line-height:1.4; }
+.model-select-wrap select { max-width:220px; min-width:128px; border:1px solid var(--border); border-radius:999px; background:#1d2735; color:var(--accent); padding:1px 6px; font:inherit; outline:none; }
+.model-select-wrap select:focus { border-color:#3f65a3; }
 .badge { display:inline-flex; align-items:center; gap:4px; padding:1px 6px; border:1px solid var(--border); border-radius:999px; color:var(--muted); font-size:11px; line-height:1.4; }
 .badge.ok { color:var(--ok); border-color:#31563a; }
 .badge.warn { color:var(--warn); border-color:#6a5527; }

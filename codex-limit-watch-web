@@ -20,6 +20,14 @@ const { URL } = require('node:url');
 
 const VERSION = '0.1.0';
 const MAX_OUTPUT_LINES = 4000;
+const DEFAULT_MODEL = 'gpt-5.5';
+const MODEL_OPTIONS = [
+  { value: '', label: `${DEFAULT_MODEL} (default)` },
+  { value: 'gpt-5.5', label: 'gpt-5.5' },
+  { value: 'gpt-5.4', label: 'gpt-5.4' },
+  { value: 'gpt-5.4-mini', label: 'gpt-5.4-mini' },
+  { value: 'gpt-5.3-codex-spark', label: 'gpt-5.3-codex-spark' },
+];
 const SCRIPT_DIR = path.dirname(fs.realpathSync(__filename));
 const ASSET_DIRS = [
   path.join(SCRIPT_DIR, 'www'),
@@ -422,6 +430,8 @@ class CodexLimitWatchApp {
       sessionId: opts.sessionId,
       sessionTitle: opts.sessionId ? shortId(opts.sessionId) : 'not selected',
       model: opts.model || '',
+      defaultModel: DEFAULT_MODEL,
+      modelOptions: MODEL_OPTIONS,
       sandbox: opts.sandbox,
       approvalPolicy: opts.approvalPolicy,
       approvalResponse: opts.approvalResponse,
@@ -485,7 +495,7 @@ class CodexLimitWatchApp {
     console.log('Codex Limit Watch Web');
     console.log(`Project: ${this.opts.projectDir}`);
     console.log(`Session: ${this.app.sessionId || 'not selected'}`);
-    console.log(`Model: ${this.opts.model || 'default'}`);
+    console.log(`Model: ${this.opts.model || DEFAULT_MODEL + ' (default)'}`);
     console.log(`Sandbox: ${this.opts.sandbox}`);
     console.log(`Approval policy: ${this.opts.approvalPolicy}`);
     console.log(`Approval response: ${this.opts.approvalResponse}`);
@@ -917,10 +927,13 @@ class CodexLimitWatchApp {
   }
   async setModel(model) {
     const value = String(model || '').trim();
+    if (value && !MODEL_OPTIONS.some((m) => m.value === value)) {
+      throw new Error(`Unsupported model selection: ${value}`);
+    }
     this.opts.model = value;
     this.app.model = value;
     await this.saveState();
-    this.appendOutput(`[config] model ${value || 'default'}`, 'system');
+    this.appendOutput(`[config] model ${value || DEFAULT_MODEL + ' (default)'}`, 'system');
     this.broadcastAll();
     return { ok: true, model: value };
   }
