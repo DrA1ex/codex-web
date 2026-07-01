@@ -24,6 +24,11 @@
     if(mins && mins % 60 === 0) return (mins / 60) + 'h';
     return (w && w.name) || 'window';
   }
+  function metaItem(label, value, title){
+    value = value == null || value === '' ? '—' : String(value);
+    title = title == null || title === '' ? value : String(title);
+    return '<div class="meta-item" title="' + esc(label + ': ' + title) + '">' + esc(label) + ': <b>' + esc(value) + '</b></div>';
+  }
   function pct(n){ n = Number(n); return Number.isFinite(n) ? Math.max(0, Math.min(100, n)) : null; }
   function api(path, body){ return fetch(path + '?token=' + encodeURIComponent(TOKEN), { method:'POST', headers:{'content-type':'application/json','x-codex-limit-watch-token':TOKEN}, body:JSON.stringify(body || {}) }).then(function(r){ return r.json().then(function(j){ if(!r.ok) throw new Error(j.error || r.statusText); return j; }); }); }
   function getState(){ return fetch('/api/state?token=' + encodeURIComponent(TOKEN), { headers:{'x-codex-limit-watch-token':TOKEN} }).then(function(r){return r.json();}).then(update); }
@@ -34,15 +39,17 @@
     var stateBadge = document.getElementById('stateBadge'); stateBadge.textContent = app.state || 'unknown'; stateBadge.className = 'badge ' + (app.state === 'error' ? 'danger' : (app.state === 'paused' || app.state === 'waiting-limits' || app.state === 'approval-required' ? 'warn' : 'ok'));
     var limitBadge = document.getElementById('limitBadge'); limitBadge.textContent = rl.status === 'limited' ? 'limits waiting' : (rl.status === 'available' ? 'limits available' : 'limits unknown'); limitBadge.className = 'badge ' + (rl.status === 'available' ? 'ok' : (rl.status === 'limited' ? 'warn' : 'danger'));
     var reset = rl.resetAt ? new Date(rl.resetAt * 1000) : null; var resetText = reset ? reset.toLocaleTimeString() + ' · in ' + Math.max(0, Math.ceil((reset.getTime()-Date.now())/60000)) + 'm' : '—';
+    var sessionTitle = app.sessionTitle || 'not selected';
+    var sessionId = app.sessionId || '—';
     document.getElementById('meta').innerHTML =
-      '<div>Project: <b>' + esc(app.projectDir) + '</b></div>' +
-      '<div>Session: <b>' + esc(app.sessionTitle || 'not selected') + '</b></div>' +
-      '<div>Session ID: <b>' + esc(app.sessionId || '—') + '</b></div>' +
-      '<div>Queue: <b>' + (c.pending||0) + ' pending, ' + ((c.sending||0)+(c.sent||0)) + ' running</b></div>' +
-      '<div>Limits: <b>' + esc(rl.message || rl.status) + '</b></div>' +
-      '<div>Reset: <b>' + esc(resetText) + '</b></div>' +
-      '<div>Sandbox: <b>' + esc(app.sandbox) + '</b> · Network: <b>' + esc(String(app.network)) + '</b></div>' +
-      '<div>Approval: <b>' + esc(app.approvalPolicy) + ' / ' + esc(app.approvalResponse) + '</b></div>';
+      metaItem('Project', app.projectDir) +
+      metaItem('Session', sessionTitle) +
+      metaItem('Session ID', sessionId) +
+      metaItem('Queue', (c.pending||0) + ' pending, ' + ((c.sending||0)+(c.sent||0)) + ' running') +
+      metaItem('Limits', rl.message || rl.status || 'unknown') +
+      metaItem('Reset', resetText) +
+      metaItem('Sandbox', (app.sandbox || '—') + ' · Network: ' + String(app.network)) +
+      metaItem('Approval', (app.approvalPolicy || '—') + ' / ' + (app.approvalResponse || '—'));
     renderLimitStats();
   }
   function renderLimitStats(){
