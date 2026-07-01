@@ -36,7 +36,7 @@ function countQueue(queue) {
 }
 function parseExactCommand(text) {
   const trimmed = String(text || '').trim();
-  const commands = new Set(['/send', '/undo', '/clear', '/pause', '/resume', '/done', '/quit', '/help', '/approve', '/approve-session', '/decline', '/cancel']);
+  const commands = new Set(['/send', '/undo', '/clear', '/pause', '/resume', '/quit', '/help', '/approve', '/approve-session', '/decline', '/cancel']);
   return commands.has(trimmed) ? trimmed : null;
 }
 

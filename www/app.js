@@ -132,7 +132,6 @@
     var running = (counts.sending || 0) + (counts.sent || 0);
     var canPause = hasSession && !!app.canPause;
     var canResume = hasSession && state === 'paused';
-    var canDone = hasSession && state !== 'done' && pending === 0 && running === 0 && !snap.approval;
     setButtonState('undoBtn', false, pending === 0);
     setButtonState('clearBtn', false, pending === 0);
     setButtonState('clearCompletedBtn', false, (counts.completed || 0) === 0);
@@ -140,7 +139,6 @@
     setButtonState('pauseBtn', !canPause, false);
     setButtonState('resumeBtn', !canResume, false);
     setButtonState('interruptBtn', false, !app.canInterrupt);
-    setButtonState('doneBtn', !canDone, false);
     setButtonState('cancelSendBtn', false, false);
     var countdownNotice = document.getElementById('countdownNotice');
     if(countdownNotice) countdownNotice.classList.toggle('hidden', state !== 'countdown');
@@ -351,7 +349,6 @@
     }
     else if(t.id === 'clearBtn') { setQueueMenuOpen(false); if(confirm('Clear all pending prompts?')) api('/api/queue/clear'); }
     else if(t.id === 'clearCompletedBtn') { setQueueMenuOpen(false); if(confirm('Clear all completed prompts?')) api('/api/queue/clear-completed'); }
-    else if(t.id === 'doneBtn') api('/api/control/done').then(function(r){ if(r.message) alert(r.message); });
     else if(t.id === 'stopBtn') { if(confirm('Stop local server and app-server?')) api('/api/control/stop'); }
     else if(t.id === 'clearOutputBtn') api('/api/output/clear');
     else if(t.id === 'bottomBtn') outputEl.scrollTop = outputEl.scrollHeight;

@@ -511,7 +511,7 @@ class CodexLimitWatchApp {
       if (this.queue.length && this.queue.every((i) => ['completed', 'cancelled', 'failed', 'unknown'].includes(i.status))) {
         if (this.app.state !== 'done' && !this.queue.some((i) => i.status === 'failed' || i.status === 'unknown')) {
           this.app.state = 'done';
-          this.appendOutput('/done', 'system');
+          this.appendOutput('[queue] completed', 'system');
           this.broadcastAll();
         } else if (!['paused', 'error', 'done'].includes(this.app.state)) {
           this.app.state = 'watching';
@@ -976,9 +976,8 @@ class CodexLimitWatchApp {
       case '/clear': await this.clearPending(); return { ok: true, clearComposer: true };
       case '/pause': this.pause(); return { ok: true, clearComposer: true };
       case '/resume': this.resume(); return { ok: true, clearComposer: true };
-      case '/done': return await this.doneCommand();
       case '/quit': await this.shutdown('quit command'); return { ok: true, clearComposer: true };
-      case '/help': return { ok: true, message: '/send, /undo, /clear, /pause, /resume, /done, /quit, /approve, /approve-session, /decline, /cancel' };
+      case '/help': return { ok: true, message: '/send, /undo, /clear, /pause, /resume, /quit, /approve, /approve-session, /decline, /cancel' };
       case '/approve': await this.respondApproval('accept'); return { ok: true, clearComposer: true };
       case '/approve-session': await this.respondApproval('accept-for-session'); return { ok: true, clearComposer: true };
       case '/decline': await this.respondApproval('decline'); return { ok: true, clearComposer: true };
@@ -1013,14 +1012,6 @@ class CodexLimitWatchApp {
     this.appendOutput(`[queue] cleared ${before - this.queue.length} completed prompt(s)`, 'system');
     this.broadcastAll();
   }
-  async doneCommand() {
-    const unsafe = this.currentItemId || this.currentTurnId || this.approval || this.queue.some((i) => i.status === 'pending' || i.status === 'sending' || i.status === 'sent');
-    if (unsafe) return { ok: false, message: 'Queue is not empty or Codex is still running. Use /quit to stop anyway.' };
-    this.appendOutput('/done', 'system');
-    await this.shutdown('done command');
-    return { ok: true, clearComposer: true };
-  }
-
   async updateQueueItem(body) {
     const item = this.queue.find((i) => i.id === body.id);
     if (!item) throw new Error('Queue item not found');
@@ -1153,7 +1144,6 @@ class CodexLimitWatchApp {
     if (route === '/api/control/pause') { this.pause(); return sendJson(res, 200, { ok: true }); }
     if (route === '/api/control/resume') { this.resume(); return sendJson(res, 200, { ok: true }); }
     if (route === '/api/control/stop') { await this.shutdown('stop requested'); return sendJson(res, 200, { ok: true }); }
-    if (route === '/api/control/done') return sendJson(res, 200, await this.doneCommand());
     if (route === '/api/approval/respond') { await this.respondApproval(String(body.decision)); return sendJson(res, 200, { ok: true }); }
     if (route === '/api/output/clear') { this.clearOutput(); return sendJson(res, 200, { ok: true }); }
     return sendJson(res, 404, { error: 'unknown api route' });
