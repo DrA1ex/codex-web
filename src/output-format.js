@@ -52,7 +52,7 @@ function formatItemStarted(item) {
   if (item.type === 'commandExecution') return `[tool] command: ${asArray(item.command).join(' ') || item.command || ''}`;
   if (item.type === 'mcpToolCall') return `[tool] ${item.server || 'mcp'}:${item.tool || ''}`;
   if (item.type === 'dynamicToolCall') return `[tool] ${item.tool || 'dynamicTool'}`;
-  if (item.type === 'fileChange') return `[tool] file changes proposed`;
+  if (item.type === 'fileChange') return '';
   if (item.type === 'webSearch') return `[tool] web search ${item.query || ''}`;
   if (item.type === 'userMessage') return '';
   if (item.type === 'agentMessage') return '';
@@ -72,7 +72,7 @@ function outputTypeForItem(item) {
 function formatItemCompleted(item) {
   if (!item) return '';
   if (item.type === 'commandExecution') return `[tool] completed${item.exitCode !== undefined ? ' exit=' + item.exitCode : ''}`;
-  if (item.type === 'fileChange') return `[tool] file change ${item.status || 'completed'}`;
+  if (item.type === 'fileChange') return '';
   if (item.type === 'mcpToolCall' || item.type === 'dynamicToolCall') return `[tool] ${item.status || 'completed'}`;
   if (item.type === 'agentMessage' || item.type === 'userMessage' || item.type === 'reasoning' || item.type === 'plan') return '';
   return item.status ? `[item] ${item.type || 'item'} ${item.status}` : '';
