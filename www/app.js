@@ -6,6 +6,7 @@
   var editDrafts = Object.create(null);
   var pendingEditFocusId = null;
   var pendingQueueScrollId = null;
+  var didInitialQueueScroll = false;
   var expandedDiffOutput = Object.create(null);
   var activeQueueFilter = 'all';
   var composer = document.getElementById('composer');
@@ -261,6 +262,13 @@
       if(target) {
         pendingQueueScrollId = null;
         target.scrollIntoView({ behavior:'smooth', block:'center' });
+      }
+    } else if(!didInitialQueueScroll) {
+      didInitialQueueScroll = true;
+      var firstOpenItem = q.find(function(item){ return item.status !== 'completed'; });
+      if(firstOpenItem) {
+        var firstTarget = Array.prototype.find.call(el.querySelectorAll('[data-queue-id]'), function(node){ return node.dataset.queueId === firstOpenItem.id; });
+        if(firstTarget) firstTarget.scrollIntoView({ block:'center' });
       }
     }
     if(editingQueueItemId) {
