@@ -54,6 +54,7 @@
     setButtonState('clearCompletedBtn', false, (counts.completed || 0) === 0);
     setButtonState('pauseBtn', !canPause, false);
     setButtonState('resumeBtn', !canResume, false);
+    setButtonState('interruptBtn', false, !app.canInterrupt);
     setButtonState('doneBtn', !canDone, false);
     setButtonState('cancelSendBtn', false, false);
     var countdownNotice = document.getElementById('countdownNotice');
@@ -166,6 +167,7 @@
     else if(t.id === 'cancelSendBtn') api('/api/control/cancel-send');
     else if(t.id === 'pauseBtn') api('/api/control/pause');
     else if(t.id === 'resumeBtn') api('/api/control/resume');
+    else if(t.id === 'interruptBtn') { if(confirm('Interrupt the current running prompt?')) api('/api/control/interrupt').then(function(r){ if(r.message) alert(r.message); }).catch(function(e){ alert(e.message); }); }
     else if(t.id === 'undoBtn') api('/api/queue/undo').then(function(r){ if(r.composerText !== undefined) composer.value = r.composerText; if(r.message) alert(r.message); updateCounter(); });
     else if(t.id === 'clearBtn') { if(confirm('Clear all pending prompts?')) api('/api/queue/clear'); }
     else if(t.id === 'clearCompletedBtn') { if(confirm('Clear all completed prompts?')) api('/api/queue/clear-completed'); }
