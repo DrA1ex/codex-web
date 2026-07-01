@@ -507,7 +507,8 @@ class CodexLimitWatchApp {
   }
 
   canChangeSession() {
-    return !!this.app.sessionId && this.app.state === 'paused' && !this.isQueueProcessingActive() && !this.currentItemId && !this.currentTurnId && !this.approval;
+    const unsafeQueue = this.queue.some((i) => i.status === 'pending' || i.status === 'sending' || i.status === 'sent');
+    return !!this.app.sessionId && !unsafeQueue && !this.isQueueProcessingActive() && !this.currentItemId && !this.currentTurnId && !this.approval && !['initializing', 'selecting-session', 'approval-required', 'shutting-down'].includes(this.app.state);
   }
 
   cancelSessionChange() {
