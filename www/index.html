@@ -9,6 +9,7 @@
 <body>
 <header class="header">
   <div class="title"><h1>Codex Limit Watch Web</h1><span id="stateBadge" class="badge">initializing</span><span id="limitBadge" class="badge">limits unknown</span></div>
+  <div id="countdownNotice" class="countdown-notice hidden"><span>Sending next prompt soon</span><button id="cancelSendBtn" class="danger">Cancel send</button></div>
   <div class="meta" id="meta"></div>
   <div class="limit-stats" id="limitStats"></div>
 </header>
@@ -29,7 +30,6 @@
   <div class="composer-row">
     <div class="composer-actions">
       <button id="addBtn" class="primary">Add to queue</button>
-      <button id="cancelSendBtn" class="danger hidden">Cancel send</button>
       <button id="pauseBtn">Pause</button>
       <button id="resumeBtn">Resume</button>
       <button id="doneBtn">Done</button>

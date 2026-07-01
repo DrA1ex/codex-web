@@ -55,7 +55,9 @@
     setButtonState('pauseBtn', !canPause, false);
     setButtonState('resumeBtn', !canResume, false);
     setButtonState('doneBtn', !canDone, false);
-    setButtonState('cancelSendBtn', false, state !== 'countdown');
+    setButtonState('cancelSendBtn', false, false);
+    var countdownNotice = document.getElementById('countdownNotice');
+    if(countdownNotice) countdownNotice.classList.toggle('hidden', state !== 'countdown');
   }
   function renderHeader(){
     var app = snap.app || {}; var rl = snap.rateLimits || {}; var c = app.queueCounts || {};
@@ -184,6 +186,11 @@
   });
   document.addEventListener('keydown', function(ev){
     var t = ev.target;
+    if(ev.key === 'Escape') {
+      ev.preventDefault();
+      api(snap && snap.app && snap.app.state === 'countdown' ? '/api/control/cancel-send' : '/api/control/pause');
+      return;
+    }
     if(t && t.dataset && t.dataset.togglePrompt && (ev.key === 'Enter' || ev.key === ' ')) {
       ev.preventDefault();
       var item = (snap.queue || []).find(function(x){return x.id === t.dataset.id;});
@@ -196,7 +203,6 @@
   composer.addEventListener('input', updateCounter);
   composer.addEventListener('keydown', function(ev){
     if((ev.metaKey || ev.ctrlKey) && ev.key === 'Enter'){ ev.preventDefault(); addQueue(); }
-    else if(ev.key === 'Escape'){ ev.preventDefault(); api('/api/control/pause'); }
   });
   updateCounter();
   setInterval(function(){ if(snap) renderHeader(); }, 30000);

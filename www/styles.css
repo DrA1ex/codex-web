@@ -17,6 +17,8 @@ textarea:focus { border-color:#3f65a3; }
 .badge.ok { color:var(--ok); border-color:#31563a; }
 .badge.warn { color:var(--warn); border-color:#6a5527; }
 .badge.danger { color:var(--danger); border-color:#703640; }
+.countdown-notice { display:flex; align-items:center; justify-content:space-between; gap:8px; margin:0 0 5px; border:1px solid #6a5527; border-radius:7px; background:#20180c; color:var(--warn); padding:4px 6px; font-size:11px; line-height:1.2; }
+.countdown-notice button { padding:2px 6px; font-size:11px; border-radius:6px; }
 .meta { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:3px 10px; color:var(--muted); font-size:11px; line-height:1.25; }
 .meta-item { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .meta b { color:var(--text); font-weight:600; }
