@@ -160,6 +160,10 @@ button:disabled { opacity: .45; cursor: not-allowed; }
   padding: 0;
   font-weight: 650;
 }
+.effort-select-wrap select {
+  min-width: 72px;
+  max-width: 96px;
+}
 .theme-btn {
   width: 31px;
   height: 31px;
@@ -522,7 +526,7 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 }
 .queue-item.completed .prompt-preview {
   color: #aeb8c8;
-  cursor: default;
+  cursor: pointer;
   font-size: 12px;
   line-height: 1.2;
   font-weight: 500;
@@ -791,7 +795,7 @@ pre { margin: 0; white-space: pre-wrap; word-break: break-word; }
   .main { grid-template-columns: minmax(300px, 36%) minmax(420px, 1fr); }
 }
 
-@media (max-width: 920px) {
+@media (max-width: 1000px) {
   .header {
     grid-template-columns: 1fr;
     grid-template-rows: auto;

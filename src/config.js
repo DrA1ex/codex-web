@@ -16,6 +16,13 @@ const MODEL_OPTIONS = [
   { value: 'gpt-5.4-mini', label: 'gpt-5.4-mini' },
   { value: 'gpt-5.3-codex-spark', label: 'gpt-5.3-codex-spark' },
 ];
+const EFFORT_OPTIONS = [
+  { value: '', label: 'default' },
+  { value: 'low', label: 'low' },
+  { value: 'medium', label: 'medium' },
+  { value: 'high', label: 'high' },
+  { value: 'xhigh', label: 'xhigh' },
+];
 
 const ENTRY_FILE_CANDIDATES = [
   require.main?.filename,
@@ -44,6 +51,7 @@ module.exports = {
   OUTPUT_TRUNCATED_MARKER,
   DEFAULT_MODEL,
   MODEL_OPTIONS,
+  EFFORT_OPTIONS,
   SCRIPT_DIR,
   ASSET_DIRS,
   STATIC_TYPES,

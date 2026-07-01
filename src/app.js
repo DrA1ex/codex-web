@@ -12,6 +12,7 @@ const {
   MAX_OUTPUT_TOTAL_CHARS,
   DEFAULT_MODEL,
   MODEL_OPTIONS,
+  EFFORT_OPTIONS,
   STATIC_TYPES,
 } = require('./config');
 const { JsonRpcClient } = require('./json-rpc-client');
@@ -109,6 +110,8 @@ class CodexLimitWatchApp {
       model: opts.model || '',
       defaultModel: DEFAULT_MODEL,
       modelOptions: MODEL_OPTIONS,
+      effort: opts.effort || '',
+      effortOptions: EFFORT_OPTIONS,
       sandbox: opts.sandbox,
       approvalPolicy: opts.approvalPolicy,
       approvalResponse: opts.approvalResponse,
@@ -262,12 +265,19 @@ class CodexLimitWatchApp {
     this.broadcast('queue', this.queue);
   }
   async loadState() {
-    if (!this.statePath || this.opts.modelProvided || !fs.existsSync(this.statePath)) return;
+    if (!this.statePath || !fs.existsSync(this.statePath)) return;
     try {
       const data = JSON.parse(await fsp.readFile(this.statePath, 'utf8'));
-      if (Object.prototype.hasOwnProperty.call(data, 'model')) {
+      if (!this.opts.modelProvided && Object.prototype.hasOwnProperty.call(data, 'model')) {
         this.opts.model = String(data.model || '').trim();
         this.app.model = this.opts.model;
+      }
+      if (!this.opts.effortProvided && Object.prototype.hasOwnProperty.call(data, 'effort')) {
+        const effort = String(data.effort || '').trim();
+        if (EFFORT_OPTIONS.some((m) => m.value === effort)) {
+          this.opts.effort = effort;
+          this.app.effort = effort;
+        }
       }
     } catch (_) {}
   }
@@ -293,6 +303,7 @@ class CodexLimitWatchApp {
       sessionId: this.app.sessionId,
       sessionTitle: this.app.sessionTitle,
       model: this.opts.model || '',
+      effort: this.opts.effort || '',
       state: this.app.state,
       updatedAt: nowIso(),
     };
@@ -393,6 +404,7 @@ class CodexLimitWatchApp {
         serviceName: 'codex-limit-watch-web',
       };
       if (this.opts.model) params.model = this.opts.model;
+      if (this.opts.effort) params.effort = this.opts.effort;
       result = await this.rpc.request('thread/start', params);
     } catch (err) {
       try {
@@ -509,6 +521,31 @@ class CodexLimitWatchApp {
     await this.runCountdownAndSend(pending);
   }
 
+  async sendItemNow(item) {
+    if (this.shuttingDown) return;
+    if (!this.app.sessionId) throw new Error('No Codex session selected');
+    if (this.currentItemId || this.currentTurnId) throw new Error('A prompt is already running');
+    if (!item || item.status !== 'pending') throw new Error('Only pending prompts can be sent');
+    this.resume();
+    if (this.rateLimits.status === 'unknown') {
+      await this.pollRateLimits();
+    }
+    if (this.rateLimits.status === 'limited') {
+      this.app.state = 'waiting-limits';
+      const resetAt = this.rateLimits.resetAt ? new Date(this.rateLimits.resetAt * 1000) : null;
+      this.app.message = resetAt ? `Waiting for limit reset at ${resetAt.toLocaleTimeString()}` : 'Waiting for rate limits';
+      this.broadcastAll();
+      return;
+    }
+    if (this.rateLimits.status === 'unknown') {
+      this.app.state = 'waiting-limits';
+      this.app.message = 'Limits unknown; retrying before manual send';
+      this.broadcastAll();
+      return;
+    }
+    await this.runCountdownAndSend(item);
+  }
+
   async runCountdownAndSend(item) {
     this.countdownCancel = false;
     this.app.state = 'countdown';
@@ -551,6 +588,7 @@ class CodexLimitWatchApp {
       sandboxPolicy: makeSandboxPolicy(this.opts),
     };
     if (this.opts.model) params.model = this.opts.model;
+    if (this.opts.effort) params.effort = this.opts.effort;
     try {
       const result = await this.rpc.request('turn/start', params);
       const turn = result?.turn || result || {};
@@ -629,6 +667,18 @@ class CodexLimitWatchApp {
     this.appendOutput(`[config] model ${value || DEFAULT_MODEL + ' (default)'}`, 'system');
     this.broadcastAll();
     return { ok: true, model: value };
+  }
+  async setEffort(effort) {
+    const value = String(effort || '').trim();
+    if (!EFFORT_OPTIONS.some((m) => m.value === value)) {
+      throw new Error(`Unsupported effort selection: ${value}`);
+    }
+    this.opts.effort = value;
+    this.app.effort = value;
+    await this.saveState();
+    this.appendOutput(`[config] effort ${value || 'default'}`, 'system');
+    this.broadcastAll();
+    return { ok: true, effort: value };
   }
   async setTheme(theme) {
     const value = theme === 'light' ? 'light' : 'dark';
@@ -930,11 +980,8 @@ class CodexLimitWatchApp {
       const idx = this.queue.indexOf(item);
       this.queue.splice(idx + 1, 0, dup);
     } else if (body.action === 'sendNow') {
-      if (item.status !== 'pending') item.status = 'pending';
-      const idx = this.queue.indexOf(item);
-      this.queue.splice(idx, 1);
-      this.queue.unshift(item);
-      this.resume();
+      await this.sendItemNow(item);
+      return;
     } else if (body.action === 'markCompleted') {
       item.status = 'completed';
       item.finishedAt = nowIso();
@@ -1037,6 +1084,7 @@ class CodexLimitWatchApp {
       return sendJson(res, 200, { ok: true });
     }
     if (route === '/api/config/model') return sendJson(res, 200, await this.setModel(body.model));
+    if (route === '/api/config/effort') return sendJson(res, 200, await this.setEffort(body.effort));
     if (route === '/api/config/theme') return sendJson(res, 200, await this.setTheme(body.theme));
     if (route === '/api/queue/add') return sendJson(res, 200, await this.addPrompt(body.text || ''));
     if (route === '/api/queue/update') { await this.updateQueueItem(body); return sendJson(res, 200, { ok: true }); }

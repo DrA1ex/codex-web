@@ -83,6 +83,14 @@
     select.value = model;
     select.title = 'Current model: ' + (model || app.defaultModel || 'default');
   }
+  function renderEffortOptions(select, app){
+    var options = app.effortOptions || [];
+    var effort = app.effort || '';
+    var html = options.map(function(o){ return '<option value="' + esc(o.value) + '">' + esc(o.label || o.value || 'default') + '</option>'; }).join('');
+    if(select.innerHTML !== html) select.innerHTML = html;
+    select.value = effort;
+    select.title = 'Current effort: ' + (effort || 'default');
+  }
   function api(path, body){ return fetch(path + '?token=' + encodeURIComponent(TOKEN), { method:'POST', headers:{'content-type':'application/json','x-codex-limit-watch-token':TOKEN}, body:JSON.stringify(body || {}) }).then(function(r){ return r.json().then(function(j){ if(!r.ok) throw new Error(j.error || r.statusText); return j; }); }); }
   function getState(){ return fetch('/api/state?token=' + encodeURIComponent(TOKEN), { headers:{'x-codex-limit-watch-token':TOKEN} }).then(function(r){return r.json();}).then(update); }
   function update(s){ snap = s; render(); }
@@ -142,6 +150,8 @@
     var limitBadge = document.getElementById('limitBadge'); limitBadge.textContent = limitBadgeText(rl.status); limitBadge.title = fullLimitBadgeText(rl.status); limitBadge.className = 'badge ' + (rl.status === 'available' ? 'ok' : (rl.status === 'limited' ? 'warn' : 'danger'));
     var modelSelect = document.getElementById('modelSelect');
     if(modelSelect) renderModelOptions(modelSelect, app);
+    var effortSelect = document.getElementById('effortSelect');
+    if(effortSelect) renderEffortOptions(effortSelect, app);
     renderControls(app, c);
     var reset = rl.resetAt ? new Date(rl.resetAt * 1000) : null; var resetText = reset ? reset.toLocaleTimeString() + ' · in ' + Math.max(0, Math.ceil((reset.getTime()-Date.now())/60000)) + 'm' : '—';
     var sessionTitle = app.sessionTitle || 'not selected';
@@ -221,10 +231,10 @@
       var canMoveUp = canMoveQueueItem(q, i, 'up');
       var canMoveDown = canMoveQueueItem(q, i, 'down');
       var editing = editingQueueItemId === item.id && !completed && !running;
-      var expanded = (!!expandedQueueItems[item.id] || editing) && !completed;
+      var expanded = !!expandedQueueItems[item.id] || editing;
       var text = expanded ? (item.text || item.preview || '') : (item.preview || item.text || '');
       var idAttr = esc(item.id);
-      var toggleAttrs = completed || editing ? '' : ' data-toggle-prompt="1" data-id="' + idAttr + '" role="button" tabindex="0" title="Click to ' + (expanded ? 'collapse' : 'expand') + ' prompt"';
+      var toggleAttrs = editing ? '' : ' data-toggle-prompt="1" data-id="' + idAttr + '" role="button" tabindex="0" title="Click to ' + (expanded ? 'collapse' : 'expand') + ' prompt"';
       html += '<div class="queue-item ' + (active ? 'active ' : '') + (running ? 'running ' : '') + (completed ? 'completed ' : '') + (expanded ? 'expanded ' : '') + (editing ? 'editing' : '') + '" data-queue-id="' + idAttr + '">' +
         '<div class="queue-top"><span>#' + (i+1) + ' <span class="status ' + esc(item.status) + '">' + esc(item.status) + '</span> · ' + item.lineCount + ' lines</span><span>' + esc(fmtTime(completed && item.finishedAt ? item.finishedAt : item.createdAt)) + '</span></div>';
       if(editing) {
@@ -295,7 +305,7 @@
     if(promptToggle) {
       var promptId = promptToggle.dataset.id;
       var itemForToggle = (snap.queue || []).find(function(x){return x.id === promptId;});
-      if(itemForToggle && itemForToggle.status !== 'completed') {
+      if(itemForToggle) {
         expandedQueueItems[promptId] = !expandedQueueItems[promptId];
         renderQueue();
       }
@@ -353,6 +363,7 @@
   document.addEventListener('change', function(ev){
     var t = ev.target;
     if(t && t.id === 'modelSelect') api('/api/config/model', { model:t.value }).catch(function(e){ alert(e.message); getState(); });
+    else if(t && t.id === 'effortSelect') api('/api/config/effort', { effort:t.value }).catch(function(e){ alert(e.message); getState(); });
   });
   document.addEventListener('keydown', function(ev){
     var t = ev.target;
@@ -376,7 +387,7 @@
     if(t && t.dataset && t.dataset.togglePrompt && (ev.key === 'Enter' || ev.key === ' ')) {
       ev.preventDefault();
       var item = (snap.queue || []).find(function(x){return x.id === t.dataset.id;});
-      if(item && item.status !== 'completed') {
+      if(item) {
         expandedQueueItems[t.dataset.id] = !expandedQueueItems[t.dataset.id];
         renderQueue();
       }
