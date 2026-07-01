@@ -51,11 +51,13 @@
     buckets.forEach(function(b){
       var windows = b.windows && b.windows.length ? b.windows : [{ name:'primary', usedPercent:b.usedPercent, remainingPercent:b.usedPercent == null ? null : 100 - b.usedPercent, windowDurationMins:b.windowDurationMins, resetsAt:b.resetsAt }];
       windows.forEach(function(w){
-        var used = pct(w.usedPercent); var remaining = used == null ? null : Math.max(0, 100 - used);
-        var barClass = used == null ? 'unknown' : (used >= 100 ? 'danger' : (used >= 85 ? 'warn' : 'ok'));
+        var used = pct(w.usedPercent);
+        var remaining = pct(w.remainingPercent);
+        if(remaining == null && used != null) remaining = Math.max(0, 100 - used);
+        var barClass = remaining == null ? 'unknown' : (remaining > 60 ? 'ok' : (remaining >= 25 ? 'warn' : 'danger'));
         html += '<div class="limit-card">' +
-          '<div class="limit-card-top"><span>' + esc(b.limitName || b.limitId || 'limit') + ' · ' + esc(windowLabel(w)) + '</span><b>' + (used == null ? '—' : Math.round(remaining) + '% left') + '</b></div>' +
-          '<div class="limit-bar ' + barClass + '"><span style="width:' + (used == null ? 0 : used) + '%"></span></div>' +
+          '<div class="limit-card-top"><span>' + esc(b.limitName || b.limitId || 'limit') + ' · ' + esc(windowLabel(w)) + '</span><b>' + (remaining == null ? '—' : Math.round(remaining) + '% left') + '</b></div>' +
+          '<div class="limit-bar ' + barClass + '"><span style="width:' + (remaining == null ? 0 : remaining) + '%"></span></div>' +
           '<div class="limit-card-foot"><span>' + (used == null ? 'usage unknown' : Math.round(used) + '% used') + '</span><span>reset ' + esc(fmtClock(w.resetsAt)) + ' · in ' + esc(fmtRelative(w.resetsAt)) + '</span></div>' +
         '</div>';
       });
