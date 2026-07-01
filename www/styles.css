@@ -873,6 +873,50 @@ textarea:focus { border-color: rgba(88, 166, 255, .78); box-shadow: 0 0 0 2px rg
   color: var(--muted);
   line-height: 1.45;
 }
+.modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.modal-head b {
+  color: var(--text);
+  font-size: 16px;
+}
+.schedule-modal {
+  width: min(520px, 100%);
+}
+.schedule-fields {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, .75fr);
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.schedule-fields label {
+  display: grid;
+  gap: 5px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 650;
+}
+.schedule-fields input {
+  min-width: 0;
+  width: 100%;
+  border: 1px solid var(--border-soft);
+  border-radius: 7px;
+  background: var(--code);
+  color: var(--text);
+  padding: 8px 9px;
+}
+.schedule-current {
+  color: var(--muted);
+  font-size: 12px;
+  margin: 0 0 12px;
+}
+.schedule-actions {
+  justify-content: flex-end;
+}
 
 .hidden { display: none !important; }
 .empty { color: var(--muted); padding: 8px; }

@@ -120,6 +120,7 @@ class CodexLimitWatchApp {
       allSessions: opts.allSessions,
       theme: 'dark',
       sessionError: null,
+      scheduledRunAt: null,
       connectedClients: 0,
       startedAt: nowIso(),
     };
@@ -287,6 +288,12 @@ class CodexLimitWatchApp {
           this.app.effort = effort;
         }
       }
+      if (data.scheduledRunAt) {
+        const ts = Date.parse(data.scheduledRunAt);
+        this.app.scheduledRunAt = Number.isFinite(ts) ? new Date(ts).toISOString() : null;
+      } else {
+        this.app.scheduledRunAt = null;
+      }
     } catch (_) {}
   }
   async loadSettings() {
@@ -312,6 +319,7 @@ class CodexLimitWatchApp {
       sessionTitle: this.app.sessionTitle,
       model: this.opts.model || '',
       effort: this.opts.effort || '',
+      scheduledRunAt: this.app.scheduledRunAt || null,
       state: this.app.state,
       updatedAt: nowIso(),
     };
@@ -586,7 +594,7 @@ class CodexLimitWatchApp {
   async pumpQueue() {
     if (this.shuttingDown) return;
     if (!this.app.sessionId) return;
-    if (this.app.state === 'paused' || this.app.state === 'approval-required') return;
+    if ((this.app.state === 'paused' && !this.app.scheduledRunAt) || this.app.state === 'approval-required') return;
     if (this.currentItemId || this.currentTurnId) return;
     const pending = this.queue.find((i) => i.status === 'pending');
     if (!pending) {
@@ -604,6 +612,19 @@ class CodexLimitWatchApp {
         this.broadcastAll();
       }
       return;
+    }
+
+    if (this.app.scheduledRunAt) {
+      const scheduledAt = Date.parse(this.app.scheduledRunAt);
+      if (Number.isFinite(scheduledAt) && scheduledAt > Date.now()) {
+        this.app.state = 'scheduled';
+        this.app.message = `Queue scheduled for ${new Date(scheduledAt).toLocaleString()}`;
+        this.broadcastAll();
+        this.schedulePump(Math.min(Math.max(1000, scheduledAt - Date.now()), this.opts.watchInterval * 1000));
+        return;
+      }
+      this.app.scheduledRunAt = null;
+      await this.saveState();
     }
 
     if (this.rateLimits.status === 'unknown') {
@@ -788,6 +809,7 @@ class CodexLimitWatchApp {
 
   pause(message = 'Auto-send paused. Type /resume or click Resume to continue.') {
     this.countdownCancel = true;
+    this.app.scheduledRunAt = null;
     this.app.state = 'paused';
     this.app.message = message;
     this.appendOutput(message, 'system');
@@ -845,6 +867,7 @@ class CodexLimitWatchApp {
       return;
     }
     this.app.state = 'watching';
+    this.app.scheduledRunAt = null;
     this.app.message = 'Auto-send resumed';
     this.appendOutput('[queue] resumed', 'system');
     this.broadcastAll();
@@ -1124,6 +1147,46 @@ class CodexLimitWatchApp {
     return { ok: true, clearComposer: true, item };
   }
 
+  canScheduleQueue() {
+    return !!this.app.sessionId && this.queue.some((i) => i.status === 'pending') && !this.currentItemId && !this.currentTurnId && !this.approval && (this.app.state === 'paused' || this.app.state === 'waiting-limits' || this.app.state === 'scheduled');
+  }
+
+  async setQueueSchedule(value) {
+    if (!this.canScheduleQueue()) throw new Error('Queue can be scheduled only when it is paused, scheduled, or waiting for limits.');
+    const ts = Date.parse(String(value || ''));
+    if (!Number.isFinite(ts)) throw new Error('Invalid schedule time.');
+    if (ts <= Date.now()) throw new Error('Schedule time must be in the future.');
+    this.app.scheduledRunAt = new Date(ts).toISOString();
+    this.app.state = 'scheduled';
+    this.app.message = `Queue scheduled for ${new Date(ts).toLocaleString()}`;
+    await this.saveState();
+    this.appendOutput(`[queue] scheduled ${this.app.scheduledRunAt}`, 'system');
+    this.broadcastAll();
+    this.schedulePump(Math.min(Math.max(1000, ts - Date.now()), this.opts.watchInterval * 1000));
+    return { ok: true, scheduledRunAt: this.app.scheduledRunAt };
+  }
+
+  async resetQueueSchedule() {
+    this.app.scheduledRunAt = null;
+    if (this.app.state === 'scheduled') this.app.state = 'paused';
+    this.app.message = 'Queue schedule reset';
+    await this.saveState();
+    this.appendOutput('[queue] schedule reset', 'system');
+    this.broadcastAll();
+    return { ok: true };
+  }
+
+  async cancelQueueRun() {
+    this.countdownCancel = true;
+    this.app.scheduledRunAt = null;
+    this.app.state = 'paused';
+    this.app.message = 'Queue cancelled';
+    await this.saveState();
+    this.appendOutput('[queue] cancelled', 'system');
+    this.broadcastAll();
+    return { ok: true };
+  }
+
   async executeCommand(command) {
     switch (command) {
       case '/send':
@@ -1291,6 +1354,9 @@ class CodexLimitWatchApp {
     if (route === '/api/config/theme') return sendJson(res, 200, await this.setTheme(body.theme));
     if (route === '/api/queue/add') return sendJson(res, 200, await this.addPrompt(body.text || ''));
     if (route === '/api/queue/send-composer') return sendJson(res, 200, await this.sendComposerNow(body.text || ''));
+    if (route === '/api/queue/schedule') return sendJson(res, 200, await this.setQueueSchedule(body.scheduledRunAt));
+    if (route === '/api/queue/schedule-reset') return sendJson(res, 200, await this.resetQueueSchedule());
+    if (route === '/api/queue/cancel-run') return sendJson(res, 200, await this.cancelQueueRun());
     if (route === '/api/queue/update') { await this.updateQueueItem(body); return sendJson(res, 200, { ok: true }); }
     if (route === '/api/queue/remove') { await this.removeQueueItem(String(body.id)); return sendJson(res, 200, { ok: true }); }
     if (route === '/api/queue/reorder') { await this.reorderQueueItem(String(body.id), body.direction); return sendJson(res, 200, { ok: true }); }
@@ -1318,6 +1384,7 @@ class CodexLimitWatchApp {
         canInterrupt: !!(this.currentTurnId && this.app.sessionId),
         canPause: !!this.app.sessionId && this.isQueueProcessingActive() && !['paused', 'done', 'error', 'initializing', 'selecting-session', 'approval-required'].includes(this.app.state),
         canChangeSession: this.canChangeSession(),
+        canScheduleQueue: this.canScheduleQueue(),
       },
       sessions: this.sessions,
       queue: this.queue,

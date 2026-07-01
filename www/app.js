@@ -11,6 +11,7 @@
   var activeQueueFilter = 'all';
   var renderKeys = Object.create(null);
   var confirmAction = null;
+  var scheduleOpen = false;
   var composer = document.getElementById('composer');
   var outputEl = document.getElementById('output');
   var compactHeaderQuery = window.matchMedia ? window.matchMedia('(max-width: 1679px)') : null;
@@ -20,11 +21,48 @@
   function fmtRelative(ts){
     if(!ts) return 'unknown';
     var mins = Math.max(0, Math.ceil(((ts * 1000) - Date.now()) / 60000));
-    if(mins < 60) return mins + 'm';
-    var hours = Math.floor(mins / 60); var rem = mins % 60;
-    if(hours < 24) return hours + 'h' + (rem ? ' ' + rem + 'm' : '');
-    var days = Math.floor(hours / 24); var hrem = hours % 24;
-    return days + 'd' + (hrem ? ' ' + hrem + 'h' : '');
+    return fmtCountdownMinutes(mins);
+  }
+  function fmtCountdownMinutes(mins){
+    mins = Math.max(0, Math.ceil(Number(mins) || 0));
+    if(mins <= 120) return mins + 'm';
+    var hours = Math.ceil(mins / 60);
+    if(hours <= 48) return hours + 'h';
+    return Math.ceil(hours / 24) + 'd';
+  }
+  function isSameLocalDay(a, b){ return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate(); }
+  function fmtRunAt(iso){
+    if(!iso) return '—';
+    var d = new Date(iso);
+    if(Number.isNaN(d.getTime())) return '—';
+    var time = d.toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' });
+    if(isSameLocalDay(d, new Date())) return time;
+    return d.toLocaleDateString([], { year:'numeric', month:'short', day:'numeric' }) + ', ' + time;
+  }
+  function fmtRunMeta(iso){
+    if(!iso) return '—';
+    var d = new Date(iso);
+    if(Number.isNaN(d.getTime())) return '—';
+    return fmtRunAt(iso) + ' · in ' + fmtCountdownMinutes(((d.getTime() - Date.now()) / 60000));
+  }
+  function localDateValue(iso){
+    var d = iso ? new Date(iso) : new Date();
+    if(Number.isNaN(d.getTime())) d = new Date();
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  }
+  function localTimeValue(iso){
+    var d = iso ? new Date(iso) : new Date(Date.now() + 15 * 60000);
+    if(Number.isNaN(d.getTime())) d = new Date(Date.now() + 15 * 60000);
+    return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+  }
+  function scheduleInputIso(){
+    var dateEl = document.getElementById('scheduleDateInput');
+    var timeEl = document.getElementById('scheduleTimeInput');
+    var date = dateEl && dateEl.value ? dateEl.value : localDateValue(null);
+    var time = timeEl && timeEl.value ? timeEl.value : '';
+    if(!time) return null;
+    var d = new Date(date + 'T' + time + ':00');
+    return Number.isNaN(d.getTime()) ? null : d.toISOString();
   }
   function fmtCountdown(iso){
     if(!iso) return '15:00';
@@ -135,6 +173,7 @@
     renderSection('sessions', renderSessions, force);
     renderSection('approval', renderApproval, force);
     renderConfirm();
+    renderScheduleModal();
     renderSection('queue', renderQueue, force);
     renderSection('output', renderOutput, force);
     renderSection('debug', function(){
@@ -174,6 +213,7 @@
     setButtonState('queueMenuBtn', pending === 0 && (counts.completed || 0) === 0, false);
     setButtonState('pauseBtn', !canPause, false);
     setButtonState('resumeBtn', !canResume, false);
+    setButtonState('scheduleBtn', !app.canScheduleQueue, false);
     setButtonState('interruptBtn', false, !app.canInterrupt);
     setButtonState('cancelSendBtn', false, false);
     var countdownNotice = document.getElementById('countdownNotice');
@@ -182,14 +222,16 @@
   function renderHeader(){
     var app = snap.app || {}; var rl = snap.rateLimits || {}; var c = app.queueCounts || {};
     renderTheme(app);
-    var stateBadge = document.getElementById('stateBadge'); stateBadge.textContent = app.state || 'unknown'; stateBadge.title = app.state || 'unknown'; stateBadge.className = 'badge ' + (app.state === 'error' ? 'danger' : (app.state === 'paused' || app.state === 'waiting-limits' || app.state === 'approval-required' ? 'warn' : 'ok'));
+    var stateBadge = document.getElementById('stateBadge'); stateBadge.textContent = app.state || 'unknown'; stateBadge.title = app.state || 'unknown'; stateBadge.className = 'badge ' + (app.state === 'error' ? 'danger' : (app.state === 'paused' || app.state === 'scheduled' || app.state === 'waiting-limits' || app.state === 'approval-required' ? 'warn' : 'ok'));
     var limitBadge = document.getElementById('limitBadge'); limitBadge.textContent = limitBadgeText(rl.status); limitBadge.title = fullLimitBadgeText(rl.status); limitBadge.className = 'badge ' + (rl.status === 'available' ? 'ok' : (rl.status === 'limited' ? 'warn' : 'danger'));
     var modelSelect = document.getElementById('modelSelect');
     if(modelSelect) renderModelOptions(modelSelect, app);
     var effortSelect = document.getElementById('effortSelect');
     if(effortSelect) renderEffortOptions(effortSelect, app);
     renderControls(app, c);
-    var reset = rl.resetAt ? new Date(rl.resetAt * 1000) : null; var resetText = reset ? reset.toLocaleTimeString() + ' · in ' + Math.max(0, Math.ceil((reset.getTime()-Date.now())/60000)) + 'm' : '—';
+    var nextRun = { label:'Next run', value:'—' };
+    if(app.scheduledRunAt) nextRun = { label:'Schedule', value:fmtRunMeta(app.scheduledRunAt) };
+    else if(app.state === 'waiting-limits') nextRun = { label:'Limit reset', value:rl.resetAt ? fmtRunMeta(new Date(rl.resetAt * 1000).toISOString()) : '—' };
     var sessionTitle = app.sessionTitle || 'not selected';
     var sessionId = app.sessionId || '—';
     var queueTotal = (c.pending || 0) + (c.sending || 0) + (c.sent || 0) + (c.completed || 0) + (c.failed || 0) + (c.unknown || 0);
@@ -210,7 +252,7 @@
       metaItem('Project', app.projectDir) +
       sessionMetaItem(app, sessionTitle, sessionTitle) +
       metaItem('Session ID', sessionId) +
-      metaItem('Reset', resetText);
+      metaItem(nextRun.label, nextRun.value);
     renderLimitStats();
   }
   function renderLimitStats(){
@@ -287,6 +329,35 @@
     if(action === 'interrupt') api('/api/control/interrupt').then(function(r){ if(r.message) alert(r.message); }).catch(function(e){ alert(e.message); });
     else if(action === 'stop') api('/api/control/stop').catch(function(e){ alert(e.message); });
     else if(action === 'remove') api('/api/queue/remove', { id:data.id }).catch(function(e){ alert(e.message); });
+  }
+  function openScheduleModal(){
+    scheduleOpen = true;
+    renderScheduleModal();
+  }
+  function closeScheduleModal(){
+    scheduleOpen = false;
+    renderScheduleModal();
+  }
+  function renderScheduleModal(){
+    var box = document.getElementById('scheduleBox');
+    if(!box) return;
+    if(!scheduleOpen) { box.classList.add('hidden'); box.innerHTML = ''; return; }
+    var app = snap && snap.app || {};
+    var scheduled = app.scheduledRunAt || '';
+    box.classList.remove('hidden');
+    box.innerHTML = '<div class="confirm-modal schedule-modal" role="dialog" aria-modal="true" aria-labelledby="scheduleTitle">' +
+      '<div class="modal-head"><b id="scheduleTitle">Schedule queue</b><button id="scheduleCloseBtn" class="icon-only" title="Close">×</button></div>' +
+      '<div class="schedule-fields">' +
+        '<label><span>Date</span><input id="scheduleDateInput" type="date" value="' + esc(localDateValue(scheduled)) + '"></label>' +
+        '<label><span>Time</span><input id="scheduleTimeInput" type="time" value="' + esc(localTimeValue(scheduled)) + '"></label>' +
+      '</div>' +
+      (scheduled ? '<div class="schedule-current">Current: ' + esc(fmtRunMeta(scheduled)) + '</div>' : '') +
+      '<div class="actions schedule-actions">' +
+        '<button id="scheduleSaveBtn" class="primary">Save</button>' +
+        (scheduled ? '<button id="scheduleResetBtn">Reset</button>' : '') +
+        '<button id="scheduleCancelQueueBtn" class="danger">Cancel queue</button>' +
+      '</div>' +
+    '</div>';
   }
   function renderQueue(){
     var q = snap.queue || []; var el = document.getElementById('queue'); var app = snap.app || {};
@@ -431,6 +502,7 @@
     else if(t.id === 'cancelSendBtn') api('/api/control/cancel-send');
     else if(t.id === 'pauseBtn') api('/api/control/pause');
     else if(t.id === 'resumeBtn') api('/api/control/resume');
+    else if(t.id === 'scheduleBtn') openScheduleModal();
     else if(t.id === 'interruptBtn') openConfirm('interrupt', 'Interrupt prompt?', 'The current running prompt will be interrupted. The queue will remain available after the turn stops.', 'Yes, interrupt', true);
     else if(t.id === 'undoBtn') api('/api/queue/undo').then(function(r){ if(r.composerText !== undefined) composer.value = r.composerText; if(r.message) alert(r.message); updateCounter(); });
     else if(t.id === 'queueMenuBtn') {
@@ -442,6 +514,14 @@
     else if(t.id === 'stopBtn') openConfirm('stop', 'Stop server?', 'This will stop the local web server and the Codex app-server. A running prompt will be interrupted.', 'Yes, stop server', true);
     else if(t.id === 'confirmCancelBtn') closeConfirm();
     else if(t.id === 'confirmYesBtn') confirmCurrentAction();
+    else if(t.id === 'scheduleCloseBtn') closeScheduleModal();
+    else if(t.id === 'scheduleSaveBtn') {
+      var scheduledRunAt = scheduleInputIso();
+      if(!scheduledRunAt) { alert('Select a valid time.'); return; }
+      api('/api/queue/schedule', { scheduledRunAt:scheduledRunAt }).then(function(){ closeScheduleModal(); getState(); }).catch(function(e){ alert(e.message); });
+    }
+    else if(t.id === 'scheduleResetBtn') api('/api/queue/schedule-reset').then(function(){ closeScheduleModal(); getState(); }).catch(function(e){ alert(e.message); });
+    else if(t.id === 'scheduleCancelQueueBtn') api('/api/queue/cancel-run').then(function(){ closeScheduleModal(); getState(); }).catch(function(e){ alert(e.message); });
     else if(t.id === 'clearOutputBtn') api('/api/output/clear');
     else if(t.id === 'bottomBtn') outputEl.scrollTop = outputEl.scrollHeight;
     else if(t.id === 'themeBtn') {
@@ -481,6 +561,11 @@
   document.addEventListener('keydown', function(ev){
     var t = ev.target;
     if(ev.key === 'Escape') {
+      if(scheduleOpen) {
+        ev.preventDefault();
+        closeScheduleModal();
+        return;
+      }
       if(confirmAction) {
         ev.preventDefault();
         closeConfirm();
@@ -495,6 +580,13 @@
       ev.preventDefault();
       if(editingQueueItemId) { delete editDrafts[editingQueueItemId]; editingQueueItemId = null; renderQueue(); return; }
       api(snap && snap.app && snap.app.state === 'countdown' ? '/api/control/cancel-send' : '/api/control/pause');
+      return;
+    }
+    if(scheduleOpen && ev.key === 'Enter' && !(t && t.tagName === 'BUTTON')) {
+      ev.preventDefault();
+      var scheduledRunAt = scheduleInputIso();
+      if(!scheduledRunAt) { alert('Select a valid time.'); return; }
+      api('/api/queue/schedule', { scheduledRunAt:scheduledRunAt }).then(function(){ closeScheduleModal(); getState(); }).catch(function(e){ alert(e.message); });
       return;
     }
     if(confirmAction && ev.key === 'Enter') {
