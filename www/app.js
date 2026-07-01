@@ -55,6 +55,12 @@
   function getState(){ return fetch('/api/state?token=' + encodeURIComponent(TOKEN), { headers:{'x-codex-limit-watch-token':TOKEN} }).then(function(r){return r.json();}).then(update); }
   function update(s){ snap = s; render(); }
   function render(){ if(!snap) return; renderHeader(); renderSessions(); renderApproval(); renderQueue(); renderOutput(); document.getElementById('debug').textContent = JSON.stringify(snap.debug || {}, null, 2); }
+  function renderTheme(app){
+    var theme = app.theme === 'light' ? 'light' : 'dark';
+    document.documentElement.dataset.theme = theme;
+    var btn = document.getElementById('themeBtn');
+    if(btn) { btn.textContent = theme === 'light' ? '☀' : '☾'; btn.title = 'Switch to ' + (theme === 'light' ? 'dark' : 'light') + ' theme'; }
+  }
   function setButtonState(id, disabled, hidden){
     var btn = document.getElementById(id);
     if(!btn) return;
@@ -83,6 +89,7 @@
   }
   function renderHeader(){
     var app = snap.app || {}; var rl = snap.rateLimits || {}; var c = app.queueCounts || {};
+    renderTheme(app);
     var stateBadge = document.getElementById('stateBadge'); stateBadge.textContent = app.state || 'unknown'; stateBadge.className = 'badge ' + (app.state === 'error' ? 'danger' : (app.state === 'paused' || app.state === 'waiting-limits' || app.state === 'approval-required' ? 'warn' : 'ok'));
     var limitBadge = document.getElementById('limitBadge'); limitBadge.textContent = rl.status === 'limited' ? 'limits waiting' : (rl.status === 'available' ? 'limits available' : 'limits unknown'); limitBadge.className = 'badge ' + (rl.status === 'available' ? 'ok' : (rl.status === 'limited' ? 'warn' : 'danger'));
     var modelSelect = document.getElementById('modelSelect');
@@ -241,6 +248,10 @@
     else if(t.id === 'stopBtn') { if(confirm('Stop local server and app-server?')) api('/api/control/stop'); }
     else if(t.id === 'clearOutputBtn') api('/api/output/clear');
     else if(t.id === 'bottomBtn') outputEl.scrollTop = outputEl.scrollHeight;
+    else if(t.id === 'themeBtn') {
+      var nextTheme = snap && snap.app && snap.app.theme === 'light' ? 'dark' : 'light';
+      api('/api/config/theme', { theme:nextTheme }).catch(function(e){ alert(e.message); });
+    }
     else if(t.id === 'createSessionBtn') api('/api/session/create').catch(function(e){ alert(e.message); });
     else if(t.id === 'reloadSessionsBtn') api('/api/session/reload');
     else if(t.dataset.session) api('/api/session/select', { sessionId:t.dataset.session }).catch(function(e){ alert(e.message); });

@@ -402,6 +402,7 @@ class CodexLimitWatchApp {
     this.clients = new Set();
     this.shuttingDown = false;
     this.stateDirForPair = null;
+    this.settingsPath = path.join(opts.stateDir, 'settings.json');
     this.queuePath = null;
     this.statePath = null;
     this.eventsLogPath = null;
@@ -438,6 +439,7 @@ class CodexLimitWatchApp {
       network: opts.network,
       writableRoots: [opts.projectDir, ...opts.addDirs],
       allSessions: opts.allSessions,
+      theme: 'dark',
       connectedClients: 0,
       startedAt: nowIso(),
     };
@@ -459,6 +461,7 @@ class CodexLimitWatchApp {
 
   async start() {
     ensureDirSync(this.opts.stateDir);
+    await this.loadSettings();
     if (!isLocalHost(this.opts.host)) {
       console.warn(`Warning: host ${this.opts.host} is not localhost. The UI is token-protected, but localhost is safer.`);
     }
@@ -591,6 +594,20 @@ class CodexLimitWatchApp {
         this.app.model = this.opts.model;
       }
     } catch (_) {}
+  }
+  async loadSettings() {
+    if (!this.settingsPath || !fs.existsSync(this.settingsPath)) return;
+    try {
+      const data = JSON.parse(await fsp.readFile(this.settingsPath, 'utf8'));
+      if (data.theme === 'light' || data.theme === 'dark') this.app.theme = data.theme;
+    } catch (_) {}
+  }
+  async saveSettings() {
+    if (!this.settingsPath) return;
+    const data = { theme: this.app.theme || 'dark', updatedAt: nowIso() };
+    const tmp = this.settingsPath + '.tmp';
+    await fsp.writeFile(tmp, JSON.stringify(data, null, 2));
+    await fsp.rename(tmp, this.settingsPath);
   }
   async saveState() {
     if (!this.statePath) return;
@@ -936,6 +953,13 @@ class CodexLimitWatchApp {
     this.appendOutput(`[config] model ${value || DEFAULT_MODEL + ' (default)'}`, 'system');
     this.broadcastAll();
     return { ok: true, model: value };
+  }
+  async setTheme(theme) {
+    const value = theme === 'light' ? 'light' : 'dark';
+    this.app.theme = value;
+    await this.saveSettings();
+    this.broadcastAll();
+    return { ok: true, theme: value };
   }
   resume() {
     if (this.approval) {
@@ -1326,6 +1350,7 @@ class CodexLimitWatchApp {
       return sendJson(res, 200, { ok: true });
     }
     if (route === '/api/config/model') return sendJson(res, 200, await this.setModel(body.model));
+    if (route === '/api/config/theme') return sendJson(res, 200, await this.setTheme(body.theme));
     if (route === '/api/queue/add') return sendJson(res, 200, await this.addPrompt(body.text || ''));
     if (route === '/api/queue/update') { await this.updateQueueItem(body); return sendJson(res, 200, { ok: true }); }
     if (route === '/api/queue/remove') { await this.removeQueueItem(String(body.id)); return sendJson(res, 200, { ok: true }); }
