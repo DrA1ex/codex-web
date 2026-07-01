@@ -8,6 +8,7 @@
   var pendingQueueScrollId = null;
   var composer = document.getElementById('composer');
   var outputEl = document.getElementById('output');
+  var compactHeaderQuery = window.matchMedia ? window.matchMedia('(max-width: 1180px)') : null;
   function esc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
   function fmtTime(iso){ if(!iso) return ''; try { return new Date(iso).toLocaleString(); } catch(e){ return iso; } }
   function fmtClock(ts){ if(!ts) return '—'; try { return new Date(ts * 1000).toLocaleTimeString(); } catch(e){ return '—'; } }
@@ -39,9 +40,21 @@
   function metaItem(label, value, title){
     value = value == null || value === '' ? '—' : String(value);
     title = title == null || title === '' ? value : String(title);
-    return '<div class="meta-item" title="' + esc(label + ': ' + title) + '">' + esc(label) + ': <b>' + esc(value) + '</b></div>';
+    return '<div class="meta-item" aria-label="' + esc(label + ': ' + title) + '"><span>' + esc(label) + '</span><b>' + esc(value) + '</b></div>';
+  }
+  function envChip(label, value, ok){
+    value = value == null || value === '' ? '—' : String(value);
+    return '<span class="env-chip ' + (ok ? 'ok' : '') + '" aria-label="' + esc(label + ': ' + value) + '"><i></i>' + esc(label) + ': <b>' + esc(value) + '</b></span>';
+  }
+  function queueTab(label, value, active){
+    return '<span class="queue-tab ' + (active ? 'active' : '') + '">' + esc(label) + ' <b>' + Number(value || 0) + '</b></span>';
   }
   function pct(n){ n = Number(n); return Number.isFinite(n) ? Math.max(0, Math.min(100, n)) : null; }
+  function isCompactHeader(){ return !!(compactHeaderQuery && compactHeaderQuery.matches); }
+  function limitBadgeText(status){
+    if(isCompactHeader()) return 'limit';
+    return status === 'limited' ? 'limits waiting' : (status === 'available' ? 'limits available' : 'limits unknown');
+  }
   function renderModelOptions(select, app){
     var options = app.modelOptions || [];
     var model = app.model || '';
@@ -54,7 +67,16 @@
   function api(path, body){ return fetch(path + '?token=' + encodeURIComponent(TOKEN), { method:'POST', headers:{'content-type':'application/json','x-codex-limit-watch-token':TOKEN}, body:JSON.stringify(body || {}) }).then(function(r){ return r.json().then(function(j){ if(!r.ok) throw new Error(j.error || r.statusText); return j; }); }); }
   function getState(){ return fetch('/api/state?token=' + encodeURIComponent(TOKEN), { headers:{'x-codex-limit-watch-token':TOKEN} }).then(function(r){return r.json();}).then(update); }
   function update(s){ snap = s; render(); }
-  function render(){ if(!snap) return; renderHeader(); renderSessions(); renderApproval(); renderQueue(); renderOutput(); document.getElementById('debug').textContent = JSON.stringify(snap.debug || {}, null, 2); }
+  function render(){
+    if(!snap) return;
+    renderHeader();
+    renderSessions();
+    renderApproval();
+    renderQueue();
+    renderOutput();
+    var debug = document.getElementById('debug');
+    if(debug) debug.textContent = JSON.stringify(snap.debug || {}, null, 2);
+  }
   function renderTheme(app){
     var theme = app.theme === 'light' ? 'light' : 'dark';
     document.documentElement.dataset.theme = theme;
@@ -91,22 +113,32 @@
     var app = snap.app || {}; var rl = snap.rateLimits || {}; var c = app.queueCounts || {};
     renderTheme(app);
     var stateBadge = document.getElementById('stateBadge'); stateBadge.textContent = app.state || 'unknown'; stateBadge.className = 'badge ' + (app.state === 'error' ? 'danger' : (app.state === 'paused' || app.state === 'waiting-limits' || app.state === 'approval-required' ? 'warn' : 'ok'));
-    var limitBadge = document.getElementById('limitBadge'); limitBadge.textContent = rl.status === 'limited' ? 'limits waiting' : (rl.status === 'available' ? 'limits available' : 'limits unknown'); limitBadge.className = 'badge ' + (rl.status === 'available' ? 'ok' : (rl.status === 'limited' ? 'warn' : 'danger'));
+    var limitBadge = document.getElementById('limitBadge'); limitBadge.textContent = limitBadgeText(rl.status); limitBadge.className = 'badge ' + (rl.status === 'available' ? 'ok' : (rl.status === 'limited' ? 'warn' : 'danger'));
     var modelSelect = document.getElementById('modelSelect');
     if(modelSelect) renderModelOptions(modelSelect, app);
     renderControls(app, c);
     var reset = rl.resetAt ? new Date(rl.resetAt * 1000) : null; var resetText = reset ? reset.toLocaleTimeString() + ' · in ' + Math.max(0, Math.ceil((reset.getTime()-Date.now())/60000)) + 'm' : '—';
     var sessionTitle = app.sessionTitle || 'not selected';
     var sessionId = app.sessionId || '—';
+    var queueTotal = (c.pending || 0) + (c.sending || 0) + (c.sent || 0) + (c.completed || 0) + (c.failed || 0) + (c.unknown || 0);
+    var queueCountBadge = document.getElementById('queueCountBadge');
+    if(queueCountBadge) queueCountBadge.textContent = queueTotal;
+    var tabs = document.getElementById('queueTabs');
+    if(tabs) tabs.innerHTML =
+      queueTab('All', queueTotal, true) +
+      queueTab('Pending', c.pending || 0, false) +
+      queueTab('Running', (c.sending || 0) + (c.sent || 0), false) +
+      queueTab('Done', c.completed || 0, false);
+    var env = document.getElementById('envMeta');
+    if(env) env.innerHTML =
+      envChip('Sandbox', app.sandbox || '—', true) +
+      envChip('Approval', app.approvalPolicy || '—', true) +
+      envChip('Network', String(app.network), !!app.network);
     document.getElementById('meta').innerHTML =
       metaItem('Project', app.projectDir) +
       metaItem('Session', sessionTitle) +
       metaItem('Session ID', sessionId) +
-      metaItem('Queue', (c.pending||0) + ' pending, ' + ((c.sending||0)+(c.sent||0)) + ' running') +
-      metaItem('Limits', rl.message || rl.status || 'unknown') +
-      metaItem('Reset', resetText) +
-      metaItem('Sandbox', (app.sandbox || '—') + ' · Network: ' + String(app.network)) +
-      metaItem('Approval', (app.approvalPolicy || '—') + ' / ' + (app.approvalResponse || '—'));
+      metaItem('Reset', resetText);
     renderLimitStats();
   }
   function renderLimitStats(){
@@ -114,7 +146,7 @@
     var html = '';
     buckets.forEach(function(b){
       var windows = b.windows && b.windows.length ? b.windows : [{ name:'primary', usedPercent:b.usedPercent, remainingPercent:b.usedPercent == null ? null : 100 - b.usedPercent, windowDurationMins:b.windowDurationMins, resetsAt:b.resetsAt }];
-      html += '<div class="limit-card"><div class="limit-card-title">' + esc(b.limitName || b.limitId || 'limit') + '</div>';
+      html += '<div class="limit-card"><div class="limit-card-head"><span>Limits</span><b>' + esc(b.limitName || b.limitId || 'limit') + '</b></div>';
       windows.forEach(function(w){
         var used = pct(w.usedPercent);
         var remaining = pct(w.remainingPercent);
@@ -129,7 +161,7 @@
       });
       html += '</div>';
     });
-    if(!html) html = '<div class="limit-card muted">Rate-limit data unavailable.</div>';
+    if(!html) html = '<div class="limit-card muted"><div class="limit-card-head">Limits</div><p>Rate-limit data unavailable.</p></div>';
     el.innerHTML = html;
   }
   function renderSessions(){
@@ -168,7 +200,7 @@
         var draft = Object.prototype.hasOwnProperty.call(editDrafts, item.id) ? editDrafts[item.id] : (item.text || '');
         html += '<textarea class="queue-edit" data-edit-text="' + idAttr + '" spellcheck="false">' + esc(draft) + '</textarea>';
       } else {
-        html += '<div class="prompt-preview"' + toggleAttrs + '>' + esc(text || '') + '</div>';
+        html += '<div class="prompt-preview" aria-label="' + esc(item.text || item.preview || '') + '"' + toggleAttrs + '>' + esc(text || '') + '</div>';
       }
       if(item.error) html += '<div class="prompt-error">' + esc(item.error) + '</div>';
       if(editing) {
@@ -303,6 +335,10 @@
   composer.addEventListener('keydown', function(ev){
     if((ev.metaKey || ev.ctrlKey) && ev.key === 'Enter'){ ev.preventDefault(); addQueue(); }
   });
+  if(compactHeaderQuery) {
+    if(compactHeaderQuery.addEventListener) compactHeaderQuery.addEventListener('change', function(){ if(snap) renderHeader(); });
+    else if(compactHeaderQuery.addListener) compactHeaderQuery.addListener(function(){ if(snap) renderHeader(); });
+  }
   updateCounter();
   setInterval(function(){ if(snap) renderHeader(); }, 30000);
   setInterval(function(){ if(snap && snap.approval) renderApproval(); }, 1000);

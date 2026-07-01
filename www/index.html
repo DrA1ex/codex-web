@@ -8,39 +8,52 @@
 </head>
 <body>
 <header class="header">
-  <button id="themeBtn" class="theme-btn" title="Switch theme">☾</button>
-  <div class="title"><h1>Codex Limit Watch Web</h1><span id="stateBadge" class="badge">initializing</span><span id="limitBadge" class="badge">limits unknown</span><label class="model-select-wrap">Model <select id="modelSelect"></select></label></div>
+  <div class="topbar">
+    <div class="title">
+      <h1>Codex Web</h1>
+      <span id="stateBadge" class="badge">initializing</span>
+      <span id="limitBadge" class="badge">limits unknown</span>
+      <label class="model-select-wrap"><span>Model:</span><select id="modelSelect"></select></label>
+    </div>
+    <div class="header-tools">
+      <div id="envMeta" class="env-meta"></div>
+      <button id="themeBtn" class="theme-btn" title="Switch theme">☾</button>
+    </div>
+  </div>
   <div id="countdownNotice" class="countdown-notice hidden"><span>Sending next prompt soon</span><button id="cancelSendBtn" class="danger">Cancel send</button></div>
-  <div class="meta" id="meta"></div>
-  <div class="limit-stats" id="limitStats"></div>
+  <div class="header-grid">
+    <div class="meta" id="meta"></div>
+    <div class="limit-stats" id="limitStats"></div>
+  </div>
 </header>
 <div id="sessionPicker" class="session-list hidden"></div>
 <div id="approvalBox" class="approval hidden"></div>
 <main class="main">
-  <section class="panel">
-    <div class="panel-head"><h2>Queue</h2><div class="panel-actions"><button id="undoBtn">Undo last</button><button id="clearBtn">Clear pending</button><button id="clearCompletedBtn">Clear completed</button></div></div>
+  <section class="panel queue-panel">
+    <div class="panel-head"><h2>Queue <span id="queueCountBadge" class="count-badge">0</span></h2><div class="panel-actions"><button id="undoBtn" title="Undo last">↶ Undo</button><button id="clearBtn" title="Clear pending">⇧ Clear pending</button><button id="clearCompletedBtn" class="icon-only" title="Clear completed">☰</button></div></div>
+    <div id="queueTabs" class="queue-tabs"></div>
     <div id="queue" class="panel-body"></div>
   </section>
-  <section class="panel">
-    <div class="panel-head"><h2>Output</h2><div><button id="bottomBtn">Scroll to bottom</button> <button id="clearOutputBtn">Clear output</button></div></div>
+  <section class="panel output-panel">
+    <div class="panel-head"><h2>Output</h2><div class="panel-actions"><button id="bottomBtn">↓ Scroll to bottom</button><button id="clearOutputBtn">⌫ Clear output</button></div></div>
     <div id="output" class="panel-body output"></div>
   </section>
 </main>
 <section class="composer">
+  <div class="composer-title">Composer</div>
   <textarea id="composer" spellcheck="false" placeholder="Write a multiline prompt. Cmd+Enter or Ctrl+Enter adds it to the queue. Standalone commands: /undo, /clear, /pause, /resume, /done, /quit, /help"></textarea>
   <div class="composer-row">
     <div class="composer-actions">
-      <button id="addBtn" class="primary">Add to queue</button>
-      <button id="pauseBtn">Pause</button>
-      <button id="resumeBtn">Resume</button>
+      <button id="addBtn" class="primary">⊕ Add to queue</button>
+      <button id="pauseBtn">Ⅱ Pause</button>
+      <button id="resumeBtn">▷ Resume</button>
       <button id="interruptBtn" class="danger hidden">Interrupt</button>
-      <button id="doneBtn">Done</button>
-      <button id="stopBtn" class="danger">Stop server</button>
+      <button id="doneBtn">✓ Done</button>
+      <button id="stopBtn" class="danger">□ Stop server</button>
     </div>
     <div id="counter" class="counter">Lines: 0 · Chars: 0</div>
   </div>
 </section>
-<details class="debug"><summary>Debug</summary><pre id="debug"></pre></details>
 <script>window.CODEX_LIMIT_WATCH_TOKEN = "__TOKEN__";</script>
 <script src="/app.js"></script>
 </body>
