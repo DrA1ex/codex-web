@@ -400,7 +400,8 @@
   function addQueue(){ api('/api/queue/add', { text: composer.value }).then(function(r){ if(r.item && r.item.id) pendingQueueScrollId = r.item.id; if(r.clearComposer) composer.value=''; if(r.composerText !== undefined) composer.value = r.composerText; if(r.message) alert(r.message); updateCounter(); getState(); }).catch(function(e){ alert(e.message); }); }
   function sendComposerNow(){ api('/api/queue/send-composer', { text: composer.value }).then(function(r){ if(r.clearComposer) composer.value=''; if(r.composerText !== undefined) composer.value = r.composerText; if(r.message) alert(r.message); updateCounter(); getState(); }).catch(function(e){ alert(e.message); }); }
   document.addEventListener('click', function(ev){
-    var t = ev.target;
+    var rawTarget = ev.target && ev.target.nodeType === 3 ? ev.target.parentElement : ev.target;
+    var t = rawTarget && rawTarget.closest ? (rawTarget.closest('button,[data-act],[data-session],[data-approval],[data-queue-filter],[data-output-diff],[data-toggle-prompt]') || rawTarget) : rawTarget;
     var queueMenuWrap = t.closest && t.closest('.menu-wrap');
     if(!queueMenuWrap) setQueueMenuOpen(false);
     var promptToggle = t.closest && t.closest('[data-toggle-prompt]');
@@ -413,8 +414,9 @@
       }
       return;
     }
-    if(t.dataset && t.dataset.queueFilter) {
-      activeQueueFilter = t.dataset.queueFilter;
+    var queueFilter = t.closest && t.closest('[data-queue-filter]');
+    if(queueFilter) {
+      activeQueueFilter = queueFilter.dataset.queueFilter;
       renderHeader();
       renderQueue();
       return;
