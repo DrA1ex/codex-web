@@ -125,15 +125,16 @@
     q.forEach(function(item, i){
       var active = item.id === app.nextPendingId || item.status === 'sending' || item.status === 'sent';
       var completed = item.status === 'completed';
+      var running = item.status === 'sending' || item.status === 'sent';
       var expanded = !!expandedQueueItems[item.id] && !completed;
       var text = expanded ? (item.text || item.preview || '') : (item.preview || item.text || '');
       var idAttr = esc(item.id);
       var toggleAttrs = completed ? '' : ' data-toggle-prompt="1" data-id="' + idAttr + '" role="button" tabindex="0" title="Click to ' + (expanded ? 'collapse' : 'expand') + ' prompt"';
-      html += '<div class="queue-item ' + (active ? 'active ' : '') + (completed ? 'completed ' : '') + (expanded ? 'expanded' : '') + '">' +
+      html += '<div class="queue-item ' + (active ? 'active ' : '') + (running ? 'running ' : '') + (completed ? 'completed ' : '') + (expanded ? 'expanded' : '') + '">' +
         '<div class="queue-top"><span>#' + (i+1) + ' <span class="status ' + esc(item.status) + '">' + esc(item.status) + '</span> · ' + item.lineCount + ' lines</span><span>' + esc(fmtTime(completed && item.finishedAt ? item.finishedAt : item.createdAt)) + '</span></div>' +
         '<div class="prompt-preview"' + toggleAttrs + '>' + esc(text || '') + '</div>';
       if(item.error) html += '<div class="prompt-error">' + esc(item.error) + '</div>';
-      if(!completed) {
+      if(!completed && !running) {
         html += '<div class="actions queue-actions"><button data-act="edit" data-id="' + idAttr + '">Edit</button><button data-act="duplicate" data-id="' + idAttr + '">Duplicate</button><button data-act="up" data-id="' + idAttr + '">Up</button><button data-act="down" data-id="' + idAttr + '">Down</button><button data-act="sendNow" data-id="' + idAttr + '">Send</button><button data-act="remove" data-id="' + idAttr + '" class="danger">Remove</button>';
         if(item.status === 'unknown' || item.status === 'failed') html += '<button data-act="markCompleted" data-id="' + idAttr + '">Done</button><button data-act="retry" data-id="' + idAttr + '">Retry</button>';
         html += '</div>';

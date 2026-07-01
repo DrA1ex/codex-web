@@ -43,6 +43,8 @@ textarea:focus { border-color:#3f65a3; }
 .panel-body { overflow:auto; padding:10px; min-height:0; flex:1; }
 .queue-item { border:1px solid var(--border); border-radius:8px; padding:6px 7px; margin-bottom:5px; background:var(--panel2); }
 .queue-item.active { border-color:#4d79bd; box-shadow:0 0 0 1px rgba(77,121,189,.25) inset; }
+.queue-item.running { background:#111d2d; border-color:#6f9feb; box-shadow:0 0 0 1px rgba(138,180,255,.35) inset; }
+.queue-item.running .prompt-preview { color:#eef5ff; cursor:default; }
 .queue-item.completed { opacity:.82; padding-block:5px; }
 .queue-top { display:flex; justify-content:space-between; gap:8px; color:var(--muted); font-size:11px; margin-bottom:3px; min-width:0; }
 .queue-top span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
