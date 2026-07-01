@@ -126,6 +126,7 @@ class CodexLimitWatchApp {
     this.output = [];
     this.lastDiffOutputText = null;
     this.sessions = [];
+    this.sessionPickerReturnState = null;
     this.rateLimits = { status: 'unknown', message: 'not checked yet', buckets: [], resetAt: null, raw: null, updatedAt: null };
     this.approval = null;
     this.debug = {
@@ -190,7 +191,11 @@ class CodexLimitWatchApp {
 
   async setupPairState(sessionId) {
     const key = sha256(`${stripTrailingSep(this.opts.projectDir)}\n${sessionId}`).slice(0, 32);
-    this.stateDirForPair = path.join(this.opts.stateDir, key);
+    const nextStateDirForPair = path.join(this.opts.stateDir, key);
+    if (this.lockAcquired && this.stateDirForPair && this.stateDirForPair !== nextStateDirForPair) {
+      this.releaseLock();
+    }
+    this.stateDirForPair = nextStateDirForPair;
     ensureDirSync(this.stateDirForPair);
     this.queuePath = path.join(this.stateDirForPair, 'queue.json');
     this.statePath = path.join(this.stateDirForPair, 'state.json');
@@ -320,6 +325,12 @@ class CodexLimitWatchApp {
   }
 
   async loadSessions() {
+    if (this.app.sessionId && this.app.state !== 'selecting-session' && !this.canChangeSession()) {
+      throw new Error('Pause the queue and wait for the current task to finish before changing sessions.');
+    }
+    if (this.app.sessionId && this.app.state !== 'selecting-session') {
+      this.sessionPickerReturnState = this.app.state;
+    }
     this.app.state = 'selecting-session';
     this.app.message = 'Loading sessions…';
     this.broadcastAll();
@@ -361,6 +372,9 @@ class CodexLimitWatchApp {
   }
 
   async selectSession(sessionId, startup = false) {
+    if (!startup && this.app.sessionId && this.app.state !== 'selecting-session' && this.app.sessionId !== sessionId && !this.canChangeSession()) {
+      throw new Error('Pause the queue and wait for the current task to finish before changing sessions.');
+    }
     this.app.state = 'initializing';
     this.app.message = `Resuming session ${shortId(sessionId)}…`;
     this.broadcastAll();
@@ -384,15 +398,20 @@ class CodexLimitWatchApp {
     this.app.sessionTitle = fallbackThreadTitle(thread, this.opts.projectDir);
     await this.setupPairState(this.app.sessionId);
     await this.tryReadSession();
-    this.app.state = 'watching';
+    const returnState = this.sessionPickerReturnState;
+    this.sessionPickerReturnState = null;
+    this.app.state = returnState || 'watching';
     this.app.message = startup ? 'Session resumed' : 'Session selected';
     this.appendOutput(`[session] ${this.app.sessionTitle} · ${this.app.sessionId}`, 'system');
     this.eventLog('info', `session selected ${this.app.sessionId}`);
     this.broadcastAll();
-    this.schedulePump(200);
+    if (this.app.state !== 'paused') this.schedulePump(200);
   }
 
   async createSession() {
+    if (this.app.sessionId && this.app.state !== 'selecting-session' && !this.canChangeSession()) {
+      throw new Error('Pause the queue and wait for the current task to finish before changing sessions.');
+    }
     this.app.state = 'initializing';
     this.app.message = 'Creating new session...';
     this.broadcastAll();
@@ -430,18 +449,20 @@ class CodexLimitWatchApp {
     this.app.sessionTitle = fallbackThreadTitle(thread, this.opts.projectDir);
     await this.setupPairState(this.app.sessionId);
     await this.tryReadSession();
-    this.app.state = 'watching';
+    const returnState = this.sessionPickerReturnState;
+    this.sessionPickerReturnState = null;
+    this.app.state = returnState || 'watching';
     this.app.message = 'Session created';
     this.appendOutput(`[session] created ${this.app.sessionTitle} · ${this.app.sessionId}`, 'system');
     this.eventLog('info', `session created ${this.app.sessionId}`);
     this.broadcastAll();
-    this.schedulePump(200);
+    if (this.app.state !== 'paused') this.schedulePump(200);
   }
 
   async tryReadSession() {
     if (!this.app.sessionId) return;
     try {
-      const read = await this.rpc.request('thread/read', { threadId: this.app.sessionId, includeTurns: false }, 6000);
+      const read = await this.rpc.request('thread/read', { threadId: this.app.sessionId, includeTurns: true }, 6000);
       const thread = read?.thread || read || {};
       this.app.sessionTitle = fallbackThreadTitle(thread, this.opts.projectDir) || this.app.sessionTitle;
       this.app.session = normalizeSession(thread, this.opts.projectDir);
@@ -483,6 +504,19 @@ class CodexLimitWatchApp {
   isQueueProcessingActive() {
     if (this.currentItemId || this.currentTurnId || this.pumpTimer) return true;
     return ['countdown', 'sending', 'streaming', 'waiting-limits'].includes(this.app.state);
+  }
+
+  canChangeSession() {
+    return !!this.app.sessionId && this.app.state === 'paused' && !this.isQueueProcessingActive() && !this.currentItemId && !this.currentTurnId && !this.approval;
+  }
+
+  cancelSessionChange() {
+    if (!this.app.sessionId || this.app.state !== 'selecting-session') return { ok: true };
+    this.app.state = this.sessionPickerReturnState || 'paused';
+    this.sessionPickerReturnState = null;
+    this.app.message = 'Session unchanged';
+    this.broadcastAll();
+    return { ok: true };
   }
 
   async movePendingToNext(item) {
@@ -791,6 +825,7 @@ class CodexLimitWatchApp {
         this.saveQueue().catch(() => {});
       }
       this.appendOutput(status === 'completed' ? '[turn] completed' : `[turn] ${status}${errMessage ? ': ' + errMessage : ''}`, status === 'completed' ? 'turn' : 'error');
+      this.tryReadSession().then(() => this.broadcastAll()).catch((err) => this.debugLog('refresh session title failed', err.message));
       if (this.currentTurnResolve) this.currentTurnResolve();
       if (status !== 'completed') this.pause('Auto-send paused after turn failure. Type /resume after reviewing the error.');
       return;
@@ -1129,6 +1164,7 @@ class CodexLimitWatchApp {
       await this.loadSessions();
       return sendJson(res, 200, { ok: true });
     }
+    if (route === '/api/session/cancel-change') return sendJson(res, 200, this.cancelSessionChange());
     if (route === '/api/config/model') return sendJson(res, 200, await this.setModel(body.model));
     if (route === '/api/config/effort') return sendJson(res, 200, await this.setEffort(body.effort));
     if (route === '/api/config/theme') return sendJson(res, 200, await this.setTheme(body.theme));
@@ -1159,6 +1195,7 @@ class CodexLimitWatchApp {
         nextPendingId: nextPending?.id || null,
         canInterrupt: !!(this.currentTurnId && this.app.sessionId),
         canPause: !!this.app.sessionId && this.isQueueProcessingActive() && !['paused', 'done', 'error', 'initializing', 'selecting-session', 'approval-required'].includes(this.app.state),
+        canChangeSession: this.canChangeSession(),
       },
       sessions: this.sessions,
       queue: this.queue,

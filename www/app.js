@@ -45,6 +45,12 @@
     title = title == null || title === '' ? value : String(title);
     return '<div class="meta-item" aria-label="' + esc(label + ': ' + title) + '"><span>' + esc(label) + '</span><b>' + esc(value) + '</b></div>';
   }
+  function sessionMetaItem(app, value, title){
+    value = value == null || value === '' ? '—' : String(value);
+    title = title == null || title === '' ? value : String(title);
+    var action = app.canChangeSession ? '<button id="changeSessionBtn" class="meta-action" title="Change session">Change</button>' : '';
+    return '<div class="meta-item session-meta-item" aria-label="' + esc('Session: ' + title) + '"><span>Session</span><div class="meta-value-row"><b>' + esc(value) + '</b>' + action + '</div></div>';
+  }
   function envChip(label, value, ok){
     value = value == null || value === '' ? '—' : String(value);
     return '<span class="env-chip ' + (ok ? 'ok' : '') + '" aria-label="' + esc(label + ': ' + value) + '" title="' + esc(label + ': ' + value) + '"><i></i>' + esc(label) + ': <b>' + esc(value) + '</b></span>';
@@ -172,7 +178,7 @@
       envChip('Network', String(app.network), !!app.network);
     document.getElementById('meta').innerHTML =
       metaItem('Project', app.projectDir) +
-      metaItem('Session', sessionTitle) +
+      sessionMetaItem(app, sessionTitle, sessionTitle) +
       metaItem('Session ID', sessionId) +
       metaItem('Reset', resetText);
     renderLimitStats();
@@ -205,9 +211,13 @@
     if(app.state !== 'selecting-session'){ picker.classList.add('hidden'); return; }
     picker.classList.remove('hidden');
     var sessions = snap.sessions || [];
-    var html = '<div class="panel-head"><h2>Select Codex session</h2><div class="panel-actions"><button id="createSessionBtn" class="primary">Create new session</button><button id="reloadSessionsBtn">Reload</button></div></div>';
+    var canCancel = !!app.sessionId;
+    var html = '<div class="session-modal" role="dialog" aria-modal="true" aria-labelledby="sessionModalTitle">' +
+      '<div class="panel-head"><h2 id="sessionModalTitle">Select Codex session</h2><div class="panel-actions"><button id="createSessionBtn" class="primary">Create new session</button><button id="reloadSessionsBtn">Reload</button>' + (canCancel ? '<button id="cancelSessionChangeBtn">Cancel</button>' : '') + '</div></div>' +
+      '<div class="session-list-body">';
     if(!sessions.length) html += '<div class="empty">No active sessions found for this project. Create a new session to start queueing prompts, or reload after starting Codex elsewhere.</div>';
     sessions.forEach(function(s){ html += '<div class="session"><div class="session-title">' + esc(s.title || s.id) + ' <span class="badge">' + esc(s.cwdMatch || 'other') + '</span></div><div class="session-meta">ID: ' + esc(s.id) + '</div><div class="session-meta">CWD: ' + esc(s.cwd || '—') + '</div><div class="session-meta">Updated: ' + esc(fmtTime(s.updatedAt)) + '</div><div class="session-meta">' + esc(s.preview || '') + '</div><div class="actions"><button data-session="' + esc(s.id) + '" class="primary">Select</button></div></div>'; });
+    html += '</div></div>';
     picker.innerHTML = html;
   }
   function renderApproval(){
@@ -358,6 +368,8 @@
     }
     else if(t.id === 'createSessionBtn') api('/api/session/create').catch(function(e){ alert(e.message); });
     else if(t.id === 'reloadSessionsBtn') api('/api/session/reload');
+    else if(t.id === 'changeSessionBtn') api('/api/session/reload').catch(function(e){ alert(e.message); });
+    else if(t.id === 'cancelSessionChangeBtn') api('/api/session/cancel-change').catch(function(e){ alert(e.message); });
     else if(t.dataset.session) api('/api/session/select', { sessionId:t.dataset.session }).catch(function(e){ alert(e.message); });
     else if(t.dataset.approval) api('/api/approval/respond', { decision:t.dataset.approval }).catch(function(e){ alert(e.message); });
     else if(t.dataset.act){
