@@ -180,7 +180,7 @@ button:disabled { opacity: .45; cursor: not-allowed; }
   grid-column: 1 / span 2;
   grid-row: 2;
   display: grid;
-  grid-template-columns: minmax(200px, 1fr) minmax(200px, .92fr) minmax(200px, 1fr) minmax(160px, .34fr);
+  grid-template-columns: minmax(200px, 1fr) minmax(200px, .92fr) minmax(200px, 1fr) minmax(160px, .65fr);
   min-width: 0;
   border: 1px solid var(--border-soft);
   border-radius: 8px;
@@ -831,7 +831,7 @@ pre { margin: 0; white-space: pre-wrap; word-break: break-word; }
     grid-row: 1 / span 2;
   }
   .meta {
-    grid-template-columns: minmax(180px, 1fr) minmax(180px, 1fr) minmax(220px, 1.1fr) minmax(90px, .4fr);
+    grid-template-columns: minmax(180px, 1fr) minmax(180px, 1fr) minmax(180px, 1fr) minmax(140px, .6fr)
   }
   .meta-item {
     border-right: 1px solid var(--border-soft);
