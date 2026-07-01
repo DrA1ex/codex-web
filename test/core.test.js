@@ -38,7 +38,10 @@ function makeAppWithQueue(queue) {
   });
   app.queue = queue;
   app.saveQueue = async () => {};
+  app.saveState = async () => {};
   app.broadcastAll = () => {};
+  app.broadcast = () => {};
+  app.schedulePump = (delay = 0) => { app.lastScheduledDelay = delay; };
   return app;
 }
 
@@ -148,4 +151,102 @@ test('reorderQueueItem supports explicit move to end of pending segment', async 
   await app.reorderQueueItem('a', { beforeId: null });
 
   assert.deepEqual(app.queue.map((i) => i.id), ['b', 'done', 'c', 'a']);
+});
+
+test('sendComposerNow sends immediately only when idle and without pending queue', async () => {
+  const app = makeAppWithQueue([]);
+  app.rateLimits = { status: 'available', buckets: [], resetAt: null };
+  const sent = [];
+  app.sendPrompt = async (queueItem, options) => {
+    sent.push({ queueItem, options });
+  };
+
+  const result = await app.sendComposerNow('hello from composer');
+
+  assert.equal(result.ok, true);
+  assert.equal(result.clearComposer, true);
+  assert.equal(result.item.text, 'hello from composer');
+  assert.equal(app.queue.length, 0);
+  assert.equal(sent.length, 1);
+  assert.deepEqual(sent[0].options, { continueQueue: false });
+});
+
+test('sendComposerNow refuses one-shot send when queue is busy or has pending items', async () => {
+  const busy = makeAppWithQueue([]);
+  busy.rateLimits = { status: 'available', buckets: [], resetAt: null };
+  busy.app.state = 'countdown';
+  assert.match((await busy.sendComposerNow('hello')).message, /busy/);
+
+  const queued = makeAppWithQueue([item('pending')]);
+  queued.rateLimits = { status: 'available', buckets: [], resetAt: null };
+  assert.match((await queued.sendComposerNow('hello')).message, /pending prompts/);
+});
+
+test('sendItemNow places item after active prompt when queue is already processing', async () => {
+  const active = item('active', 'sent');
+  const first = item('first');
+  const second = item('second');
+  const app = makeAppWithQueue([first, active, second]);
+  app.currentItemId = 'active';
+
+  await app.sendItemNow(second);
+
+  assert.deepEqual(app.queue.map((i) => i.id), ['first', 'active', 'second']);
+  assert.equal(app.lastScheduledDelay, 200);
+  assert.match(app.output.at(-1).text, /\[queue\] next #second/);
+});
+
+test('canChangeSession blocks unsafe queue states and allows completed idle session', () => {
+  const pending = makeAppWithQueue([item('pending')]);
+  pending.app.state = 'paused';
+  assert.equal(pending.canChangeSession(), false);
+
+  const completed = makeAppWithQueue([item('done', 'completed')]);
+  completed.app.state = 'done';
+  assert.equal(completed.canChangeSession(), true);
+
+  completed.approval = { rpcId: 1 };
+  assert.equal(completed.canChangeSession(), false);
+});
+
+test('queue scheduling requires paused pending queue and stores future schedule', async () => {
+  const app = makeAppWithQueue([item('pending')]);
+  app.app.state = 'paused';
+  const future = new Date(Date.now() + 60_000).toISOString();
+
+  const result = await app.setQueueSchedule(future);
+
+  assert.equal(result.ok, true);
+  assert.equal(app.app.state, 'scheduled');
+  assert.equal(app.app.scheduledRunAt, future);
+  assert.equal(app.lastScheduledDelay >= 1000, true);
+
+  await app.resetQueueSchedule();
+  assert.equal(app.app.state, 'paused');
+  assert.equal(app.app.scheduledRunAt, null);
+});
+
+test('diff output skips identical repeated diffs and updates changed diff block', () => {
+  const app = makeAppWithQueue([]);
+
+  app.updateDiffOutput('diff --git a/file b/file\n+one');
+  app.updateDiffOutput('diff --git a/file b/file\n+one');
+  assert.equal(app.output.length, 1);
+  assert.equal(app.output[0].type, 'diff');
+
+  app.updateDiffOutput('diff --git a/file b/file\n+two');
+  assert.equal(app.output.length, 1);
+  assert.match(app.output[0].text, /\+two/);
+});
+
+test('command output completion updates existing tool block once', () => {
+  const app = makeAppWithQueue([]);
+  const out = app.appendOutput('[tool] command\nnpm test', 'tool');
+  app.trackCommandOutput({ id: 'cmd-1' }, out);
+
+  app.updateCommandOutput({ id: 'cmd-1', status: 'completed', exitCode: 0 });
+  app.updateCommandOutput({ id: 'cmd-1', status: 'completed', exitCode: 0 });
+
+  assert.equal(app.output.length, 1);
+  assert.equal((app.output[0].text.match(/\nexit: 0/g) || []).length, 1);
 });
