@@ -472,8 +472,32 @@ class CodexLimitWatchApp {
 
   schedulePump(delay = 0) {
     if (this.pumpTimer) clearTimeout(this.pumpTimer);
-    this.pumpTimer = setTimeout(() => this.pumpQueue().catch((err) => this.setError(err.message)), delay);
+    this.pumpTimer = setTimeout(() => {
+      this.pumpTimer = null;
+      this.pumpQueue().catch((err) => this.setError(err.message));
+    }, delay);
     this.pumpTimer.unref();
+  }
+
+  isQueueProcessingActive() {
+    if (this.currentItemId || this.currentTurnId || this.pumpTimer) return true;
+    return ['countdown', 'sending', 'streaming', 'waiting-limits'].includes(this.app.state);
+  }
+
+  async movePendingToNext(item) {
+    if (!item || item.status !== 'pending') throw new Error('Only pending prompts can be sent');
+    const from = this.queue.indexOf(item);
+    if (from < 0) throw new Error('Queue item not found');
+    let target = 0;
+    const runningIndex = this.queue.findIndex((i) => i.id === this.currentItemId || i.status === 'sending' || i.status === 'sent');
+    if (runningIndex >= 0) target = runningIndex + 1;
+    this.queue.splice(from, 1);
+    if (from < target) target -= 1;
+    this.queue.splice(Math.max(0, target), 0, item);
+    await this.saveQueue();
+    this.appendOutput(`[queue] next #${item.id}`, 'system');
+    this.broadcastAll();
+    this.schedulePump(200);
   }
 
   async pumpQueue() {
@@ -524,9 +548,15 @@ class CodexLimitWatchApp {
   async sendItemNow(item) {
     if (this.shuttingDown) return;
     if (!this.app.sessionId) throw new Error('No Codex session selected');
+    if (this.isQueueProcessingActive()) {
+      await this.movePendingToNext(item);
+      return;
+    }
     if (this.currentItemId || this.currentTurnId) throw new Error('A prompt is already running');
     if (!item || item.status !== 'pending') throw new Error('Only pending prompts can be sent');
-    this.resume();
+    this.app.state = 'watching';
+    this.app.message = 'Manual send requested';
+    this.broadcastAll();
     if (this.rateLimits.status === 'unknown') {
       await this.pollRateLimits();
     }
@@ -543,10 +573,11 @@ class CodexLimitWatchApp {
       this.broadcastAll();
       return;
     }
-    await this.runCountdownAndSend(item);
+    await this.runCountdownAndSend(item, { continueQueue: false });
   }
 
-  async runCountdownAndSend(item) {
+  async runCountdownAndSend(item, options = {}) {
+    const continueQueue = options.continueQueue !== false;
     this.countdownCancel = false;
     this.app.state = 'countdown';
     this.broadcastAll();
@@ -558,7 +589,7 @@ class CodexLimitWatchApp {
       await sleep(1000);
     }
     if (this.app.state === 'paused' || this.countdownCancel) return;
-    await this.sendPrompt(item);
+    await this.sendPrompt(item, { continueQueue });
   }
 
   visibleIndex(id) {
@@ -566,7 +597,8 @@ class CodexLimitWatchApp {
     return i >= 0 ? i + 1 : '?';
   }
 
-  async sendPrompt(item) {
+  async sendPrompt(item, options = {}) {
+    const continueQueue = options.continueQueue !== false;
     normalizeQueueItem(item);
     item.status = 'sending';
     item.startedAt = nowIso();
@@ -621,10 +653,14 @@ class CodexLimitWatchApp {
       this.turnStarted = false;
       await this.saveState();
       this.broadcastAll();
-      if (this.app.state !== 'paused' && this.app.state !== 'approval-required' && this.app.state !== 'error') {
+      if (continueQueue && this.app.state !== 'paused' && this.app.state !== 'approval-required' && this.app.state !== 'error') {
         this.app.state = 'watching';
         this.broadcastAll();
         this.schedulePump(1500);
+      } else if (!continueQueue && this.app.state !== 'paused' && this.app.state !== 'approval-required' && this.app.state !== 'error') {
+        this.app.state = 'watching';
+        this.app.message = 'Manual send completed';
+        this.broadcastAll();
       }
     }
   }
