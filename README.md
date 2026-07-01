@@ -28,20 +28,18 @@ cd codex-web
 Run it directly:
 
 ```bash
-./codex-limit-watch-web
+./codex-web
 ```
 
 The script prints a local URL and opens the browser unless `--no-open` is used.
 
 ## Install as `codex-web`
 
-The executable in this repo is named `codex-limit-watch-web`, but the recommended user command is shorter: `codex-web`.
-
 ### Option 1: symlink into `~/.local/bin`
 
 ```bash
 mkdir -p ~/.local/bin
-ln -sf "$(pwd)/codex-limit-watch-web" ~/.local/bin/codex-web
+ln -sf "$(pwd)/codex-web" ~/.local/bin/codex-web
 ```
 
 Make sure `~/.local/bin` is on your `PATH`:
@@ -59,7 +57,7 @@ codex-web
 ### Option 2: symlink into `/usr/local/bin`
 
 ```bash
-ln -sf "$(pwd)/codex-limit-watch-web" /usr/local/bin/codex-web
+ln -sf "$(pwd)/codex-web" /usr/local/bin/codex-web
 ```
 
 Restart your shell, then run:
@@ -124,7 +122,7 @@ codex-web SESSION_ID
 By default, state is stored under:
 
 ```text
-~/.local/state/codex-limit-watch-web
+~/.local/state/codex-web
 ```
 
 This includes queued prompts, per-session state, theme settings, and logs. Browser local storage is not used for app settings.

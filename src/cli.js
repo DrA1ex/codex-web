@@ -9,7 +9,7 @@ function parseArgs(argv) {
     host: '127.0.0.1',
     port: 0,
     noOpen: false,
-    stateDir: '~/.local/state/codex-limit-watch-web',
+    stateDir: '~/.local/state/codex-web',
     codexBin: 'codex',
     projectDir: process.cwd(),
     allSessions: false,
@@ -86,7 +86,7 @@ function validateOptions(opts) {
 }
 
 function printHelp() {
-  console.log(`Codex Limit Watch Web ${VERSION}\n\nUsage:\n  codex-limit-watch-web [session_id] [options]\n\nOptions:\n  --host 127.0.0.1\n  --port 0\n  --no-open\n  --state-dir ~/.local/state/codex-limit-watch-web\n  --codex-bin codex\n  --project-dir <dir>\n  --all-sessions\n  --session-picker-limit 50\n  --watch-interval 30\n  --countdown 5\n  --model gpt-5.5\n  --effort low|medium|high|xhigh\n  --sandbox read-only|workspace-write|danger-full-access\n  --approval-policy on-request|never|untrusted|on-failure\n  --approval-response manual|accept|accept-for-session|decline|cancel\n  --network true|false\n  --add-dir <dir>\n  --log-jsonrpc\n  --debug\n`);
+  console.log(`codex-web ${VERSION}\n\nUsage:\n  codex-web [session_id] [options]\n\nOptions:\n  --host 127.0.0.1\n  --port 0\n  --no-open\n  --state-dir ~/.local/state/codex-web\n  --codex-bin codex\n  --project-dir <dir>\n  --all-sessions\n  --session-picker-limit 50\n  --watch-interval 30\n  --countdown 5\n  --model gpt-5.5\n  --effort low|medium|high|xhigh\n  --sandbox read-only|workspace-write|danger-full-access\n  --approval-policy on-request|never|untrusted|on-failure\n  --approval-response manual|accept|accept-for-session|decline|cancel\n  --network true|false\n  --add-dir <dir>\n  --log-jsonrpc\n  --debug\n`);
 }
 
 module.exports = { parseArgs, validateOptions, printHelp };

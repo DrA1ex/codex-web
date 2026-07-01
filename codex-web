@@ -2,7 +2,7 @@
 'use strict';
 
 /*
- * Codex Limit Watch Web
+ * codex-web
  * Local Web UI for Codex app-server prompt queueing.
  * Browser assets are loaded from ./www next to this executable.
  * Runtime dependencies: Node.js built-ins only.

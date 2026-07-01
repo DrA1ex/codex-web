@@ -402,7 +402,7 @@ class CodexLimitWatchApp {
         cwd: this.opts.projectDir,
         approvalPolicy: mapApprovalPolicy(this.opts.approvalPolicy),
         sandbox: mapSandbox(this.opts.sandbox),
-        serviceName: 'codex-limit-watch-web',
+        serviceName: 'codex-web',
       };
       if (this.opts.model) params.model = this.opts.model;
       if (this.opts.effort) params.effort = this.opts.effort;

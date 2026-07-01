@@ -2,9 +2,9 @@
 
 ## Project
 
-`codex-limit-watch-web` is a dependency-free Node.js web UI for queueing prompts into a Codex app-server session.
+`codex-web` is a dependency-free Node.js web UI for queueing prompts into a Codex app-server session.
 
-- `codex-limit-watch-web`: executable Node script; starts the local UI server, runs `codex app-server`, talks JSON-RPC, stores per-session queues.
+- `codex-web`: executable Node script; starts the local UI server, runs `codex app-server`, talks JSON-RPC, stores per-session queues.
 - `www/index.html`: static UI shell.
 - `www/app.js`: state rendering, UI actions, local API calls, SSE updates.
 - `www/styles.css`: viewport-bounded layout and panel styling.
@@ -43,17 +43,17 @@ Queue routes:
 Validation:
 
 ```bash
-node --check codex-limit-watch-web
+node --check codex-web
 node --check www/app.js
 ```
 
 Run locally:
 
 ```bash
-./codex-limit-watch-web --no-open --port 8092
+./codex-web --no-open --port 8092
 ```
 
-Restart the server after editing `codex-limit-watch-web`; it is not hot-reloaded.
+Restart the server after editing `codex-web`; it is not hot-reloaded.
 
 ## Guidance
 
