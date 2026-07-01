@@ -521,6 +521,34 @@ button:disabled { opacity: .45; cursor: not-allowed; }
   opacity: 0;
   transform: translateY(-6px) scale(.992);
 }
+.queue-item.draggable {
+  cursor: grab;
+}
+.queue-item.dragging {
+  cursor: grabbing;
+  opacity: .58;
+}
+.queue-item.drop-before,
+.queue-item.drop-after {
+  position: relative;
+}
+.queue-item.drop-before::before,
+.queue-item.drop-after::after {
+  content: "";
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  height: 2px;
+  border-radius: 999px;
+  background: var(--accent);
+  box-shadow: 0 0 0 3px rgba(88, 166, 255, .14);
+}
+.queue-item.drop-before::before {
+  top: -4px;
+}
+.queue-item.drop-after::after {
+  bottom: -4px;
+}
 .queue-item.active {
   border-color: rgba(42, 128, 255, .92);
   box-shadow: 0 0 0 1px rgba(42, 128, 255, .28) inset, 0 0 22px rgba(42, 128, 255, .12);
@@ -552,6 +580,19 @@ button:disabled { opacity: .45; cursor: not-allowed; }
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.queue-drag-handle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  margin-right: 4px;
+  color: var(--muted);
+  cursor: grab;
+  user-select: none;
+}
+.queue-item.dragging .queue-drag-handle {
+  cursor: grabbing;
 }
 .status {
   color: var(--warn);

@@ -14,6 +14,8 @@
   var scheduleOpen = false;
   var scheduleDraft = null;
   var mobileCollapsed = { header:false, limits:false, queue:false };
+  var queueDragId = null;
+  var queueDropBeforeId = undefined;
   var composer = document.getElementById('composer');
   var outputEl = document.getElementById('output');
   var compactHeaderQuery = window.matchMedia ? window.matchMedia('(max-width: 1679px)') : null;
@@ -114,12 +116,7 @@
     if(activeQueueFilter === 'completed') return isDoneStatus(status);
     return true;
   }
-  function canMoveQueueItem(q, index, direction){
-    var item = q[index];
-    if(!item || item.status !== 'pending') return false;
-    var nextIndex = direction === 'up' ? index - 1 : index + 1;
-    return !!(q[nextIndex] && q[nextIndex].status === 'pending');
-  }
+  function isPendingQueueItem(item){ return item && item.status === 'pending'; }
   function pct(n){ n = Number(n); return Number.isFinite(n) ? Math.max(0, Math.min(100, n)) : null; }
   function isCompactHeader(){ return !!(compactHeaderQuery && compactHeaderQuery.matches); }
   function limitBadgeText(status){
@@ -435,6 +432,39 @@
       }
     });
   }
+  function clearQueueDropMarker(){
+    queueDropBeforeId = undefined;
+    var el = document.getElementById('queue');
+    if(!el) return;
+    Array.prototype.forEach.call(el.querySelectorAll('.queue-item.drop-before, .queue-item.drop-after'), function(node){
+      node.classList.remove('drop-before', 'drop-after');
+    });
+  }
+  function pendingQueueIdsFromDom(){
+    var el = document.getElementById('queue');
+    if(!el) return [];
+    return Array.prototype.map.call(el.querySelectorAll('.queue-item[data-queue-status="pending"]'), function(node){ return node.dataset.queueId; });
+  }
+  function setQueueDropMarker(target, before){
+    clearQueueDropMarker();
+    if(!target) return;
+    target.classList.add(before ? 'drop-before' : 'drop-after');
+    if(before) {
+      queueDropBeforeId = target.dataset.queueId;
+      return;
+    }
+    var ids = pendingQueueIdsFromDom();
+    var idx = ids.indexOf(target.dataset.queueId);
+    queueDropBeforeId = idx >= 0 && idx + 1 < ids.length ? ids[idx + 1] : '';
+  }
+  function finishQueueDrag(){
+    var id = queueDragId;
+    var beforeId = queueDropBeforeId;
+    queueDragId = null;
+    clearQueueDropMarker();
+    if(id == null || beforeId === undefined || beforeId === id) return;
+    api('/api/queue/reorder', { id:id, beforeId:beforeId || null }).catch(function(e){ alert(e.message); getState(); });
+  }
   function renderQueue(){
     var q = snap.queue || []; var el = document.getElementById('queue'); var app = snap.app || {};
     if(!q.length){ el.innerHTML = '<div class="empty">Queue is empty.</div>'; return; }
@@ -447,15 +477,14 @@
       var active = item.status === 'sending' || item.status === 'sent';
       var completed = item.status === 'completed';
       var running = item.status === 'sending' || item.status === 'sent';
-      var canMoveUp = canMoveQueueItem(q, i, 'up');
-      var canMoveDown = canMoveQueueItem(q, i, 'down');
       var editing = editingQueueItemId === item.id && !completed && !running;
       var expanded = !!expandedQueueItems[item.id] || editing;
       var text = expanded ? (item.text || item.preview || '') : (item.preview || item.text || '');
       var idAttr = esc(item.id);
       var toggleAttrs = editing ? '' : ' data-toggle-prompt="1" data-id="' + idAttr + '" role="button" tabindex="0" title="Click to ' + (expanded ? 'collapse' : 'expand') + ' prompt"';
-      html += '<div class="queue-item ' + (active ? 'active ' : '') + (running ? 'running ' : '') + (completed ? 'completed ' : '') + (expanded ? 'expanded ' : '') + (editing ? 'editing' : '') + '" data-queue-id="' + idAttr + '">' +
-        '<div class="queue-top"><span>#' + (i+1) + ' <span class="status ' + esc(item.status) + '">' + esc(item.status) + '</span> · ' + item.lineCount + ' lines</span><span>' + esc(fmtTime(completed && item.finishedAt ? item.finishedAt : item.createdAt)) + '</span></div>';
+      var draggable = isPendingQueueItem(item) && !editing;
+      html += '<div class="queue-item ' + (active ? 'active ' : '') + (running ? 'running ' : '') + (completed ? 'completed ' : '') + (draggable ? 'draggable ' : '') + (expanded ? 'expanded ' : '') + (editing ? 'editing' : '') + '" data-queue-id="' + idAttr + '" data-queue-status="' + esc(item.status) + '"' + (draggable ? ' draggable="true"' : '') + '>' +
+        '<div class="queue-top"><span>' + (draggable ? '<span class="queue-drag-handle" title="Drag to reorder">↕</span>' : '') + '#' + (i+1) + ' <span class="status ' + esc(item.status) + '">' + esc(item.status) + '</span> · ' + item.lineCount + ' lines</span><span>' + esc(fmtTime(completed && item.finishedAt ? item.finishedAt : item.createdAt)) + '</span></div>';
       if(editing) {
         var draft = Object.prototype.hasOwnProperty.call(editDrafts, item.id) ? editDrafts[item.id] : (item.text || '');
         html += '<textarea class="queue-edit" data-edit-text="' + idAttr + '" spellcheck="false">' + esc(draft) + '</textarea>';
@@ -466,7 +495,7 @@
       if(editing) {
         html += '<div class="actions queue-actions"><button data-act="saveEdit" data-id="' + idAttr + '" class="primary">Save</button><button data-act="cancelEdit" data-id="' + idAttr + '">Cancel</button></div>';
       } else if(!completed && !running) {
-        html += '<div class="actions queue-actions"><button data-act="edit" data-id="' + idAttr + '">Edit</button><button data-act="duplicate" data-id="' + idAttr + '">Duplicate</button><button data-act="up" data-id="' + idAttr + '"' + (canMoveUp ? '' : ' disabled') + '>Up</button><button data-act="down" data-id="' + idAttr + '"' + (canMoveDown ? '' : ' disabled') + '>Down</button><button data-act="sendNow" data-id="' + idAttr + '">Send</button><button data-act="remove" data-id="' + idAttr + '" class="danger">Remove</button>';
+        html += '<div class="actions queue-actions"><button data-act="edit" data-id="' + idAttr + '">Edit</button><button data-act="duplicate" data-id="' + idAttr + '">Duplicate</button><button data-act="sendNow" data-id="' + idAttr + '">Send</button><button data-act="remove" data-id="' + idAttr + '" class="danger">Remove</button>';
         if(item.status === 'unknown' || item.status === 'failed') html += '<button data-act="markCompleted" data-id="' + idAttr + '">Done</button><button data-act="retry" data-id="' + idAttr + '">Retry</button>';
         html += '</div>';
       }
@@ -621,9 +650,6 @@
     else if(t.dataset.act){
       var id = t.dataset.id; var act = t.dataset.act; var itemIndex = (snap.queue || []).findIndex(function(x){return x.id === id;}); var item = itemIndex >= 0 ? snap.queue[itemIndex] : null;
       if(act === 'remove') openConfirm('remove', 'Remove prompt?', 'This prompt will be removed from the queue.', 'Yes, remove', true, { id:id });
-      else if(act === 'up' || act === 'down') {
-        if(canMoveQueueItem(snap.queue || [], itemIndex, act)) api('/api/queue/reorder', { id:id, direction:act });
-      }
       else if(act === 'edit') { editingQueueItemId = id; editDrafts[id] = item ? item.text || '' : ''; pendingEditFocusId = id; expandedQueueItems[id] = true; renderQueue(); }
       else if(act === 'cancelEdit') { delete editDrafts[id]; editingQueueItemId = null; renderQueue(); }
       else if(act === 'saveEdit') {
@@ -632,6 +658,41 @@
       }
       else api('/api/queue/update', { id:id, action:act });
     }
+  });
+  document.addEventListener('dragstart', function(ev){
+    var item = ev.target && ev.target.closest ? ev.target.closest('.queue-item[draggable="true"]') : null;
+    if(!item) return;
+    if(ev.target.closest && ev.target.closest('button,textarea,select,input')) {
+      ev.preventDefault();
+      return;
+    }
+    queueDragId = item.dataset.queueId;
+    item.classList.add('dragging');
+    if(ev.dataTransfer) {
+      ev.dataTransfer.effectAllowed = 'move';
+      ev.dataTransfer.setData('text/plain', queueDragId);
+    }
+  });
+  document.addEventListener('dragover', function(ev){
+    if(!queueDragId) return;
+    var item = ev.target && ev.target.closest ? ev.target.closest('.queue-item[data-queue-status="pending"]') : null;
+    if(!item || item.dataset.queueId === queueDragId) return;
+    ev.preventDefault();
+    if(ev.dataTransfer) ev.dataTransfer.dropEffect = 'move';
+    var rect = item.getBoundingClientRect();
+    setQueueDropMarker(item, ev.clientY < rect.top + rect.height / 2);
+  });
+  document.addEventListener('drop', function(ev){
+    if(!queueDragId) return;
+    ev.preventDefault();
+    finishQueueDrag();
+  });
+  document.addEventListener('dragend', function(){
+    var el = document.getElementById('queue');
+    if(el) {
+      Array.prototype.forEach.call(el.querySelectorAll('.queue-item.dragging'), function(node){ node.classList.remove('dragging'); });
+    }
+    if(queueDragId) finishQueueDrag();
   });
   document.addEventListener('input', function(ev){
     var t = ev.target;

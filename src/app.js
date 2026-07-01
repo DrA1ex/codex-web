@@ -1276,14 +1276,32 @@ class CodexLimitWatchApp {
     await this.saveQueue();
     this.broadcastAll();
   }
-  async reorderQueueItem(id, direction) {
+  async reorderQueueItem(id, body = {}) {
     const idx = this.queue.findIndex((i) => i.id === id);
     if (idx < 0) throw new Error('Queue item not found');
-    const j = direction === 'up' ? idx - 1 : idx + 1;
-    if (j < 0 || j >= this.queue.length) return;
-    const tmp = this.queue[idx];
-    this.queue[idx] = this.queue[j];
-    this.queue[j] = tmp;
+    const item = this.queue[idx];
+    if (item.status !== 'pending') throw new Error('Only pending prompts can be reordered');
+    const pending = this.queue.filter((i) => i.status === 'pending');
+    const fromPending = pending.findIndex((i) => i.id === id);
+    if (fromPending < 0) throw new Error('Queue item not found');
+    pending.splice(fromPending, 1);
+    let toPending = fromPending;
+    if (Object.prototype.hasOwnProperty.call(body, 'beforeId')) {
+      toPending = pending.length;
+      if (!body.beforeId) {
+        // Explicit null/empty beforeId means "move to the end of the pending segment".
+      } else {
+        const beforeItem = this.queue.find((i) => i.id === body.beforeId);
+        if (!beforeItem || beforeItem.status !== 'pending') throw new Error('Can reorder only around pending prompts');
+        const beforePending = pending.findIndex((i) => i.id === body.beforeId);
+        if (beforePending >= 0) toPending = beforePending;
+      }
+    } else if (body.direction) {
+      toPending = body.direction === 'up' ? Math.max(0, fromPending - 1) : Math.min(pending.length, fromPending + 1);
+    }
+    pending.splice(toPending, 0, item);
+    let pendingIndex = 0;
+    this.queue = this.queue.map((queueItem) => queueItem.status === 'pending' ? pending[pendingIndex++] : queueItem);
     await this.saveQueue();
     this.broadcastAll();
   }
@@ -1362,7 +1380,7 @@ class CodexLimitWatchApp {
     if (route === '/api/queue/cancel-run') return sendJson(res, 200, await this.cancelQueueRun());
     if (route === '/api/queue/update') { await this.updateQueueItem(body); return sendJson(res, 200, { ok: true }); }
     if (route === '/api/queue/remove') { await this.removeQueueItem(String(body.id)); return sendJson(res, 200, { ok: true }); }
-    if (route === '/api/queue/reorder') { await this.reorderQueueItem(String(body.id), body.direction); return sendJson(res, 200, { ok: true }); }
+    if (route === '/api/queue/reorder') { await this.reorderQueueItem(String(body.id), body); return sendJson(res, 200, { ok: true }); }
     if (route === '/api/queue/clear') { await this.clearPending(); return sendJson(res, 200, { ok: true }); }
     if (route === '/api/queue/clear-completed') { await this.clearCompleted(); return sendJson(res, 200, { ok: true }); }
     if (route === '/api/queue/undo') return sendJson(res, 200, await this.undoLast());
