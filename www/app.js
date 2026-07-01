@@ -337,7 +337,7 @@
       var expanded = !!expandedDiffOutput[l.id];
       var lineCount = String(meta.body || '').split(/\r?\n/).length;
       var firstLine = String(meta.body || '').split(/\r?\n/).find(function(line){ return line.trim(); }) || 'Diff updated';
-      return '<div class="out-line diff ' + (expanded ? 'expanded' : 'collapsed') + '"><button type="button" class="out-diff-toggle" data-output-diff="' + diffId + '"><span>' + (expanded ? 'Collapse' : 'Expand') + ' diff</span><b>' + lineCount + ' lines</b><em>' + esc(firstLine) + '</em></button>' + (expanded ? '<pre class="out-body">' + esc(meta.body) + '</pre>' : '') + '</div>';
+      return '<div class="out-line diff ' + (expanded ? 'expanded' : 'collapsed') + '"><div class="out-diff-card"><button type="button" class="out-diff-toggle" data-output-diff="' + diffId + '"><span>' + (expanded ? 'Collapse' : 'Expand') + ' diff</span><b>' + lineCount + ' lines</b><em>' + esc(firstLine) + '</em></button>' + (expanded ? '<pre class="out-body">' + esc(meta.body) + '</pre>' : '') + '</div></div>';
     }
     var block = type === 'diff' || type === 'prompt' || type === 'plan' || type === 'tool-delta' || type === 'delta' || type === 'reasoning-delta' || type === 'context-delta';
     return '<div class="out-line ' + esc(type) + '"><span class="out-label">' + esc(meta.label) + '</span>' + (block ? '<pre class="out-body">' + esc(meta.body) + '</pre>' : '<span class="out-body">' + esc(meta.body) + '</span>') + '</div>';
