@@ -402,6 +402,7 @@ class CodexLimitWatchApp {
     this.lockAcquired = false;
     this.pumpTimer = null;
     this.limitTimer = null;
+    this.approvalTimer = null;
     this.countdownCancel = false;
     this.currentTurnResolve = null;
     this.currentTurnReject = null;
@@ -949,6 +950,7 @@ class CodexLimitWatchApp {
     if (method === 'serverRequest/resolved') {
       if (this.approval && (!params.requestId || params.requestId === this.approval.requestId)) {
         this.approval = null;
+        this.clearApprovalTimeout();
         this.broadcast('approval', null);
         if (this.app.state === 'approval-required') this.resume();
       }
@@ -1044,10 +1046,12 @@ class CodexLimitWatchApp {
         method,
         params,
         createdAt: nowIso(),
+        expiresAt: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
       };
       this.app.state = 'approval-required';
       this.app.message = 'Approval required';
       this.appendOutput('[approval] required. Use UI buttons or /approve, /approve-session, /decline, /cancel.', 'system');
+      this.scheduleApprovalTimeout(this.approval.requestId);
       this.broadcast('approval', this.approval);
       this.broadcastAll();
       return;
@@ -1065,6 +1069,7 @@ class CodexLimitWatchApp {
 
   async respondApproval(decision) {
     if (!this.approval) throw new Error('No pending approval request');
+    this.clearApprovalTimeout();
     const mapped = mapApprovalResponse(decision);
     const id = this.approval.rpcId;
     this.rpc.respond(id, mapped);
@@ -1072,6 +1077,27 @@ class CodexLimitWatchApp {
     this.approval = null;
     this.broadcast('approval', null);
     if (this.app.state === 'approval-required') this.resume();
+  }
+  scheduleApprovalTimeout(requestId) {
+    this.clearApprovalTimeout();
+    this.approvalTimer = setTimeout(() => {
+      this.autoRejectApproval(requestId).catch((err) => this.setError(err.message));
+    }, 15 * 60 * 1000);
+    this.approvalTimer.unref();
+  }
+  clearApprovalTimeout() {
+    if (this.approvalTimer) clearTimeout(this.approvalTimer);
+    this.approvalTimer = null;
+  }
+  async autoRejectApproval(requestId) {
+    if (!this.approval || this.approval.requestId !== requestId) return;
+    const id = this.approval.rpcId;
+    this.rpc.respond(id, mapApprovalResponse('decline'));
+    this.appendOutput('[approval] auto-declined after 15 minutes', 'system');
+    this.approval = null;
+    this.clearApprovalTimeout();
+    this.broadcast('approval', null);
+    this.pause('Approval timed out and was auto-declined. Queue paused.');
   }
 
   appendOutput(text, type = 'text', appendToPrevious = false) {

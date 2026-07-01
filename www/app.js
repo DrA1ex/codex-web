@@ -20,6 +20,14 @@
     var days = Math.floor(hours / 24); var hrem = hours % 24;
     return days + 'd' + (hrem ? ' ' + hrem + 'h' : '');
   }
+  function fmtCountdown(iso){
+    if(!iso) return '15:00';
+    var ms = Math.max(0, new Date(iso).getTime() - Date.now());
+    var total = Math.ceil(ms / 1000);
+    var mins = Math.floor(total / 60);
+    var secs = total % 60;
+    return mins + ':' + String(secs).padStart(2, '0');
+  }
   function windowLabel(w){
     var mins = Number(w && w.windowDurationMins) || 0;
     if(mins === 300) return '5h';
@@ -124,7 +132,7 @@
     if(!a){ box.classList.add('hidden'); box.innerHTML=''; return; }
     var p = a.params || {}; var cmd = Array.isArray(p.command) ? p.command.join(' ') : (p.command || '');
     box.classList.remove('hidden');
-    box.innerHTML = '<b>Approval required</b><pre>Method: ' + esc(a.method) + '\\nCommand: ' + esc(cmd || '—') + '\\nCWD: ' + esc(p.cwd || '—') + '\\nReason: ' + esc(p.reason || '—') + '</pre><div class="actions"><button data-approval="accept">Accept once</button><button data-approval="accept-for-session">Accept for session</button><button data-approval="decline">Decline</button><button data-approval="cancel" class="danger">Cancel turn</button></div>';
+    box.innerHTML = '<div class="approval-modal"><div class="approval-head"><b>Approval required</b><span>Auto-decline in <b>' + esc(fmtCountdown(a.expiresAt)) + '</b></span></div><pre>Method: ' + esc(a.method) + '\\nCommand: ' + esc(cmd || '—') + '\\nCWD: ' + esc(p.cwd || '—') + '\\nReason: ' + esc(p.reason || '—') + '</pre><div class="actions"><button data-approval="accept" class="primary">Accept once</button><button data-approval="accept-for-session">Accept for session</button><button data-approval="decline">Decline</button><button data-approval="cancel" class="danger">Cancel turn</button></div></div>';
   }
   function renderQueue(){
     var q = snap.queue || []; var el = document.getElementById('queue'); var app = snap.app || {};
@@ -262,6 +270,7 @@
   });
   updateCounter();
   setInterval(function(){ if(snap) renderHeader(); }, 30000);
+  setInterval(function(){ if(snap && snap.approval) renderApproval(); }, 1000);
   var es = new EventSource('/events?token=' + encodeURIComponent(TOKEN));
   es.addEventListener('state', function(ev){ update(JSON.parse(ev.data)); });
   es.addEventListener('output', function(ev){ if(!snap) return; snap.output = JSON.parse(ev.data); renderOutput(); });

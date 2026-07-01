@@ -71,7 +71,11 @@ textarea:focus { border-color:#3f65a3; }
 .session { background:var(--panel2); border:1px solid var(--border); border-radius:10px; padding:10px; }
 .session-title { font-weight:650; margin-bottom:4px; }
 .session-meta { color:var(--muted); font-size:12px; overflow:hidden; text-overflow:ellipsis; }
-.approval { border:1px solid #70592b; background:#20180c; border-radius:12px; padding:10px; margin:10px; }
+.approval { position:fixed; inset:0; z-index:20; display:flex; align-items:center; justify-content:center; padding:18px; background:rgba(3,6,10,.68); }
+.approval-modal { width:min(760px, 100%); max-height:min(78vh, 680px); overflow:auto; border:1px solid #70592b; background:#20180c; border-radius:10px; padding:12px; box-shadow:0 18px 60px rgba(0,0,0,.45); }
+.approval-head { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:8px; color:var(--warn); }
+.approval-head span { color:var(--muted); font-size:12px; white-space:nowrap; }
+.approval pre { border:1px solid #3a2d15; border-radius:7px; background:#0f0b06; padding:8px; max-height:42vh; overflow:auto; }
 .hidden { display:none !important; }
 .empty { color:var(--muted); padding:8px; }
 details.debug { margin:0 10px 8px; color:var(--muted); flex:0 0 auto; max-height:22vh; overflow:auto; }
