@@ -45,6 +45,7 @@ textarea:focus { border-color:#3f65a3; }
 .queue-item.active { border-color:#4d79bd; box-shadow:0 0 0 1px rgba(77,121,189,.25) inset; }
 .queue-item.running { background:#111d2d; border-color:#6f9feb; box-shadow:0 0 0 1px rgba(138,180,255,.35) inset; }
 .queue-item.running .prompt-preview { color:#eef5ff; cursor:default; }
+.queue-item.editing { border-color:#6a5527; background:#12170f; }
 .queue-item.completed { opacity:.82; padding-block:5px; }
 .queue-top { display:flex; justify-content:space-between; gap:8px; color:var(--muted); font-size:11px; margin-bottom:3px; min-width:0; }
 .queue-top span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
@@ -54,6 +55,7 @@ textarea:focus { border-color:#3f65a3; }
 .prompt-preview:focus-visible { box-shadow:0 0 0 2px rgba(138,180,255,.35); border-radius:4px; }
 .queue-item.expanded .prompt-preview { white-space:pre-wrap; word-break:break-word; max-height:none; padding-top:5px; border-top:1px solid #1c2634; }
 .queue-item.completed .prompt-preview { color:#aeb8c6; cursor:default; font-size:12px; }
+.queue-edit { width:100%; height:clamp(90px, 18vh, 220px); min-height:80px; max-height:32vh; margin-top:5px; border-radius:7px; font-size:13px; line-height:1.35; }
 .prompt-error { color:var(--danger); font-size:12px; margin-top:4px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .actions { display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }
 .queue-actions { gap:4px; margin-top:5px; }

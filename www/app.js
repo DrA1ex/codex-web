@@ -2,6 +2,9 @@
   var TOKEN = window.CODEX_LIMIT_WATCH_TOKEN || '';
   var snap = null;
   var expandedQueueItems = Object.create(null);
+  var editingQueueItemId = null;
+  var editDrafts = Object.create(null);
+  var pendingEditFocusId = null;
   var pendingQueueScrollId = null;
   var composer = document.getElementById('composer');
   var outputEl = document.getElementById('output');
@@ -131,27 +134,46 @@
       var active = item.id === app.nextPendingId || item.status === 'sending' || item.status === 'sent';
       var completed = item.status === 'completed';
       var running = item.status === 'sending' || item.status === 'sent';
-      var expanded = !!expandedQueueItems[item.id] && !completed;
+      var editing = editingQueueItemId === item.id && !completed && !running;
+      var expanded = (!!expandedQueueItems[item.id] || editing) && !completed;
       var text = expanded ? (item.text || item.preview || '') : (item.preview || item.text || '');
       var idAttr = esc(item.id);
-      var toggleAttrs = completed ? '' : ' data-toggle-prompt="1" data-id="' + idAttr + '" role="button" tabindex="0" title="Click to ' + (expanded ? 'collapse' : 'expand') + ' prompt"';
-      html += '<div class="queue-item ' + (active ? 'active ' : '') + (running ? 'running ' : '') + (completed ? 'completed ' : '') + (expanded ? 'expanded' : '') + '" data-queue-id="' + idAttr + '">' +
-        '<div class="queue-top"><span>#' + (i+1) + ' <span class="status ' + esc(item.status) + '">' + esc(item.status) + '</span> · ' + item.lineCount + ' lines</span><span>' + esc(fmtTime(completed && item.finishedAt ? item.finishedAt : item.createdAt)) + '</span></div>' +
-        '<div class="prompt-preview"' + toggleAttrs + '>' + esc(text || '') + '</div>';
+      var toggleAttrs = completed || editing ? '' : ' data-toggle-prompt="1" data-id="' + idAttr + '" role="button" tabindex="0" title="Click to ' + (expanded ? 'collapse' : 'expand') + ' prompt"';
+      html += '<div class="queue-item ' + (active ? 'active ' : '') + (running ? 'running ' : '') + (completed ? 'completed ' : '') + (expanded ? 'expanded ' : '') + (editing ? 'editing' : '') + '" data-queue-id="' + idAttr + '">' +
+        '<div class="queue-top"><span>#' + (i+1) + ' <span class="status ' + esc(item.status) + '">' + esc(item.status) + '</span> · ' + item.lineCount + ' lines</span><span>' + esc(fmtTime(completed && item.finishedAt ? item.finishedAt : item.createdAt)) + '</span></div>';
+      if(editing) {
+        var draft = Object.prototype.hasOwnProperty.call(editDrafts, item.id) ? editDrafts[item.id] : (item.text || '');
+        html += '<textarea class="queue-edit" data-edit-text="' + idAttr + '" spellcheck="false">' + esc(draft) + '</textarea>';
+      } else {
+        html += '<div class="prompt-preview"' + toggleAttrs + '>' + esc(text || '') + '</div>';
+      }
       if(item.error) html += '<div class="prompt-error">' + esc(item.error) + '</div>';
-      if(!completed && !running) {
+      if(editing) {
+        html += '<div class="actions queue-actions"><button data-act="saveEdit" data-id="' + idAttr + '" class="primary">Save</button><button data-act="cancelEdit" data-id="' + idAttr + '">Cancel</button></div>';
+      } else if(!completed && !running) {
         html += '<div class="actions queue-actions"><button data-act="edit" data-id="' + idAttr + '">Edit</button><button data-act="duplicate" data-id="' + idAttr + '">Duplicate</button><button data-act="up" data-id="' + idAttr + '">Up</button><button data-act="down" data-id="' + idAttr + '">Down</button><button data-act="sendNow" data-id="' + idAttr + '">Send</button><button data-act="remove" data-id="' + idAttr + '" class="danger">Remove</button>';
         if(item.status === 'unknown' || item.status === 'failed') html += '<button data-act="markCompleted" data-id="' + idAttr + '">Done</button><button data-act="retry" data-id="' + idAttr + '">Retry</button>';
         html += '</div>';
       }
       html += '</div>';
     });
+    var activeEditId = document.activeElement && document.activeElement.dataset ? document.activeElement.dataset.editText : null;
     el.innerHTML = html;
     if(pendingQueueScrollId) {
       var target = Array.prototype.find.call(el.querySelectorAll('[data-queue-id]'), function(node){ return node.dataset.queueId === pendingQueueScrollId; });
       if(target) {
         pendingQueueScrollId = null;
         target.scrollIntoView({ behavior:'smooth', block:'center' });
+      }
+    }
+    if(editingQueueItemId) {
+      var editor = el.querySelector('[data-edit-text]');
+      if(editor && (pendingEditFocusId === editingQueueItemId || activeEditId === editingQueueItemId)) {
+        editor.focus();
+        if(pendingEditFocusId === editingQueueItemId) {
+          editor.selectionStart = editor.selectionEnd = editor.value.length;
+          pendingEditFocusId = null;
+        }
       }
     }
   }
@@ -199,15 +221,30 @@
       var id = t.dataset.id; var act = t.dataset.act; var item = (snap.queue || []).find(function(x){return x.id === id;});
       if(act === 'remove') { if(confirm('Remove this prompt?')) api('/api/queue/remove', { id:id }); }
       else if(act === 'up' || act === 'down') api('/api/queue/reorder', { id:id, direction:act });
-      else if(act === 'edit') { var text = prompt('Edit prompt:', item ? item.text : ''); if(text !== null) api('/api/queue/update', { id:id, action:'edit', text:text }); }
+      else if(act === 'edit') { editingQueueItemId = id; editDrafts[id] = item ? item.text || '' : ''; pendingEditFocusId = id; expandedQueueItems[id] = true; renderQueue(); }
+      else if(act === 'cancelEdit') { delete editDrafts[id]; editingQueueItemId = null; renderQueue(); }
+      else if(act === 'saveEdit') {
+        var editor = document.querySelector('[data-edit-text="' + id + '"]');
+        api('/api/queue/update', { id:id, action:'edit', text:editor ? editor.value : '' }).then(function(){ delete editDrafts[id]; editingQueueItemId = null; getState(); }).catch(function(e){ alert(e.message); });
+      }
       else api('/api/queue/update', { id:id, action:act });
     }
+  });
+  document.addEventListener('input', function(ev){
+    var t = ev.target;
+    if(t && t.dataset && t.dataset.editText) editDrafts[t.dataset.editText] = t.value;
   });
   document.addEventListener('keydown', function(ev){
     var t = ev.target;
     if(ev.key === 'Escape') {
       ev.preventDefault();
+      if(editingQueueItemId) { delete editDrafts[editingQueueItemId]; editingQueueItemId = null; renderQueue(); return; }
       api(snap && snap.app && snap.app.state === 'countdown' ? '/api/control/cancel-send' : '/api/control/pause');
+      return;
+    }
+    if(t && t.dataset && t.dataset.editText && (ev.metaKey || ev.ctrlKey) && ev.key === 'Enter') {
+      ev.preventDefault();
+      api('/api/queue/update', { id:t.dataset.editText, action:'edit', text:t.value }).then(function(){ delete editDrafts[t.dataset.editText]; editingQueueItemId = null; getState(); }).catch(function(e){ alert(e.message); });
       return;
     }
     if(t && t.dataset && t.dataset.togglePrompt && (ev.key === 'Enter' || ev.key === ' ')) {
