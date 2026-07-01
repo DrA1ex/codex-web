@@ -1158,7 +1158,13 @@ class CodexLimitWatchApp {
     const counts = countQueue(this.queue);
     const nextPending = this.queue.find((i) => i.status === 'pending') || null;
     return {
-      app: { ...this.app, queueCounts: counts, nextPendingId: nextPending?.id || null, canInterrupt: !!(this.currentTurnId && this.app.sessionId) },
+      app: {
+        ...this.app,
+        queueCounts: counts,
+        nextPendingId: nextPending?.id || null,
+        canInterrupt: !!(this.currentTurnId && this.app.sessionId),
+        canPause: !!this.app.sessionId && this.isQueueProcessingActive() && !['paused', 'done', 'error', 'initializing', 'selecting-session', 'approval-required'].includes(this.app.state),
+      },
       sessions: this.sessions,
       queue: this.queue,
       output: this.output,

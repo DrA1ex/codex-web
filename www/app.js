@@ -129,7 +129,7 @@
     var hasSession = !!app.sessionId;
     var pending = counts.pending || 0;
     var running = (counts.sending || 0) + (counts.sent || 0);
-    var canPause = hasSession && !['paused','done','error','initializing','selecting-session','approval-required'].includes(state);
+    var canPause = hasSession && !!app.canPause;
     var canResume = hasSession && state === 'paused';
     var canDone = hasSession && state !== 'done' && pending === 0 && running === 0 && !snap.approval;
     setButtonState('undoBtn', false, pending === 0);
