@@ -746,8 +746,8 @@ textarea:focus { border-color: rgba(88, 166, 255, .78); box-shadow: 0 0 0 2px rg
   background: rgba(3, 6, 10, .68);
 }
 .session-modal {
-  width: min(860px, 100%);
-  max-height: min(82vh, 760px);
+  width: min(900px, 100%);
+  max-height: min(84vh, 760px);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -758,18 +758,53 @@ textarea:focus { border-color: rgba(88, 166, 255, .78); box-shadow: 0 0 0 2px rg
 }
 .session-list-body {
   display: grid;
-  gap: 8px;
-  padding: 12px;
+  gap: 10px;
+  padding: 14px;
   overflow: auto;
+  min-height: 0;
 }
 .session {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 14px;
+  align-items: stretch;
   background: var(--panel2);
   border: 1px solid var(--border-soft);
   border-radius: 8px;
-  padding: 10px;
+  padding: 12px;
 }
-.session-title { font-weight: 750; margin-bottom: 4px; }
-.session-meta { color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; }
+.session-main {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+.session-actions {
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-end;
+}
+.session-title {
+  min-width: 0;
+  color: var(--text);
+  font-weight: 750;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.session-meta,
+.session-preview {
+  min-width: 0;
+  color: var(--muted);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.session-preview {
+  color: var(--subtle);
+  margin-top: 2px;
+}
 .approval {
   position: fixed;
   inset: 0;

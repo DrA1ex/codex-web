@@ -254,7 +254,7 @@
       '<div class="panel-head"><h2 id="sessionModalTitle">Select Codex session</h2><div class="panel-actions"><button id="createSessionBtn" class="primary">Create new session</button><button id="reloadSessionsBtn">Reload</button>' + (canCancel ? '<button id="cancelSessionChangeBtn">Cancel</button>' : '') + '</div></div>' +
       '<div class="session-list-body">';
     if(!sessions.length) html += '<div class="empty">No active sessions found for this project. Create a new session to start queueing prompts, or reload after starting Codex elsewhere.</div>';
-    sessions.forEach(function(s){ html += '<div class="session"><div class="session-title">' + esc(s.title || s.id) + ' <span class="badge">' + esc(s.cwdMatch || 'other') + '</span></div><div class="session-meta">ID: ' + esc(s.id) + '</div><div class="session-meta">CWD: ' + esc(s.cwd || '—') + '</div><div class="session-meta">Updated: ' + esc(fmtTime(s.updatedAt)) + '</div><div class="session-meta">' + esc(s.preview || '') + '</div><div class="actions"><button data-session="' + esc(s.id) + '" class="primary">Select</button></div></div>'; });
+    sessions.forEach(function(s){ html += '<div class="session panel-item"><div class="session-main"><div class="session-title">' + esc(s.title || s.id) + ' <span class="badge">' + esc(s.cwdMatch || 'other') + '</span></div><div class="session-meta">ID: ' + esc(s.id) + '</div><div class="session-meta">CWD: ' + esc(s.cwd || '—') + '</div><div class="session-meta">Updated: ' + esc(fmtTime(s.updatedAt)) + '</div><div class="session-preview">' + esc(s.preview || '') + '</div></div><div class="session-actions"><button data-session="' + esc(s.id) + '" class="primary">Select</button></div></div>'; });
     html += '</div></div>';
     picker.innerHTML = html;
   }
