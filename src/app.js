@@ -660,8 +660,8 @@ class CodexLimitWatchApp {
         this.broadcastAll();
         this.schedulePump(1500);
       } else if (!continueQueue && this.app.state !== 'paused' && this.app.state !== 'approval-required' && this.app.state !== 'error') {
-        this.app.state = 'watching';
-        this.app.message = 'Manual send completed';
+        this.app.state = 'paused';
+        this.app.message = 'Manual send completed. Auto-send paused.';
         this.broadcastAll();
       }
     }
