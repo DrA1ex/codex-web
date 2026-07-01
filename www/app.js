@@ -265,8 +265,8 @@
     box.classList.remove('hidden');
     box.innerHTML = '<div class="approval-modal"><div class="approval-head"><b>Approval required</b><span>Auto-decline in <b>' + esc(fmtCountdown(a.expiresAt)) + '</b></span></div><pre>Method: ' + esc(a.method) + '\\nCommand: ' + esc(cmd || '—') + '\\nCWD: ' + esc(p.cwd || '—') + '\\nReason: ' + esc(p.reason || '—') + '</pre><div class="actions"><button data-approval="accept" class="primary">Accept once</button><button data-approval="accept-for-session">Accept for session</button><button data-approval="decline">Decline</button><button data-approval="cancel" class="danger">Cancel turn</button></div></div>';
   }
-  function openConfirm(action, title, message, yesText, danger){
-    confirmAction = { action:action, title:title, message:message, yesText:yesText, danger:!!danger };
+  function openConfirm(action, title, message, yesText, danger, data){
+    confirmAction = { action:action, title:title, message:message, yesText:yesText, danger:!!danger, data:data || {} };
     renderConfirm();
   }
   function closeConfirm(){
@@ -279,6 +279,14 @@
     if(!confirmAction) { box.classList.add('hidden'); box.innerHTML = ''; return; }
     box.classList.remove('hidden');
     box.innerHTML = '<div class="confirm-modal" role="dialog" aria-modal="true" aria-labelledby="confirmTitle"><div class="confirm-head"><b id="confirmTitle">' + esc(confirmAction.title) + '</b></div><p>' + esc(confirmAction.message) + '</p><div class="actions"><button id="confirmYesBtn" class="' + (confirmAction.danger ? 'danger' : 'primary') + '">' + esc(confirmAction.yesText || 'Yes') + '</button><button id="confirmCancelBtn">Cancel</button></div></div>';
+  }
+  function confirmCurrentAction(){
+    var action = confirmAction && confirmAction.action;
+    var data = confirmAction && confirmAction.data || {};
+    closeConfirm();
+    if(action === 'interrupt') api('/api/control/interrupt').then(function(r){ if(r.message) alert(r.message); }).catch(function(e){ alert(e.message); });
+    else if(action === 'stop') api('/api/control/stop').catch(function(e){ alert(e.message); });
+    else if(action === 'remove') api('/api/queue/remove', { id:data.id }).catch(function(e){ alert(e.message); });
   }
   function renderQueue(){
     var q = snap.queue || []; var el = document.getElementById('queue'); var app = snap.app || {};
@@ -431,12 +439,7 @@
     else if(t.id === 'clearCompletedBtn') { setQueueMenuOpen(false); if(confirm('Clear all completed prompts?')) api('/api/queue/clear-completed'); }
     else if(t.id === 'stopBtn') openConfirm('stop', 'Stop server?', 'This will stop the local web server and the Codex app-server. A running prompt will be interrupted.', 'Yes, stop server', true);
     else if(t.id === 'confirmCancelBtn') closeConfirm();
-    else if(t.id === 'confirmYesBtn') {
-      var action = confirmAction && confirmAction.action;
-      closeConfirm();
-      if(action === 'interrupt') api('/api/control/interrupt').then(function(r){ if(r.message) alert(r.message); }).catch(function(e){ alert(e.message); });
-      else if(action === 'stop') api('/api/control/stop').catch(function(e){ alert(e.message); });
-    }
+    else if(t.id === 'confirmYesBtn') confirmCurrentAction();
     else if(t.id === 'clearOutputBtn') api('/api/output/clear');
     else if(t.id === 'bottomBtn') outputEl.scrollTop = outputEl.scrollHeight;
     else if(t.id === 'themeBtn') {
@@ -451,7 +454,7 @@
     else if(t.dataset.approval) api('/api/approval/respond', { decision:t.dataset.approval }).catch(function(e){ alert(e.message); });
     else if(t.dataset.act){
       var id = t.dataset.id; var act = t.dataset.act; var itemIndex = (snap.queue || []).findIndex(function(x){return x.id === id;}); var item = itemIndex >= 0 ? snap.queue[itemIndex] : null;
-      if(act === 'remove') { if(confirm('Remove this prompt?')) api('/api/queue/remove', { id:id }); }
+      if(act === 'remove') openConfirm('remove', 'Remove prompt?', 'This prompt will be removed from the queue.', 'Yes, remove', true, { id:id });
       else if(act === 'up' || act === 'down') {
         if(canMoveQueueItem(snap.queue || [], itemIndex, act)) api('/api/queue/reorder', { id:id, direction:act });
       }
@@ -490,6 +493,11 @@
       ev.preventDefault();
       if(editingQueueItemId) { delete editDrafts[editingQueueItemId]; editingQueueItemId = null; renderQueue(); return; }
       api(snap && snap.app && snap.app.state === 'countdown' ? '/api/control/cancel-send' : '/api/control/pause');
+      return;
+    }
+    if(confirmAction && ev.key === 'Enter') {
+      ev.preventDefault();
+      confirmCurrentAction();
       return;
     }
     if(t && t.dataset && t.dataset.editText && (ev.metaKey || ev.ctrlKey) && ev.key === 'Enter') {
