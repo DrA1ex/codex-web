@@ -399,11 +399,48 @@
       '</div>' +
     '</div>';
   }
+  function queueAnimationDisabled(){
+    return window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  }
+  function queueItemRects(el){
+    var rects = Object.create(null);
+    if(!el || queueAnimationDisabled()) return rects;
+    Array.prototype.forEach.call(el.querySelectorAll('[data-queue-id]'), function(node){
+      rects[node.dataset.queueId] = node.getBoundingClientRect();
+    });
+    return rects;
+  }
+  function animateQueueItems(el, oldRects){
+    if(!el || queueAnimationDisabled()) return;
+    var nodes = Array.prototype.slice.call(el.querySelectorAll('[data-queue-id]'));
+    nodes.forEach(function(node){
+      var oldRect = oldRects[node.dataset.queueId];
+      if(!oldRect) {
+        node.classList.add('queue-item-enter');
+        requestAnimationFrame(function(){ node.classList.remove('queue-item-enter'); });
+        return;
+      }
+      var newRect = node.getBoundingClientRect();
+      var dx = oldRect.left - newRect.left;
+      var dy = oldRect.top - newRect.top;
+      var dh = oldRect.height - newRect.height;
+      if(Math.abs(dx) < 1 && Math.abs(dy) < 1 && Math.abs(dh) < 1) return;
+      if(node.animate) {
+        var animation = node.animate([
+          { transform:'translate(' + dx + 'px, ' + dy + 'px)', height:oldRect.height + 'px' },
+          { transform:'translate(0, 0)', height:newRect.height + 'px' }
+        ], { duration:180, easing:'cubic-bezier(.2, .8, .2, 1)' });
+        node.style.overflow = 'hidden';
+        animation.onfinish = animation.oncancel = function(){ node.style.overflow = ''; };
+      }
+    });
+  }
   function renderQueue(){
     var q = snap.queue || []; var el = document.getElementById('queue'); var app = snap.app || {};
     if(!q.length){ el.innerHTML = '<div class="empty">Queue is empty.</div>'; return; }
     var filtered = q.filter(queueMatchesFilter);
     if(!filtered.length){ el.innerHTML = '<div class="empty">No items match this filter.</div>'; return; }
+    var oldRects = queueItemRects(el);
     var html = '';
     filtered.forEach(function(item){
       var i = q.indexOf(item);
@@ -445,6 +482,7 @@
     } : null;
     if(activeEditId) editDrafts[activeEditId] = activeEdit.value;
     el.innerHTML = html;
+    animateQueueItems(el, oldRects);
     if(pendingQueueScrollId) {
       var target = Array.prototype.find.call(el.querySelectorAll('[data-queue-id]'), function(node){ return node.dataset.queueId === pendingQueueScrollId; });
       if(target) {
