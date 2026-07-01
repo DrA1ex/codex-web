@@ -119,6 +119,7 @@ class CodexLimitWatchApp {
       writableRoots: [opts.projectDir, ...opts.addDirs],
       allSessions: opts.allSessions,
       theme: 'dark',
+      sessionError: null,
       connectedClients: 0,
       startedAt: nowIso(),
     };
@@ -217,7 +218,7 @@ class CodexLimitWatchApp {
       try { existing = JSON.parse(fs.readFileSync(this.lockPath, 'utf8')); } catch (_) {}
       if (existing && existing.pid && isPidAlive(existing.pid)) {
         const url = existing.url ? `\nURL: ${existing.url}` : '';
-        throw new Error(`Another Codex Limit Watch Web instance is already running for this project/session (pid ${existing.pid}).${url}\nUse --force only if this is stale.`);
+        throw new Error(`Another codex-web instance is already running for this project/session (pid ${existing.pid}).${url}\nUse --force only if this is stale.`);
       }
     }
     fs.writeFileSync(this.lockPath, JSON.stringify({ pid: process.pid, url: this.app.url, startedAt: nowIso() }, null, 2));
@@ -333,6 +334,7 @@ class CodexLimitWatchApp {
     }
     this.app.state = 'selecting-session';
     this.app.message = 'Loading sessions…';
+    this.app.sessionError = null;
     this.broadcastAll();
     let threads = [];
     let errors = [];
@@ -394,9 +396,17 @@ class CodexLimitWatchApp {
       }
     }
     const thread = result?.thread || result || {};
-    this.app.sessionId = thread.id || thread.threadId || thread.sessionId || sessionId;
-    this.app.sessionTitle = fallbackThreadTitle(thread, this.opts.projectDir);
-    await this.setupPairState(this.app.sessionId);
+    const selectedSessionId = thread.id || thread.threadId || thread.sessionId || sessionId;
+    const selectedSessionTitle = fallbackThreadTitle(thread, this.opts.projectDir);
+    try {
+      await this.setupPairState(selectedSessionId);
+    } catch (err) {
+      await this.failSessionSelection(selectedSessionId, err);
+      return;
+    }
+    this.app.sessionId = selectedSessionId;
+    this.app.sessionTitle = selectedSessionTitle;
+    this.app.sessionError = null;
     await this.tryReadSession();
     const returnState = this.sessionPickerReturnState;
     this.sessionPickerReturnState = null;
@@ -447,7 +457,13 @@ class CodexLimitWatchApp {
     }
     this.app.sessionId = sessionId;
     this.app.sessionTitle = fallbackThreadTitle(thread, this.opts.projectDir);
-    await this.setupPairState(this.app.sessionId);
+    this.app.sessionError = null;
+    try {
+      await this.setupPairState(this.app.sessionId);
+    } catch (err) {
+      await this.failSessionSelection(sessionId, err);
+      return;
+    }
     await this.tryReadSession();
     const returnState = this.sessionPickerReturnState;
     this.sessionPickerReturnState = null;
@@ -469,6 +485,32 @@ class CodexLimitWatchApp {
     } catch (err) {
       this.debugLog('thread/read failed', err.message);
     }
+  }
+
+  async failSessionSelection(sessionId, err) {
+    this.releaseLock();
+    this.sessionPickerReturnState = null;
+    this.app.sessionId = null;
+    this.app.sessionTitle = 'not selected';
+    this.app.session = null;
+    this.app.state = 'selecting-session';
+    this.app.message = 'Session unavailable';
+    this.app.sessionError = {
+      sessionId,
+      message: err.message || String(err),
+    };
+    this.queue = [];
+    this.currentItemId = null;
+    this.currentTurnId = null;
+    this.stateDirForPair = null;
+    this.queuePath = null;
+    this.statePath = null;
+    this.eventsLogPath = null;
+    this.jsonRpcLogPath = null;
+    this.lockPath = null;
+    this.debug.stateDirForPair = null;
+    this.debug.queuePath = null;
+    this.broadcastAll();
   }
 
   scheduleLimitPolling() {

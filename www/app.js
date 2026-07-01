@@ -109,7 +109,7 @@
   function sectionKey(name, s){
     var app = (s && s.app) || {};
     if(name === 'header') return stableKey({ app:app, rateLimits:s && s.rateLimits });
-    if(name === 'sessions') return stableKey({ state:app.state, sessionId:app.sessionId, sessions:s && s.sessions });
+    if(name === 'sessions') return stableKey({ state:app.state, sessionId:app.sessionId, sessionError:app.sessionError, sessions:s && s.sessions });
     if(name === 'approval') return stableKey(s && s.approval);
     if(name === 'queue') return stableKey({ queue:s && s.queue, counts:app.queueCounts, nextPendingId:app.nextPendingId, canInterrupt:app.canInterrupt });
     if(name === 'output') return stableKey(s && s.output);
@@ -240,6 +240,14 @@
     var picker = document.getElementById('sessionPicker'); var app = snap.app || {};
     if(app.state !== 'selecting-session'){ picker.classList.add('hidden'); return; }
     picker.classList.remove('hidden');
+    if(app.sessionError) {
+      picker.innerHTML = '<div class="session-modal session-error-modal" role="dialog" aria-modal="true" aria-labelledby="sessionErrorTitle">' +
+        '<div class="panel-head"><h2 id="sessionErrorTitle">Session unavailable</h2></div>' +
+        '<div class="session-list-body"><div class="empty">' + esc(app.sessionError.message || 'This session is currently used by another codex-web instance.') + '</div>' +
+        '<div class="actions"><button id="reloadSessionsBtn" class="primary">Change / refresh</button></div></div>' +
+      '</div>';
+      return;
+    }
     var sessions = snap.sessions || [];
     var canCancel = !!app.sessionId;
     var html = '<div class="session-modal" role="dialog" aria-modal="true" aria-labelledby="sessionModalTitle">' +
