@@ -4,6 +4,10 @@ A small local web UI for queueing prompts into a Codex session.
 
 `codex-web` runs on your machine, starts `codex app-server`, and opens a browser UI where you can queue prompts, watch rate limits, approve requests, interrupt running work, and manage queued tasks.
 
+
+<img width="720" alt="web-ui" src="https://github.com/user-attachments/assets/5ef1b364-be92-4ad8-96f6-3618d98813c1" />
+
+
 ## Requirements
 
 - Node.js 18 or newer
