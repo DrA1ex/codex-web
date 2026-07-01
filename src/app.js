@@ -818,7 +818,7 @@ class CodexLimitWatchApp {
     }
     if (method === 'turn/diff/updated' && params.diff) {
       const diff = typeof params.diff === 'string' ? params.diff : (params.diff.unified || params.diff.text || safeJson(params.diff));
-      this.appendOutput(diff || '[diff updated]', 'diff');
+      this.updateDiffOutput(diff || '[diff updated]');
       return;
     }
     if (this.opts.debug) this.appendOutput(`[event] ${method} ${truncate(safeJson(params), 500)}`, 'event');
@@ -913,6 +913,20 @@ class CodexLimitWatchApp {
       }
     } else {
       this.output.push({ id: randomId(5), ts: nowIso(), type, text: limitOutputText(text) });
+    }
+    this.trimOutput();
+    this.broadcast('output', this.output);
+  }
+  updateDiffOutput(text) {
+    if (text === undefined || text === null || text === '') return;
+    const limited = limitOutputText(text);
+    const last = this.output[this.output.length - 1];
+    if (last && last.type === 'diff') {
+      if (last.text === limited) return;
+      last.text = limited;
+      last.ts = nowIso();
+    } else {
+      this.output.push({ id: randomId(5), ts: nowIso(), type: 'diff', text: limited });
     }
     this.trimOutput();
     this.broadcast('output', this.output);
