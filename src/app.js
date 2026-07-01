@@ -610,6 +610,7 @@ class CodexLimitWatchApp {
     await this.saveQueue();
     this.app.state = 'sending';
     this.appendOutput(`[send] #${item.id} · ${item.lineCount} lines`, 'send');
+    this.appendOutput(`[prompt]\n${item.text}`, 'prompt');
     this.broadcastAll();
 
     const params = {

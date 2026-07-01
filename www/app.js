@@ -275,7 +275,7 @@
     }
   }
   function outputLabel(type, text){
-    var labels = { error:'Error', stderr:'Stderr', system:'System', turn:'Turn', send:'Send', tool:'Tool', 'tool-delta':'Tool', reasoning:'Reasoning', 'reasoning-delta':'Reasoning', plan:'Plan', diff:'Diff', item:'Item', event:'Event', delta:'Assistant', 'context-delta':'Context' };
+    var labels = { error:'Error', stderr:'Stderr', system:'System', turn:'Turn', send:'Send', prompt:'Prompt', tool:'Tool', 'tool-delta':'Tool', reasoning:'Reasoning', 'reasoning-delta':'Reasoning', plan:'Plan', diff:'Diff', item:'Item', event:'Event', delta:'Assistant', 'context-delta':'Context' };
     var label = labels[type] || 'Output';
     var body = String(text == null ? '' : text);
     var m = body.match(/^\[([^\]]+)\]\s*/);
@@ -295,7 +295,7 @@
       var firstLine = String(meta.body || '').split(/\r?\n/).find(function(line){ return line.trim(); }) || 'Diff updated';
       return '<div class="out-line diff ' + (expanded ? 'expanded' : 'collapsed') + '"><button type="button" class="out-diff-toggle" data-output-diff="' + diffId + '"><span>' + (expanded ? 'Collapse' : 'Expand') + ' diff</span><b>' + lineCount + ' lines</b><em>' + esc(firstLine) + '</em></button>' + (expanded ? '<pre class="out-body">' + esc(meta.body) + '</pre>' : '') + '</div>';
     }
-    var block = type === 'diff' || type === 'plan' || type === 'tool-delta' || type === 'delta' || type === 'reasoning-delta' || type === 'context-delta';
+    var block = type === 'diff' || type === 'prompt' || type === 'plan' || type === 'tool-delta' || type === 'delta' || type === 'reasoning-delta' || type === 'context-delta';
     return '<div class="out-line ' + esc(type) + '"><span class="out-label">' + esc(meta.label) + '</span>' + (block ? '<pre class="out-body">' + esc(meta.body) + '</pre>' : '<span class="out-body">' + esc(meta.body) + '</span>') + '</div>';
   }
   function renderOutput(){

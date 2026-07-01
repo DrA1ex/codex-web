@@ -54,6 +54,7 @@ function formatItemStarted(item) {
   if (item.type === 'dynamicToolCall') return `[tool] ${item.tool || 'dynamicTool'}`;
   if (item.type === 'fileChange') return `[tool] file changes proposed`;
   if (item.type === 'webSearch') return `[tool] web search ${item.query || ''}`;
+  if (item.type === 'userMessage') return '';
   if (item.type === 'agentMessage') return '';
   if (item.type === 'reasoning') return '[reasoning]';
   if (item.type === 'plan') return '[plan]';
@@ -64,6 +65,7 @@ function outputTypeForItem(item) {
   if (item.type === 'reasoning') return 'reasoning';
   if (item.type === 'plan') return 'plan';
   if (item.type === 'fileChange') return 'diff';
+  if (item.type === 'userMessage') return 'prompt';
   if (item.type === 'commandExecution' || item.type === 'mcpToolCall' || item.type === 'dynamicToolCall' || item.type === 'webSearch') return 'tool';
   return 'item';
 }
@@ -72,7 +74,7 @@ function formatItemCompleted(item) {
   if (item.type === 'commandExecution') return `[tool] completed${item.exitCode !== undefined ? ' exit=' + item.exitCode : ''}`;
   if (item.type === 'fileChange') return `[tool] file change ${item.status || 'completed'}`;
   if (item.type === 'mcpToolCall' || item.type === 'dynamicToolCall') return `[tool] ${item.status || 'completed'}`;
-  if (item.type === 'agentMessage' || item.type === 'reasoning' || item.type === 'plan') return '';
+  if (item.type === 'agentMessage' || item.type === 'userMessage' || item.type === 'reasoning' || item.type === 'plan') return '';
   return item.status ? `[item] ${item.type || 'item'} ${item.status}` : '';
 }
 
