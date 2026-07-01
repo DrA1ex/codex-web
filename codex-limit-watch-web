@@ -794,6 +794,7 @@ class CodexLimitWatchApp {
     for (let n = this.opts.countdown; n > 0; n--) {
       if (this.app.state === 'paused' || this.countdownCancel) return;
       this.appendOutput(`Sending prompt #${idx} in ${n}…`, 'system');
+      this.broadcastAll();
       await sleep(1000);
     }
     if (this.app.state === 'paused' || this.countdownCancel) return;
@@ -879,6 +880,9 @@ class CodexLimitWatchApp {
     this.app.message = message;
     this.appendOutput(message, 'system');
     this.broadcastAll();
+  }
+  cancelPendingSend() {
+    this.pause('Next prompt send cancelled. Click Resume to continue.');
   }
   resume() {
     if (this.approval) {
@@ -1240,6 +1244,7 @@ class CodexLimitWatchApp {
     if (route === '/api/queue/reorder') { await this.reorderQueueItem(String(body.id), body.direction); return sendJson(res, 200, { ok: true }); }
     if (route === '/api/queue/clear') { await this.clearPending(); return sendJson(res, 200, { ok: true }); }
     if (route === '/api/queue/undo') return sendJson(res, 200, await this.undoLast());
+    if (route === '/api/control/cancel-send') { this.cancelPendingSend(); return sendJson(res, 200, { ok: true }); }
     if (route === '/api/control/pause') { this.pause(); return sendJson(res, 200, { ok: true }); }
     if (route === '/api/control/resume') { this.resume(); return sendJson(res, 200, { ok: true }); }
     if (route === '/api/control/stop') { await this.shutdown('stop requested'); return sendJson(res, 200, { ok: true }); }

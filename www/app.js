@@ -38,6 +38,8 @@
     var app = snap.app || {}; var rl = snap.rateLimits || {}; var c = app.queueCounts || {};
     var stateBadge = document.getElementById('stateBadge'); stateBadge.textContent = app.state || 'unknown'; stateBadge.className = 'badge ' + (app.state === 'error' ? 'danger' : (app.state === 'paused' || app.state === 'waiting-limits' || app.state === 'approval-required' ? 'warn' : 'ok'));
     var limitBadge = document.getElementById('limitBadge'); limitBadge.textContent = rl.status === 'limited' ? 'limits waiting' : (rl.status === 'available' ? 'limits available' : 'limits unknown'); limitBadge.className = 'badge ' + (rl.status === 'available' ? 'ok' : (rl.status === 'limited' ? 'warn' : 'danger'));
+    var cancelSendBtn = document.getElementById('cancelSendBtn');
+    if(cancelSendBtn) cancelSendBtn.classList.toggle('hidden', app.state !== 'countdown');
     var reset = rl.resetAt ? new Date(rl.resetAt * 1000) : null; var resetText = reset ? reset.toLocaleTimeString() + ' · in ' + Math.max(0, Math.ceil((reset.getTime()-Date.now())/60000)) + 'm' : '—';
     var sessionTitle = app.sessionTitle || 'not selected';
     var sessionId = app.sessionId || '—';
@@ -133,6 +135,7 @@
       return;
     }
     if(t.id === 'addBtn') addQueue();
+    else if(t.id === 'cancelSendBtn') api('/api/control/cancel-send');
     else if(t.id === 'pauseBtn') api('/api/control/pause');
     else if(t.id === 'resumeBtn') api('/api/control/resume');
     else if(t.id === 'undoBtn') api('/api/queue/undo').then(function(r){ if(r.composerText !== undefined) composer.value = r.composerText; if(r.message) alert(r.message); updateCounter(); });
@@ -173,6 +176,7 @@
   setInterval(function(){ if(snap) renderHeader(); }, 30000);
   var es = new EventSource('/events?token=' + encodeURIComponent(TOKEN));
   es.addEventListener('state', function(ev){ update(JSON.parse(ev.data)); });
+  es.addEventListener('output', function(ev){ if(!snap) return; snap.output = JSON.parse(ev.data); renderOutput(); });
   es.addEventListener('done', function(){ es.close(); });
   es.onerror = function(){ setTimeout(getState, 1000); };
   getState();
