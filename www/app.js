@@ -193,9 +193,26 @@
       }
     }
   }
+  function outputLabel(type, text){
+    var labels = { error:'Error', stderr:'Stderr', system:'System', turn:'Turn', send:'Send', tool:'Tool', 'tool-delta':'Tool', reasoning:'Reasoning', 'reasoning-delta':'Reasoning', plan:'Plan', diff:'Diff', item:'Item', event:'Event', delta:'Assistant' };
+    var label = labels[type] || 'Output';
+    var body = String(text == null ? '' : text);
+    var m = body.match(/^\[([^\]]+)\]\s*/);
+    if(m && type !== 'diff') {
+      label = labels[m[1]] || (m[1].charAt(0).toUpperCase() + m[1].slice(1));
+      body = body.slice(m[0].length);
+    }
+    return { label:label, body:body };
+  }
+  function renderOutputLine(l){
+    var type = l.type || 'text';
+    var meta = outputLabel(type, l.text);
+    var block = type === 'diff' || type === 'plan' || type === 'tool-delta' || type === 'delta' || type === 'reasoning-delta';
+    return '<div class="out-line ' + esc(type) + '"><span class="out-label">' + esc(meta.label) + '</span>' + (block ? '<pre class="out-body">' + esc(meta.body) + '</pre>' : '<span class="out-body">' + esc(meta.body) + '</span>') + '</div>';
+  }
   function renderOutput(){
     var atBottom = outputEl.scrollHeight - outputEl.scrollTop - outputEl.clientHeight < 30;
-    outputEl.innerHTML = (snap.output || []).map(function(l){ return '<div class="out-line ' + esc(l.type || '') + '">' + esc(l.text) + '</div>'; }).join('');
+    outputEl.innerHTML = (snap.output || []).map(renderOutputLine).join('');
     if(atBottom) outputEl.scrollTop = outputEl.scrollHeight;
   }
   function updateCounter(){ var text = composer.value; var lines = text ? text.split(/\r?\n/).length : 0; document.getElementById('counter').textContent = 'Lines: ' + lines + ' · Chars: ' + text.length; setButtonState('addBtn', !text.trim(), false); }

@@ -62,9 +62,22 @@ textarea:focus { border-color:#3f65a3; }
 .actions { display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }
 .queue-actions { gap:4px; margin-top:5px; }
 .queue-actions button { border-radius:6px; padding:2px 6px; font-size:11px; line-height:1.4; }
-.output { font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-size:12px; white-space:pre-wrap; word-break:break-word; background:#080b10; }
-.out-line { padding:2px 0; }
-.out-line.error { color:var(--danger); } .out-line.stderr { color:#ffb1b1; } .out-line.tool,.out-line.tool-delta { color:#d5c4ff; } .out-line.system,.out-line.turn,.out-line.send { color:#aad1ff; } .out-line.plan { color:#c3e7b9; } .out-line.event { color:var(--muted); }
+.output { font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-size:12px; background:#080b10; }
+.out-line { display:grid; grid-template-columns:74px minmax(0,1fr); gap:8px; align-items:start; padding:4px 0; border-bottom:1px solid rgba(37,48,65,.45); }
+.out-line:last-child { border-bottom:0; }
+.out-label { color:var(--muted); font-size:10px; font-weight:700; letter-spacing:.02em; text-transform:uppercase; padding-top:1px; white-space:nowrap; }
+.out-body { min-width:0; margin:0; white-space:pre-wrap; word-break:break-word; color:#d9e2ee; }
+.out-line.error .out-label,.out-line.error .out-body { color:var(--danger); }
+.out-line.stderr .out-body { color:#ffb1b1; }
+.out-line.system .out-body,.out-line.turn .out-body,.out-line.send .out-body { color:#aad1ff; }
+.out-line.tool .out-label,.out-line.tool-delta .out-label { color:#d5c4ff; }
+.out-line.tool .out-body,.out-line.tool-delta .out-body { color:#d5c4ff; }
+.out-line.reasoning .out-label,.out-line.reasoning-delta .out-label { color:#ffd27d; }
+.out-line.reasoning .out-body,.out-line.reasoning-delta .out-body { color:#ffe0a3; }
+.out-line.plan .out-label,.out-line.plan .out-body { color:#c3e7b9; }
+.out-line.diff .out-label { color:#9ad1ff; }
+.out-line.diff .out-body { color:#c9ddf2; background:#0d141d; border:1px solid #1c2a3a; border-radius:6px; padding:6px; overflow:auto; }
+.out-line.event .out-body,.out-line.item .out-body { color:var(--muted); }
 .composer { border-top:1px solid var(--border); padding:10px; background:#0d131b; flex:0 0 auto; min-height:154px; }
 .composer-row { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-top:8px; flex-wrap:wrap; }
 .composer-actions { display:flex; flex-wrap:wrap; gap:7px; }

@@ -1010,7 +1010,7 @@ class CodexLimitWatchApp {
     if (method === 'item/started') {
       const item = params.item || params;
       const label = formatItemStarted(item);
-      if (label) this.appendOutput(label, item?.type === 'commandExecution' ? 'tool' : 'item');
+      if (label) this.appendOutput(label, outputTypeForItem(item));
       return;
     }
     if (method === 'item/completed') {
@@ -1021,7 +1021,8 @@ class CodexLimitWatchApp {
     }
     if (method.includes('/delta') || method.includes('Delta')) {
       const text = extractDeltaText(method, params);
-      if (text) this.appendOutput(text, method.includes('commandExecution') || method.includes('tool') ? 'tool-delta' : 'delta', true);
+      const type = method.includes('commandExecution') || method.includes('tool') ? 'tool-delta' : (/reasoning/i.test(method) ? 'reasoning-delta' : 'delta');
+      if (text) this.appendOutput(text, type, true);
       return;
     }
     if (method === 'turn/plan/updated') {
@@ -1030,7 +1031,8 @@ class CodexLimitWatchApp {
       return;
     }
     if (method === 'turn/diff/updated' && params.diff) {
-      this.appendOutput('[diff updated]', 'tool');
+      const diff = typeof params.diff === 'string' ? params.diff : (params.diff.unified || params.diff.text || safeJson(params.diff));
+      this.appendOutput(diff || '[diff updated]', 'diff');
       return;
     }
     if (this.opts.debug) this.appendOutput(`[event] ${method} ${truncate(safeJson(params), 500)}`, 'event');
@@ -1572,6 +1574,14 @@ function formatItemStarted(item) {
   if (item.type === 'reasoning') return '[reasoning]';
   if (item.type === 'plan') return '[plan]';
   return item.type ? `[item] ${item.type}` : '';
+}
+function outputTypeForItem(item) {
+  if (!item) return 'item';
+  if (item.type === 'reasoning') return 'reasoning';
+  if (item.type === 'plan') return 'plan';
+  if (item.type === 'fileChange') return 'diff';
+  if (item.type === 'commandExecution' || item.type === 'mcpToolCall' || item.type === 'dynamicToolCall' || item.type === 'webSearch') return 'tool';
+  return 'item';
 }
 function formatItemCompleted(item) {
   if (!item) return '';
