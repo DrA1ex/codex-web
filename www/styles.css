@@ -286,7 +286,6 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .limit-bar span {
   display: block;
   height: 100%;
-  min-width: 2px;
   border-radius: inherit;
   background: var(--ok);
 }
@@ -296,18 +295,36 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .limit-card.muted p { grid-column: 1; margin: 0; }
 
 .countdown-notice {
+  position: fixed;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 30;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
-  grid-column: 1 / -1;
-  margin: 0 0 8px;
+  gap: 14px;
+  width: clamp(360px, 30vw, 520px);
+  max-width: calc(100vw - 28px);
+  margin: 0;
   border: 1px solid rgba(255, 192, 77, .38);
-  border-radius: 8px;
-  background: rgba(60, 43, 11, .58);
+  border-radius: 10px;
+  background: rgba(38, 28, 11, .96);
   color: var(--warn);
-  padding: 7px 10px;
-  font-size: 13px;
+  padding: 12px 14px;
+  font-size: 14px;
+  font-weight: 700;
+  box-shadow: 0 18px 60px rgba(0, 0, 0, .36);
+  backdrop-filter: blur(12px);
+}
+.countdown-notice button {
+  flex: 0 0 auto;
+  min-height: 38px;
+  padding: 8px 14px;
+  font-weight: 750;
+}
+:root[data-theme="light"] .countdown-notice {
+  background: rgba(255, 248, 221, .98);
 }
 
 .main {
@@ -365,6 +382,36 @@ button:disabled { opacity: .45; cursor: not-allowed; }
   justify-content: flex-end;
 }
 .panel-actions .icon-only { width: 34px; padding-inline: 0; }
+.queue-head-actions { flex-wrap: nowrap; }
+.menu-wrap {
+  position: relative;
+  display: inline-flex;
+}
+.queue-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 10;
+  display: grid;
+  min-width: 170px;
+  padding: 6px;
+  border: 1px solid var(--border-soft);
+  border-radius: 8px;
+  background: rgba(15, 23, 35, .98);
+  box-shadow: 0 14px 36px rgba(0, 0, 0, .34);
+}
+:root[data-theme="light"] .queue-menu { background: #fff; }
+.queue-menu button {
+  width: 100%;
+  justify-content: flex-start;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  text-align: left;
+}
+.queue-menu button:hover {
+  background: rgba(88, 166, 255, .12);
+}
 .queue-tabs {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -380,13 +427,18 @@ button:disabled { opacity: .45; cursor: not-allowed; }
   gap: 6px;
   min-width: 0;
   padding: 4px 9px;
+  border: 0;
   border-radius: 7px;
+  background: transparent;
+  box-shadow: none;
   color: var(--muted);
+  cursor: pointer;
   font-size: 12px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.queue-tab:hover { background: rgba(119, 137, 160, .12); }
 .queue-tab.active {
   background: rgba(39, 94, 175, 0.19);
   color: #cfe2ff;
@@ -678,10 +730,7 @@ pre { margin: 0; white-space: pre-wrap; word-break: break-word; }
 
 @media (max-width: 1686px) {
   .limit-row {
-    grid-template-columns: 56px minmax(70px, 1fr) 42px;
-  }
-  .limit-row-reset {
-    display: none;
+    grid-template-columns: 56px minmax(70px, 1fr) 42px minmax(48px, auto);
   }
 }
 
@@ -714,7 +763,10 @@ pre { margin: 0; white-space: pre-wrap; word-break: break-word; }
     height: auto;
   }
   .limit-row {
-    grid-template-columns: 56px minmax(70px, 1fr) 42px;
+    grid-template-columns: 56px minmax(70px, 1fr) 42px minmax(48px, auto);
+  }
+  .model-select-wrap > span {
+    display: none;
   }
 }
 
@@ -736,9 +788,6 @@ pre { margin: 0; white-space: pre-wrap; word-break: break-word; }
   .meta-item:last-child {
     border-right: 0;
   }
-  .model-select-wrap > span {
-    display: none;
-  }
   .main { grid-template-columns: minmax(300px, 36%) minmax(420px, 1fr); }
 }
 
@@ -758,7 +807,7 @@ pre { margin: 0; white-space: pre-wrap; word-break: break-word; }
     justify-content: space-between;
   }
   .limit-row {
-    grid-template-columns: 64px minmax(120px, 1fr) 48px;
+    grid-template-columns: 64px minmax(120px, 1fr) 48px minmax(48px, auto);
   }
 }
 
@@ -777,5 +826,9 @@ pre { margin: 0; white-space: pre-wrap; word-break: break-word; }
   .main { grid-template-columns: 1fr; overflow: visible; padding: 10px; }
   .panel { min-height: 280px; }
   .composer { margin: 0 10px 10px; }
-  .limit-row { grid-template-columns: 64px minmax(64px, 1fr) 40px; }
+  .limit-row { grid-template-columns: 64px minmax(64px, 1fr) 40px minmax(44px, auto); }
+  .countdown-notice {
+    top: 10px;
+    width: calc(100vw - 20px);
+  }
 }

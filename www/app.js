@@ -6,9 +6,10 @@
   var editDrafts = Object.create(null);
   var pendingEditFocusId = null;
   var pendingQueueScrollId = null;
+  var activeQueueFilter = 'all';
   var composer = document.getElementById('composer');
   var outputEl = document.getElementById('output');
-  var compactHeaderQuery = window.matchMedia ? window.matchMedia('(max-width: 1180px)') : null;
+  var compactHeaderQuery = window.matchMedia ? window.matchMedia('(max-width: 1679px)') : null;
   function esc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
   function fmtTime(iso){ if(!iso) return ''; try { return new Date(iso).toLocaleString(); } catch(e){ return iso; } }
   function fmtClock(ts){ if(!ts) return '—'; try { return new Date(ts * 1000).toLocaleTimeString(); } catch(e){ return '—'; } }
@@ -44,15 +45,33 @@
   }
   function envChip(label, value, ok){
     value = value == null || value === '' ? '—' : String(value);
-    return '<span class="env-chip ' + (ok ? 'ok' : '') + '" aria-label="' + esc(label + ': ' + value) + '"><i></i>' + esc(label) + ': <b>' + esc(value) + '</b></span>';
+    return '<span class="env-chip ' + (ok ? 'ok' : '') + '" aria-label="' + esc(label + ': ' + value) + '" title="' + esc(label + ': ' + value) + '"><i></i>' + esc(label) + ': <b>' + esc(value) + '</b></span>';
   }
-  function queueTab(label, value, active){
-    return '<span class="queue-tab ' + (active ? 'active' : '') + '">' + esc(label) + ' <b>' + Number(value || 0) + '</b></span>';
+  function queueTab(filter, label, value, active){
+    return '<button type="button" class="queue-tab ' + (active ? 'active' : '') + '" data-queue-filter="' + esc(filter) + '">' + esc(label) + ' <b>' + Number(value || 0) + '</b></button>';
+  }
+  function isRunningStatus(status){ return status === 'sending' || status === 'sent'; }
+  function isDoneStatus(status){ return status === 'completed'; }
+  function queueMatchesFilter(item){
+    var status = item && item.status;
+    if(activeQueueFilter === 'pending') return status === 'pending';
+    if(activeQueueFilter === 'running') return isRunningStatus(status);
+    if(activeQueueFilter === 'completed') return isDoneStatus(status);
+    return true;
+  }
+  function canMoveQueueItem(q, index, direction){
+    var item = q[index];
+    if(!item || item.status !== 'pending') return false;
+    var nextIndex = direction === 'up' ? index - 1 : index + 1;
+    return !!(q[nextIndex] && q[nextIndex].status === 'pending');
   }
   function pct(n){ n = Number(n); return Number.isFinite(n) ? Math.max(0, Math.min(100, n)) : null; }
   function isCompactHeader(){ return !!(compactHeaderQuery && compactHeaderQuery.matches); }
   function limitBadgeText(status){
-    if(isCompactHeader()) return 'limit';
+    if(isCompactHeader()) return 'limits';
+    return status === 'limited' ? 'limits waiting' : (status === 'available' ? 'limits available' : 'limits unknown');
+  }
+  function fullLimitBadgeText(status){
     return status === 'limited' ? 'limits waiting' : (status === 'available' ? 'limits available' : 'limits unknown');
   }
   function renderModelOptions(select, app){
@@ -89,6 +108,12 @@
     btn.disabled = !!disabled;
     btn.classList.toggle('hidden', !!hidden);
   }
+  function setQueueMenuOpen(open){
+    var menu = document.getElementById('queueMenu');
+    var btn = document.getElementById('queueMenuBtn');
+    if(menu) menu.classList.toggle('hidden', !open);
+    if(btn) btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+  }
   function renderControls(app, counts){
     counts = counts || {};
     var state = app.state || '';
@@ -101,6 +126,7 @@
     setButtonState('undoBtn', false, pending === 0);
     setButtonState('clearBtn', false, pending === 0);
     setButtonState('clearCompletedBtn', false, (counts.completed || 0) === 0);
+    setButtonState('queueMenuBtn', pending === 0 && (counts.completed || 0) === 0, false);
     setButtonState('pauseBtn', !canPause, false);
     setButtonState('resumeBtn', !canResume, false);
     setButtonState('interruptBtn', false, !app.canInterrupt);
@@ -112,8 +138,8 @@
   function renderHeader(){
     var app = snap.app || {}; var rl = snap.rateLimits || {}; var c = app.queueCounts || {};
     renderTheme(app);
-    var stateBadge = document.getElementById('stateBadge'); stateBadge.textContent = app.state || 'unknown'; stateBadge.className = 'badge ' + (app.state === 'error' ? 'danger' : (app.state === 'paused' || app.state === 'waiting-limits' || app.state === 'approval-required' ? 'warn' : 'ok'));
-    var limitBadge = document.getElementById('limitBadge'); limitBadge.textContent = limitBadgeText(rl.status); limitBadge.className = 'badge ' + (rl.status === 'available' ? 'ok' : (rl.status === 'limited' ? 'warn' : 'danger'));
+    var stateBadge = document.getElementById('stateBadge'); stateBadge.textContent = app.state || 'unknown'; stateBadge.title = app.state || 'unknown'; stateBadge.className = 'badge ' + (app.state === 'error' ? 'danger' : (app.state === 'paused' || app.state === 'waiting-limits' || app.state === 'approval-required' ? 'warn' : 'ok'));
+    var limitBadge = document.getElementById('limitBadge'); limitBadge.textContent = limitBadgeText(rl.status); limitBadge.title = fullLimitBadgeText(rl.status); limitBadge.className = 'badge ' + (rl.status === 'available' ? 'ok' : (rl.status === 'limited' ? 'warn' : 'danger'));
     var modelSelect = document.getElementById('modelSelect');
     if(modelSelect) renderModelOptions(modelSelect, app);
     renderControls(app, c);
@@ -125,10 +151,10 @@
     if(queueCountBadge) queueCountBadge.textContent = queueTotal;
     var tabs = document.getElementById('queueTabs');
     if(tabs) tabs.innerHTML =
-      queueTab('All', queueTotal, true) +
-      queueTab('Pending', c.pending || 0, false) +
-      queueTab('Running', (c.sending || 0) + (c.sent || 0), false) +
-      queueTab('Done', c.completed || 0, false);
+      queueTab('all', 'All', queueTotal, activeQueueFilter === 'all') +
+      queueTab('pending', 'Pending', c.pending || 0, activeQueueFilter === 'pending') +
+      queueTab('running', 'Running', (c.sending || 0) + (c.sent || 0), activeQueueFilter === 'running') +
+      queueTab('completed', 'Done', c.completed || 0, activeQueueFilter === 'completed');
     var env = document.getElementById('envMeta');
     if(env) env.innerHTML =
       envChip('Sandbox', app.sandbox || '—', true) +
@@ -156,7 +182,7 @@
           '<span class="limit-row-label">' + esc(windowLabel(w)) + '</span>' +
           '<div class="limit-bar ' + barClass + '"><span style="width:' + (remaining == null ? 0 : remaining) + '%"></span></div>' +
           '<b>' + (remaining == null ? '—' : Math.round(remaining) + '%') + '</b>' +
-          '<span class="limit-row-reset">reset ' + esc(fmtClock(w.resetsAt)) + ' · ' + esc(fmtRelative(w.resetsAt)) + '</span>' +
+          '<span class="limit-row-reset">' + esc(fmtRelative(w.resetsAt)) + '</span>' +
         '</div>';
       });
       html += '</div>';
@@ -184,11 +210,16 @@
   function renderQueue(){
     var q = snap.queue || []; var el = document.getElementById('queue'); var app = snap.app || {};
     if(!q.length){ el.innerHTML = '<div class="empty">Queue is empty.</div>'; return; }
+    var filtered = q.filter(queueMatchesFilter);
+    if(!filtered.length){ el.innerHTML = '<div class="empty">No items match this filter.</div>'; return; }
     var html = '';
-    q.forEach(function(item, i){
-      var active = item.id === app.nextPendingId || item.status === 'sending' || item.status === 'sent';
+    filtered.forEach(function(item){
+      var i = q.indexOf(item);
+      var active = item.status === 'sending' || item.status === 'sent';
       var completed = item.status === 'completed';
       var running = item.status === 'sending' || item.status === 'sent';
+      var canMoveUp = canMoveQueueItem(q, i, 'up');
+      var canMoveDown = canMoveQueueItem(q, i, 'down');
       var editing = editingQueueItemId === item.id && !completed && !running;
       var expanded = (!!expandedQueueItems[item.id] || editing) && !completed;
       var text = expanded ? (item.text || item.preview || '') : (item.preview || item.text || '');
@@ -206,7 +237,7 @@
       if(editing) {
         html += '<div class="actions queue-actions"><button data-act="saveEdit" data-id="' + idAttr + '" class="primary">Save</button><button data-act="cancelEdit" data-id="' + idAttr + '">Cancel</button></div>';
       } else if(!completed && !running) {
-        html += '<div class="actions queue-actions"><button data-act="edit" data-id="' + idAttr + '">Edit</button><button data-act="duplicate" data-id="' + idAttr + '">Duplicate</button><button data-act="up" data-id="' + idAttr + '">Up</button><button data-act="down" data-id="' + idAttr + '">Down</button><button data-act="sendNow" data-id="' + idAttr + '">Send</button><button data-act="remove" data-id="' + idAttr + '" class="danger">Remove</button>';
+        html += '<div class="actions queue-actions"><button data-act="edit" data-id="' + idAttr + '">Edit</button><button data-act="duplicate" data-id="' + idAttr + '">Duplicate</button><button data-act="up" data-id="' + idAttr + '"' + (canMoveUp ? '' : ' disabled') + '>Up</button><button data-act="down" data-id="' + idAttr + '"' + (canMoveDown ? '' : ' disabled') + '>Down</button><button data-act="sendNow" data-id="' + idAttr + '">Send</button><button data-act="remove" data-id="' + idAttr + '" class="danger">Remove</button>';
         if(item.status === 'unknown' || item.status === 'failed') html += '<button data-act="markCompleted" data-id="' + idAttr + '">Done</button><button data-act="retry" data-id="' + idAttr + '">Retry</button>';
         html += '</div>';
       }
@@ -258,6 +289,8 @@
   function addQueue(){ api('/api/queue/add', { text: composer.value }).then(function(r){ if(r.item && r.item.id) pendingQueueScrollId = r.item.id; if(r.clearComposer) composer.value=''; if(r.composerText !== undefined) composer.value = r.composerText; if(r.message) alert(r.message); updateCounter(); getState(); }).catch(function(e){ alert(e.message); }); }
   document.addEventListener('click', function(ev){
     var t = ev.target;
+    var queueMenuWrap = t.closest && t.closest('.menu-wrap');
+    if(!queueMenuWrap) setQueueMenuOpen(false);
     var promptToggle = t.closest && t.closest('[data-toggle-prompt]');
     if(promptToggle) {
       var promptId = promptToggle.dataset.id;
@@ -268,14 +301,24 @@
       }
       return;
     }
+    if(t.dataset && t.dataset.queueFilter) {
+      activeQueueFilter = t.dataset.queueFilter;
+      renderHeader();
+      renderQueue();
+      return;
+    }
     if(t.id === 'addBtn') addQueue();
     else if(t.id === 'cancelSendBtn') api('/api/control/cancel-send');
     else if(t.id === 'pauseBtn') api('/api/control/pause');
     else if(t.id === 'resumeBtn') api('/api/control/resume');
     else if(t.id === 'interruptBtn') { if(confirm('Interrupt the current running prompt?')) api('/api/control/interrupt').then(function(r){ if(r.message) alert(r.message); }).catch(function(e){ alert(e.message); }); }
     else if(t.id === 'undoBtn') api('/api/queue/undo').then(function(r){ if(r.composerText !== undefined) composer.value = r.composerText; if(r.message) alert(r.message); updateCounter(); });
-    else if(t.id === 'clearBtn') { if(confirm('Clear all pending prompts?')) api('/api/queue/clear'); }
-    else if(t.id === 'clearCompletedBtn') { if(confirm('Clear all completed prompts?')) api('/api/queue/clear-completed'); }
+    else if(t.id === 'queueMenuBtn') {
+      var menu = document.getElementById('queueMenu');
+      setQueueMenuOpen(!(menu && !menu.classList.contains('hidden')));
+    }
+    else if(t.id === 'clearBtn') { setQueueMenuOpen(false); if(confirm('Clear all pending prompts?')) api('/api/queue/clear'); }
+    else if(t.id === 'clearCompletedBtn') { setQueueMenuOpen(false); if(confirm('Clear all completed prompts?')) api('/api/queue/clear-completed'); }
     else if(t.id === 'doneBtn') api('/api/control/done').then(function(r){ if(r.message) alert(r.message); });
     else if(t.id === 'stopBtn') { if(confirm('Stop local server and app-server?')) api('/api/control/stop'); }
     else if(t.id === 'clearOutputBtn') api('/api/output/clear');
@@ -289,9 +332,11 @@
     else if(t.dataset.session) api('/api/session/select', { sessionId:t.dataset.session }).catch(function(e){ alert(e.message); });
     else if(t.dataset.approval) api('/api/approval/respond', { decision:t.dataset.approval }).catch(function(e){ alert(e.message); });
     else if(t.dataset.act){
-      var id = t.dataset.id; var act = t.dataset.act; var item = (snap.queue || []).find(function(x){return x.id === id;});
+      var id = t.dataset.id; var act = t.dataset.act; var itemIndex = (snap.queue || []).findIndex(function(x){return x.id === id;}); var item = itemIndex >= 0 ? snap.queue[itemIndex] : null;
       if(act === 'remove') { if(confirm('Remove this prompt?')) api('/api/queue/remove', { id:id }); }
-      else if(act === 'up' || act === 'down') api('/api/queue/reorder', { id:id, direction:act });
+      else if(act === 'up' || act === 'down') {
+        if(canMoveQueueItem(snap.queue || [], itemIndex, act)) api('/api/queue/reorder', { id:id, direction:act });
+      }
       else if(act === 'edit') { editingQueueItemId = id; editDrafts[id] = item ? item.text || '' : ''; pendingEditFocusId = id; expandedQueueItems[id] = true; renderQueue(); }
       else if(act === 'cancelEdit') { delete editDrafts[id]; editingQueueItemId = null; renderQueue(); }
       else if(act === 'saveEdit') {
@@ -312,6 +357,12 @@
   document.addEventListener('keydown', function(ev){
     var t = ev.target;
     if(ev.key === 'Escape') {
+      var queueMenu = document.getElementById('queueMenu');
+      if(queueMenu && !queueMenu.classList.contains('hidden')) {
+        ev.preventDefault();
+        setQueueMenuOpen(false);
+        return;
+      }
       ev.preventDefault();
       if(editingQueueItemId) { delete editDrafts[editingQueueItemId]; editingQueueItemId = null; renderQueue(); return; }
       api(snap && snap.app && snap.app.state === 'countdown' ? '/api/control/cancel-send' : '/api/control/pause');
