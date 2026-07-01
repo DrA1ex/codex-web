@@ -2,6 +2,7 @@
   var TOKEN = window.CODEX_LIMIT_WATCH_TOKEN || '';
   var snap = null;
   var expandedQueueItems = Object.create(null);
+  var pendingQueueScrollId = null;
   var composer = document.getElementById('composer');
   var outputEl = document.getElementById('output');
   function esc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
@@ -134,7 +135,7 @@
       var text = expanded ? (item.text || item.preview || '') : (item.preview || item.text || '');
       var idAttr = esc(item.id);
       var toggleAttrs = completed ? '' : ' data-toggle-prompt="1" data-id="' + idAttr + '" role="button" tabindex="0" title="Click to ' + (expanded ? 'collapse' : 'expand') + ' prompt"';
-      html += '<div class="queue-item ' + (active ? 'active ' : '') + (running ? 'running ' : '') + (completed ? 'completed ' : '') + (expanded ? 'expanded' : '') + '">' +
+      html += '<div class="queue-item ' + (active ? 'active ' : '') + (running ? 'running ' : '') + (completed ? 'completed ' : '') + (expanded ? 'expanded' : '') + '" data-queue-id="' + idAttr + '">' +
         '<div class="queue-top"><span>#' + (i+1) + ' <span class="status ' + esc(item.status) + '">' + esc(item.status) + '</span> · ' + item.lineCount + ' lines</span><span>' + esc(fmtTime(completed && item.finishedAt ? item.finishedAt : item.createdAt)) + '</span></div>' +
         '<div class="prompt-preview"' + toggleAttrs + '>' + esc(text || '') + '</div>';
       if(item.error) html += '<div class="prompt-error">' + esc(item.error) + '</div>';
@@ -146,6 +147,13 @@
       html += '</div>';
     });
     el.innerHTML = html;
+    if(pendingQueueScrollId) {
+      var target = Array.prototype.find.call(el.querySelectorAll('[data-queue-id]'), function(node){ return node.dataset.queueId === pendingQueueScrollId; });
+      if(target) {
+        pendingQueueScrollId = null;
+        target.scrollIntoView({ behavior:'smooth', block:'center' });
+      }
+    }
   }
   function renderOutput(){
     var atBottom = outputEl.scrollHeight - outputEl.scrollTop - outputEl.clientHeight < 30;
@@ -153,7 +161,7 @@
     if(atBottom) outputEl.scrollTop = outputEl.scrollHeight;
   }
   function updateCounter(){ var text = composer.value; var lines = text ? text.split(/\r?\n/).length : 0; document.getElementById('counter').textContent = 'Lines: ' + lines + ' · Chars: ' + text.length; setButtonState('addBtn', !text.trim(), false); }
-  function addQueue(){ api('/api/queue/add', { text: composer.value }).then(function(r){ if(r.clearComposer) composer.value=''; if(r.composerText !== undefined) composer.value = r.composerText; if(r.message) alert(r.message); updateCounter(); }).catch(function(e){ alert(e.message); }); }
+  function addQueue(){ api('/api/queue/add', { text: composer.value }).then(function(r){ if(r.item && r.item.id) pendingQueueScrollId = r.item.id; if(r.clearComposer) composer.value=''; if(r.composerText !== undefined) composer.value = r.composerText; if(r.message) alert(r.message); updateCounter(); getState(); }).catch(function(e){ alert(e.message); }); }
   document.addEventListener('click', function(ev){
     var t = ev.target;
     var promptToggle = t.closest && t.closest('[data-toggle-prompt]');
