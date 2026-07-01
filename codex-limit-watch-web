@@ -115,6 +115,7 @@ function parseArgs(argv) {
     sessionPickerLimit: 50,
     watchInterval: 30,
     countdown: 5,
+    model: '',
     sandbox: 'workspace-write',
     approvalPolicy: 'on-request',
     approvalResponse: 'accept-for-session',
@@ -122,6 +123,7 @@ function parseArgs(argv) {
     logJsonrpc: false,
     debug: false,
     force: false,
+    modelProvided: false,
     addDirs: [],
   };
   const positional = [];
@@ -144,6 +146,7 @@ function parseArgs(argv) {
     else if (a === '--session-picker-limit') opts.sessionPickerLimit = Number(next());
     else if (a === '--watch-interval') opts.watchInterval = Number(next());
     else if (a === '--countdown') opts.countdown = Number(next());
+    else if (a === '--model' || a === '-m') { opts.model = next(); opts.modelProvided = true; }
     else if (a === '--sandbox') opts.sandbox = next();
     else if (a === '--approval-policy') opts.approvalPolicy = next();
     else if (a === '--approval-response') opts.approvalResponse = next();
@@ -177,7 +180,7 @@ function validateOptions(opts) {
 }
 
 function printHelp() {
-  console.log(`Codex Limit Watch Web ${VERSION}\n\nUsage:\n  codex-limit-watch-web [session_id] [options]\n\nOptions:\n  --host 127.0.0.1\n  --port 0\n  --no-open\n  --state-dir ~/.local/state/codex-limit-watch-web\n  --codex-bin codex\n  --project-dir <dir>\n  --all-sessions\n  --session-picker-limit 50\n  --watch-interval 30\n  --countdown 5\n  --sandbox read-only|workspace-write|danger-full-access\n  --approval-policy on-request|never|untrusted|on-failure\n  --approval-response manual|accept|accept-for-session|decline|cancel\n  --network true|false\n  --add-dir <dir>\n  --log-jsonrpc\n  --debug\n`);
+  console.log(`Codex Limit Watch Web ${VERSION}\n\nUsage:\n  codex-limit-watch-web [session_id] [options]\n\nOptions:\n  --host 127.0.0.1\n  --port 0\n  --no-open\n  --state-dir ~/.local/state/codex-limit-watch-web\n  --codex-bin codex\n  --project-dir <dir>\n  --all-sessions\n  --session-picker-limit 50\n  --watch-interval 30\n  --countdown 5\n  --model gpt-5.5\n  --sandbox read-only|workspace-write|danger-full-access\n  --approval-policy on-request|never|untrusted|on-failure\n  --approval-response manual|accept|accept-for-session|decline|cancel\n  --network true|false\n  --add-dir <dir>\n  --log-jsonrpc\n  --debug\n`);
 }
 
 function mapApprovalPolicy(v) {
@@ -417,6 +420,7 @@ class CodexLimitWatchApp {
       stateDir: opts.stateDir,
       sessionId: opts.sessionId,
       sessionTitle: opts.sessionId ? shortId(opts.sessionId) : 'not selected',
+      model: opts.model || '',
       sandbox: opts.sandbox,
       approvalPolicy: opts.approvalPolicy,
       approvalResponse: opts.approvalResponse,
@@ -480,6 +484,7 @@ class CodexLimitWatchApp {
     console.log('Codex Limit Watch Web');
     console.log(`Project: ${this.opts.projectDir}`);
     console.log(`Session: ${this.app.sessionId || 'not selected'}`);
+    console.log(`Model: ${this.opts.model || 'default'}`);
     console.log(`Sandbox: ${this.opts.sandbox}`);
     console.log(`Approval policy: ${this.opts.approvalPolicy}`);
     console.log(`Approval response: ${this.opts.approvalResponse}`);
@@ -501,6 +506,7 @@ class CodexLimitWatchApp {
     this.debug.stateDirForPair = this.stateDirForPair;
     this.debug.queuePath = this.queuePath;
     await this.acquireLock();
+    await this.loadState();
     await this.loadQueue();
     await this.saveState();
   }
@@ -565,6 +571,16 @@ class CodexLimitWatchApp {
     await fsp.rename(tmp, this.queuePath);
     this.broadcast('queue', this.queue);
   }
+  async loadState() {
+    if (!this.statePath || this.opts.modelProvided || !fs.existsSync(this.statePath)) return;
+    try {
+      const data = JSON.parse(await fsp.readFile(this.statePath, 'utf8'));
+      if (Object.prototype.hasOwnProperty.call(data, 'model')) {
+        this.opts.model = String(data.model || '').trim();
+        this.app.model = this.opts.model;
+      }
+    } catch (_) {}
+  }
   async saveState() {
     if (!this.statePath) return;
     const data = {
@@ -572,6 +588,7 @@ class CodexLimitWatchApp {
       projectDir: this.opts.projectDir,
       sessionId: this.app.sessionId,
       sessionTitle: this.app.sessionTitle,
+      model: this.opts.model || '',
       state: this.app.state,
       updatedAt: nowIso(),
     };
@@ -665,12 +682,14 @@ class CodexLimitWatchApp {
     this.broadcastAll();
     let result;
     try {
-      result = await this.rpc.request('thread/start', {
+      const params = {
         cwd: this.opts.projectDir,
         approvalPolicy: mapApprovalPolicy(this.opts.approvalPolicy),
         sandbox: mapSandbox(this.opts.sandbox),
         serviceName: 'codex-limit-watch-web',
-      });
+      };
+      if (this.opts.model) params.model = this.opts.model;
+      result = await this.rpc.request('thread/start', params);
     } catch (err) {
       try {
         result = await this.rpc.request('thread/start', { cwd: this.opts.projectDir });
@@ -827,6 +846,7 @@ class CodexLimitWatchApp {
       approvalPolicy: mapApprovalPolicy(this.opts.approvalPolicy),
       sandboxPolicy: makeSandboxPolicy(this.opts),
     };
+    if (this.opts.model) params.model = this.opts.model;
     try {
       const result = await this.rpc.request('turn/start', params);
       const turn = result?.turn || result || {};
@@ -893,6 +913,15 @@ class CodexLimitWatchApp {
     await this.rpc.request('turn/interrupt', { threadId: this.app.sessionId, turnId }, 3000);
     this.pause('Running prompt interrupted. Click Resume to continue.');
     return { ok: true };
+  }
+  async setModel(model) {
+    const value = String(model || '').trim();
+    this.opts.model = value;
+    this.app.model = value;
+    await this.saveState();
+    this.appendOutput(`[config] model ${value || 'default'}`, 'system');
+    this.broadcastAll();
+    return { ok: true, model: value };
   }
   resume() {
     if (this.approval) {
@@ -1255,6 +1284,7 @@ class CodexLimitWatchApp {
       await this.loadSessions();
       return sendJson(res, 200, { ok: true });
     }
+    if (route === '/api/config/model') return sendJson(res, 200, await this.setModel(body.model));
     if (route === '/api/queue/add') return sendJson(res, 200, await this.addPrompt(body.text || ''));
     if (route === '/api/queue/update') { await this.updateQueueItem(body); return sendJson(res, 200, { ok: true }); }
     if (route === '/api/queue/remove') { await this.removeQueueItem(String(body.id)); return sendJson(res, 200, { ok: true }); }

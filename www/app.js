@@ -64,6 +64,9 @@
     var app = snap.app || {}; var rl = snap.rateLimits || {}; var c = app.queueCounts || {};
     var stateBadge = document.getElementById('stateBadge'); stateBadge.textContent = app.state || 'unknown'; stateBadge.className = 'badge ' + (app.state === 'error' ? 'danger' : (app.state === 'paused' || app.state === 'waiting-limits' || app.state === 'approval-required' ? 'warn' : 'ok'));
     var limitBadge = document.getElementById('limitBadge'); limitBadge.textContent = rl.status === 'limited' ? 'limits waiting' : (rl.status === 'available' ? 'limits available' : 'limits unknown'); limitBadge.className = 'badge ' + (rl.status === 'available' ? 'ok' : (rl.status === 'limited' ? 'warn' : 'danger'));
+    var model = app.model || '';
+    var modelBtn = document.getElementById('modelBtn');
+    if(modelBtn) { modelBtn.textContent = 'Model: ' + (model || 'default'); modelBtn.title = model ? 'Current model: ' + model : 'Current model: default Codex model'; }
     renderControls(app, c);
     var reset = rl.resetAt ? new Date(rl.resetAt * 1000) : null; var resetText = reset ? reset.toLocaleTimeString() + ' · in ' + Math.max(0, Math.ceil((reset.getTime()-Date.now())/60000)) + 'm' : '—';
     var sessionTitle = app.sessionTitle || 'not selected';
@@ -175,6 +178,11 @@
     else if(t.id === 'stopBtn') { if(confirm('Stop local server and app-server?')) api('/api/control/stop'); }
     else if(t.id === 'clearOutputBtn') api('/api/output/clear');
     else if(t.id === 'bottomBtn') outputEl.scrollTop = outputEl.scrollHeight;
+    else if(t.id === 'modelBtn') {
+      var currentModel = snap && snap.app ? (snap.app.model || '') : '';
+      var nextModel = prompt('Model override. Leave empty to use the Codex default:', currentModel);
+      if(nextModel !== null) api('/api/config/model', { model:nextModel }).catch(function(e){ alert(e.message); });
+    }
     else if(t.id === 'createSessionBtn') api('/api/session/create').catch(function(e){ alert(e.message); });
     else if(t.id === 'reloadSessionsBtn') api('/api/session/reload');
     else if(t.dataset.session) api('/api/session/select', { sessionId:t.dataset.session }).catch(function(e){ alert(e.message); });
