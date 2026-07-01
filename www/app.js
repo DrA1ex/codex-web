@@ -1,6 +1,7 @@
 (function(){
   var TOKEN = window.CODEX_LIMIT_WATCH_TOKEN || '';
   var snap = null;
+  var expandedQueueItems = Object.create(null);
   var composer = document.getElementById('composer');
   var outputEl = document.getElementById('output');
   function esc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
@@ -85,11 +86,21 @@
     var html = '';
     q.forEach(function(item, i){
       var active = item.id === app.nextPendingId || item.status === 'sending' || item.status === 'sent';
-      html += '<div class="queue-item ' + (active ? 'active' : '') + '"><div class="queue-top"><span>#' + (i+1) + ' <span class="status ' + esc(item.status) + '">' + esc(item.status) + '</span> · ' + item.lineCount + ' lines</span><span>' + esc(fmtTime(item.createdAt)) + '</span></div><div class="preview">' + esc(item.preview || item.text || '') + '</div>';
-      if(item.error) html += '<div class="preview" style="color:var(--danger)">' + esc(item.error) + '</div>';
-      html += '<div class="actions"><button data-act="edit" data-id="' + item.id + '">Edit</button><button data-act="duplicate" data-id="' + item.id + '">Duplicate</button><button data-act="up" data-id="' + item.id + '">Up</button><button data-act="down" data-id="' + item.id + '">Down</button><button data-act="sendNow" data-id="' + item.id + '">Send now</button><button data-act="remove" data-id="' + item.id + '" class="danger">Remove</button>';
-      if(item.status === 'unknown' || item.status === 'failed') html += '<button data-act="markCompleted" data-id="' + item.id + '">Mark completed</button><button data-act="retry" data-id="' + item.id + '">Retry</button>';
-      html += '</div></div>';
+      var completed = item.status === 'completed';
+      var expanded = !!expandedQueueItems[item.id] && !completed;
+      var text = expanded ? (item.text || item.preview || '') : (item.preview || item.text || '');
+      var idAttr = esc(item.id);
+      var toggleAttrs = completed ? '' : ' data-toggle-prompt="1" data-id="' + idAttr + '" role="button" tabindex="0" title="Click to ' + (expanded ? 'collapse' : 'expand') + ' prompt"';
+      html += '<div class="queue-item ' + (active ? 'active ' : '') + (completed ? 'completed ' : '') + (expanded ? 'expanded' : '') + '">' +
+        '<div class="queue-top"><span>#' + (i+1) + ' <span class="status ' + esc(item.status) + '">' + esc(item.status) + '</span> · ' + item.lineCount + ' lines</span><span>' + esc(fmtTime(completed && item.finishedAt ? item.finishedAt : item.createdAt)) + '</span></div>' +
+        '<div class="prompt-preview"' + toggleAttrs + '>' + esc(text || '') + '</div>';
+      if(item.error) html += '<div class="prompt-error">' + esc(item.error) + '</div>';
+      if(!completed) {
+        html += '<div class="actions queue-actions"><button data-act="edit" data-id="' + idAttr + '">Edit</button><button data-act="duplicate" data-id="' + idAttr + '">Duplicate</button><button data-act="up" data-id="' + idAttr + '">Up</button><button data-act="down" data-id="' + idAttr + '">Down</button><button data-act="sendNow" data-id="' + idAttr + '">Send</button><button data-act="remove" data-id="' + idAttr + '" class="danger">Remove</button>';
+        if(item.status === 'unknown' || item.status === 'failed') html += '<button data-act="markCompleted" data-id="' + idAttr + '">Done</button><button data-act="retry" data-id="' + idAttr + '">Retry</button>';
+        html += '</div>';
+      }
+      html += '</div>';
     });
     el.innerHTML = html;
   }
@@ -102,6 +113,16 @@
   function addQueue(){ api('/api/queue/add', { text: composer.value }).then(function(r){ if(r.clearComposer) composer.value=''; if(r.composerText !== undefined) composer.value = r.composerText; if(r.message) alert(r.message); updateCounter(); }).catch(function(e){ alert(e.message); }); }
   document.addEventListener('click', function(ev){
     var t = ev.target;
+    var promptToggle = t.closest && t.closest('[data-toggle-prompt]');
+    if(promptToggle) {
+      var promptId = promptToggle.dataset.id;
+      var itemForToggle = (snap.queue || []).find(function(x){return x.id === promptId;});
+      if(itemForToggle && itemForToggle.status !== 'completed') {
+        expandedQueueItems[promptId] = !expandedQueueItems[promptId];
+        renderQueue();
+      }
+      return;
+    }
     if(t.id === 'addBtn') addQueue();
     else if(t.id === 'pauseBtn') api('/api/control/pause');
     else if(t.id === 'resumeBtn') api('/api/control/resume');
@@ -121,6 +142,17 @@
       else if(act === 'up' || act === 'down') api('/api/queue/reorder', { id:id, direction:act });
       else if(act === 'edit') { var text = prompt('Edit prompt:', item ? item.text : ''); if(text !== null) api('/api/queue/update', { id:id, action:'edit', text:text }); }
       else api('/api/queue/update', { id:id, action:act });
+    }
+  });
+  document.addEventListener('keydown', function(ev){
+    var t = ev.target;
+    if(t && t.dataset && t.dataset.togglePrompt && (ev.key === 'Enter' || ev.key === ' ')) {
+      ev.preventDefault();
+      var item = (snap.queue || []).find(function(x){return x.id === t.dataset.id;});
+      if(item && item.status !== 'completed') {
+        expandedQueueItems[t.dataset.id] = !expandedQueueItems[t.dataset.id];
+        renderQueue();
+      }
     }
   });
   composer.addEventListener('input', updateCounter);
