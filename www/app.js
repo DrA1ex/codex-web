@@ -59,17 +59,20 @@
     var html = '';
     buckets.forEach(function(b){
       var windows = b.windows && b.windows.length ? b.windows : [{ name:'primary', usedPercent:b.usedPercent, remainingPercent:b.usedPercent == null ? null : 100 - b.usedPercent, windowDurationMins:b.windowDurationMins, resetsAt:b.resetsAt }];
+      html += '<div class="limit-card"><div class="limit-card-title">' + esc(b.limitName || b.limitId || 'limit') + '</div>';
       windows.forEach(function(w){
         var used = pct(w.usedPercent);
         var remaining = pct(w.remainingPercent);
         if(remaining == null && used != null) remaining = Math.max(0, 100 - used);
         var barClass = remaining == null ? 'unknown' : (remaining > 60 ? 'ok' : (remaining >= 25 ? 'warn' : 'danger'));
-        html += '<div class="limit-card">' +
-          '<div class="limit-card-top"><span>' + esc(b.limitName || b.limitId || 'limit') + ' · ' + esc(windowLabel(w)) + '</span><b>' + (remaining == null ? '—' : Math.round(remaining) + '% left') + '</b></div>' +
+        html += '<div class="limit-row" title="' + esc(windowLabel(w) + ': ' + (remaining == null ? 'remaining unknown' : Math.round(remaining) + '% left') + '; reset ' + fmtClock(w.resetsAt) + ' · in ' + fmtRelative(w.resetsAt)) + '">' +
+          '<span class="limit-row-label">' + esc(windowLabel(w)) + '</span>' +
           '<div class="limit-bar ' + barClass + '"><span style="width:' + (remaining == null ? 0 : remaining) + '%"></span></div>' +
-          '<div class="limit-card-foot"><span>' + (used == null ? 'usage unknown' : Math.round(used) + '% used') + '</span><span>reset ' + esc(fmtClock(w.resetsAt)) + ' · in ' + esc(fmtRelative(w.resetsAt)) + '</span></div>' +
+          '<b>' + (remaining == null ? '—' : Math.round(remaining) + '%') + '</b>' +
+          '<span class="limit-row-reset">reset ' + esc(fmtClock(w.resetsAt)) + ' · ' + esc(fmtRelative(w.resetsAt)) + '</span>' +
         '</div>';
       });
+      html += '</div>';
     });
     if(!html) html = '<div class="limit-card muted">Rate-limit data unavailable.</div>';
     el.innerHTML = html;
