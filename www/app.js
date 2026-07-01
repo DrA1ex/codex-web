@@ -34,12 +34,34 @@
   function getState(){ return fetch('/api/state?token=' + encodeURIComponent(TOKEN), { headers:{'x-codex-limit-watch-token':TOKEN} }).then(function(r){return r.json();}).then(update); }
   function update(s){ snap = s; render(); }
   function render(){ if(!snap) return; renderHeader(); renderSessions(); renderApproval(); renderQueue(); renderOutput(); document.getElementById('debug').textContent = JSON.stringify(snap.debug || {}, null, 2); }
+  function setButtonState(id, disabled, hidden){
+    var btn = document.getElementById(id);
+    if(!btn) return;
+    btn.disabled = !!disabled;
+    btn.classList.toggle('hidden', !!hidden);
+  }
+  function renderControls(app, counts){
+    counts = counts || {};
+    var state = app.state || '';
+    var hasSession = !!app.sessionId;
+    var pending = counts.pending || 0;
+    var running = (counts.sending || 0) + (counts.sent || 0);
+    var canPause = hasSession && !['paused','done','error','initializing','selecting-session','approval-required'].includes(state);
+    var canResume = hasSession && state === 'paused';
+    var canDone = hasSession && state !== 'done' && pending === 0 && running === 0 && !snap.approval;
+    setButtonState('undoBtn', false, pending === 0);
+    setButtonState('clearBtn', false, pending === 0);
+    setButtonState('clearCompletedBtn', false, (counts.completed || 0) === 0);
+    setButtonState('pauseBtn', !canPause, false);
+    setButtonState('resumeBtn', !canResume, false);
+    setButtonState('doneBtn', !canDone, false);
+    setButtonState('cancelSendBtn', false, state !== 'countdown');
+  }
   function renderHeader(){
     var app = snap.app || {}; var rl = snap.rateLimits || {}; var c = app.queueCounts || {};
     var stateBadge = document.getElementById('stateBadge'); stateBadge.textContent = app.state || 'unknown'; stateBadge.className = 'badge ' + (app.state === 'error' ? 'danger' : (app.state === 'paused' || app.state === 'waiting-limits' || app.state === 'approval-required' ? 'warn' : 'ok'));
     var limitBadge = document.getElementById('limitBadge'); limitBadge.textContent = rl.status === 'limited' ? 'limits waiting' : (rl.status === 'available' ? 'limits available' : 'limits unknown'); limitBadge.className = 'badge ' + (rl.status === 'available' ? 'ok' : (rl.status === 'limited' ? 'warn' : 'danger'));
-    var cancelSendBtn = document.getElementById('cancelSendBtn');
-    if(cancelSendBtn) cancelSendBtn.classList.toggle('hidden', app.state !== 'countdown');
+    renderControls(app, c);
     var reset = rl.resetAt ? new Date(rl.resetAt * 1000) : null; var resetText = reset ? reset.toLocaleTimeString() + ' · in ' + Math.max(0, Math.ceil((reset.getTime()-Date.now())/60000)) + 'm' : '—';
     var sessionTitle = app.sessionTitle || 'not selected';
     var sessionId = app.sessionId || '—';
@@ -123,7 +145,7 @@
     outputEl.innerHTML = (snap.output || []).map(function(l){ return '<div class="out-line ' + esc(l.type || '') + '">' + esc(l.text) + '</div>'; }).join('');
     if(atBottom) outputEl.scrollTop = outputEl.scrollHeight;
   }
-  function updateCounter(){ var text = composer.value; var lines = text ? text.split(/\r?\n/).length : 0; document.getElementById('counter').textContent = 'Lines: ' + lines + ' · Chars: ' + text.length; }
+  function updateCounter(){ var text = composer.value; var lines = text ? text.split(/\r?\n/).length : 0; document.getElementById('counter').textContent = 'Lines: ' + lines + ' · Chars: ' + text.length; setButtonState('addBtn', !text.trim(), false); }
   function addQueue(){ api('/api/queue/add', { text: composer.value }).then(function(r){ if(r.clearComposer) composer.value=''; if(r.composerText !== undefined) composer.value = r.composerText; if(r.message) alert(r.message); updateCounter(); }).catch(function(e){ alert(e.message); }); }
   document.addEventListener('click', function(ev){
     var t = ev.target;
@@ -143,6 +165,7 @@
     else if(t.id === 'resumeBtn') api('/api/control/resume');
     else if(t.id === 'undoBtn') api('/api/queue/undo').then(function(r){ if(r.composerText !== undefined) composer.value = r.composerText; if(r.message) alert(r.message); updateCounter(); });
     else if(t.id === 'clearBtn') { if(confirm('Clear all pending prompts?')) api('/api/queue/clear'); }
+    else if(t.id === 'clearCompletedBtn') { if(confirm('Clear all completed prompts?')) api('/api/queue/clear-completed'); }
     else if(t.id === 'doneBtn') api('/api/control/done').then(function(r){ if(r.message) alert(r.message); });
     else if(t.id === 'stopBtn') { if(confirm('Stop local server and app-server?')) api('/api/control/stop'); }
     else if(t.id === 'clearOutputBtn') api('/api/output/clear');

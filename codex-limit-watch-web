@@ -1110,6 +1110,13 @@ class CodexLimitWatchApp {
     this.appendOutput(`[queue] cleared ${before - this.queue.length} pending prompt(s)`, 'system');
     this.broadcastAll();
   }
+  async clearCompleted() {
+    const before = this.queue.length;
+    this.queue = this.queue.filter((i) => i.status !== 'completed');
+    await this.saveQueue();
+    this.appendOutput(`[queue] cleared ${before - this.queue.length} completed prompt(s)`, 'system');
+    this.broadcastAll();
+  }
   async doneCommand() {
     const unsafe = this.currentItemId || this.currentTurnId || this.approval || this.queue.some((i) => i.status === 'pending' || i.status === 'sending' || i.status === 'sent');
     if (unsafe) return { ok: false, message: 'Queue is not empty or Codex is still running. Use /quit to stop anyway.' };
@@ -1243,6 +1250,7 @@ class CodexLimitWatchApp {
     if (route === '/api/queue/remove') { await this.removeQueueItem(String(body.id)); return sendJson(res, 200, { ok: true }); }
     if (route === '/api/queue/reorder') { await this.reorderQueueItem(String(body.id), body.direction); return sendJson(res, 200, { ok: true }); }
     if (route === '/api/queue/clear') { await this.clearPending(); return sendJson(res, 200, { ok: true }); }
+    if (route === '/api/queue/clear-completed') { await this.clearCompleted(); return sendJson(res, 200, { ok: true }); }
     if (route === '/api/queue/undo') return sendJson(res, 200, await this.undoLast());
     if (route === '/api/control/cancel-send') { this.cancelPendingSend(); return sendJson(res, 200, { ok: true }); }
     if (route === '/api/control/pause') { this.pause(); return sendJson(res, 200, { ok: true }); }
