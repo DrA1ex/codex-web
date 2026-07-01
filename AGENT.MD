@@ -43,6 +43,7 @@ Queue routes:
 Validation:
 
 ```bash
+npm test
 node --check codex-web
 node --check www/app.js
 ```
