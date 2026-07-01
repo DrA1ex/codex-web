@@ -374,6 +374,7 @@
   }
   function updateCounter(){ var text = composer.value; var lines = text ? text.split(/\r?\n/).length : 0; document.getElementById('counter').textContent = 'Lines: ' + lines + ' · Chars: ' + text.length; setButtonState('addBtn', !text.trim(), false); }
   function addQueue(){ api('/api/queue/add', { text: composer.value }).then(function(r){ if(r.item && r.item.id) pendingQueueScrollId = r.item.id; if(r.clearComposer) composer.value=''; if(r.composerText !== undefined) composer.value = r.composerText; if(r.message) alert(r.message); updateCounter(); getState(); }).catch(function(e){ alert(e.message); }); }
+  function sendComposerNow(){ api('/api/queue/send-composer', { text: composer.value }).then(function(r){ if(r.clearComposer) composer.value=''; if(r.composerText !== undefined) composer.value = r.composerText; if(r.message) alert(r.message); updateCounter(); getState(); }).catch(function(e){ alert(e.message); }); }
   document.addEventListener('click', function(ev){
     var t = ev.target;
     var queueMenuWrap = t.closest && t.closest('.menu-wrap');
@@ -491,7 +492,7 @@
   });
   composer.addEventListener('input', updateCounter);
   composer.addEventListener('keydown', function(ev){
-    if((ev.metaKey || ev.ctrlKey) && ev.key === 'Enter'){ ev.preventDefault(); addQueue(); }
+    if((ev.metaKey || ev.ctrlKey) && ev.key === 'Enter'){ ev.preventDefault(); sendComposerNow(); }
   });
   if(compactHeaderQuery) {
     if(compactHeaderQuery.addEventListener) compactHeaderQuery.addEventListener('change', function(){ if(snap) renderHeader(); });

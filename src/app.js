@@ -659,6 +659,36 @@ class CodexLimitWatchApp {
     await this.runCountdownAndSend(item, { continueQueue: false });
   }
 
+  async sendComposerNow(text) {
+    const trimmed = String(text || '').trim();
+    if (!trimmed) return { ok: false, message: 'Prompt is empty' };
+    const command = parseExactCommand(trimmed);
+    if (command) return await this.executeCommand(command);
+    if (!this.app.sessionId) throw new Error('No Codex session selected');
+    if (this.currentItemId || this.currentTurnId || this.isQueueProcessingActive()) {
+      return { ok: false, message: 'Queue is busy. Use Add to queue to enqueue this prompt.' };
+    }
+    if (this.queue.some((i) => i.status === 'pending')) {
+      return { ok: false, message: 'Queue has pending prompts. Use Add to queue to enqueue this prompt.' };
+    }
+    if (this.rateLimits.status === 'unknown') {
+      await this.pollRateLimits();
+    }
+    if (this.rateLimits.status === 'limited') {
+      const resetAt = this.rateLimits.resetAt ? new Date(this.rateLimits.resetAt * 1000) : null;
+      return { ok: false, message: resetAt ? `Rate limit reached. Reset at ${resetAt.toLocaleTimeString()}.` : 'Rate limit reached.' };
+    }
+    if (this.rateLimits.status === 'unknown') {
+      return { ok: false, message: 'Limits are unknown. Try again after the next limits refresh.' };
+    }
+    const item = makeQueueItem(String(text).replace(/\r\n/g, '\n'));
+    this.app.state = 'watching';
+    this.app.message = 'Sending prompt';
+    this.broadcastAll();
+    await this.sendPrompt(item, { continueQueue: false });
+    return { ok: true, clearComposer: true, item };
+  }
+
   async runCountdownAndSend(item, options = {}) {
     const continueQueue = options.continueQueue !== false;
     this.countdownCancel = false;
@@ -1260,6 +1290,7 @@ class CodexLimitWatchApp {
     if (route === '/api/config/effort') return sendJson(res, 200, await this.setEffort(body.effort));
     if (route === '/api/config/theme') return sendJson(res, 200, await this.setTheme(body.theme));
     if (route === '/api/queue/add') return sendJson(res, 200, await this.addPrompt(body.text || ''));
+    if (route === '/api/queue/send-composer') return sendJson(res, 200, await this.sendComposerNow(body.text || ''));
     if (route === '/api/queue/update') { await this.updateQueueItem(body); return sendJson(res, 200, { ok: true }); }
     if (route === '/api/queue/remove') { await this.removeQueueItem(String(body.id)); return sendJson(res, 200, { ok: true }); }
     if (route === '/api/queue/reorder') { await this.reorderQueueItem(String(body.id), body.direction); return sendJson(res, 200, { ok: true }); }
