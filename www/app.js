@@ -13,6 +13,7 @@
   var confirmAction = null;
   var scheduleOpen = false;
   var scheduleDraft = null;
+  var mobileCollapsed = { header:false, limits:false, queue:false };
   var composer = document.getElementById('composer');
   var outputEl = document.getElementById('output');
   var compactHeaderQuery = window.matchMedia ? window.matchMedia('(max-width: 1679px)') : null;
@@ -187,6 +188,30 @@
       if(debug) debug.textContent = JSON.stringify(snap.debug || {}, null, 2);
     }, force);
   }
+  function setMobileCollapsed(section, collapsed){
+    mobileCollapsed[section] = !!collapsed;
+    applyMobileCollapseState();
+  }
+  function updateCollapseButton(id, collapsed, label){
+    var btn = document.getElementById(id);
+    if(!btn) return;
+    btn.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+    btn.title = (collapsed ? 'Expand ' : 'Collapse ') + label;
+    if(id === 'limitsCollapseBtn') {
+      var icon = btn.querySelector('i');
+      if(icon) icon.textContent = collapsed ? '⌄' : '⌃';
+    } else {
+      btn.textContent = collapsed ? '⌄' : '⌃';
+    }
+  }
+  function applyMobileCollapseState(){
+    document.body.classList.toggle('mobile-header-collapsed', mobileCollapsed.header);
+    document.body.classList.toggle('mobile-limits-collapsed', mobileCollapsed.limits);
+    document.body.classList.toggle('mobile-queue-collapsed', mobileCollapsed.queue);
+    updateCollapseButton('headerCollapseBtn', mobileCollapsed.header, 'header');
+    updateCollapseButton('limitsCollapseBtn', mobileCollapsed.limits, 'limits');
+    updateCollapseButton('queueCollapseBtn', mobileCollapsed.queue, 'queue');
+  }
   function renderTheme(app){
     var theme = app.theme === 'light' ? 'light' : 'dark';
     document.documentElement.dataset.theme = theme;
@@ -230,6 +255,8 @@
     renderTheme(app);
     var stateBadge = document.getElementById('stateBadge'); stateBadge.textContent = app.state || 'unknown'; stateBadge.title = app.state || 'unknown'; stateBadge.className = 'badge ' + (app.state === 'error' ? 'danger' : (app.state === 'paused' || app.state === 'scheduled' || app.state === 'waiting-limits' || app.state === 'approval-required' ? 'warn' : 'ok'));
     var limitBadge = document.getElementById('limitBadge'); limitBadge.textContent = limitBadgeText(rl.status); limitBadge.title = fullLimitBadgeText(rl.status); limitBadge.className = 'badge ' + (rl.status === 'available' ? 'ok' : (rl.status === 'limited' ? 'warn' : 'danger'));
+    var mobileLimitsSummary = document.getElementById('mobileLimitsSummary');
+    if(mobileLimitsSummary) mobileLimitsSummary.textContent = limitBadgeText(rl.status);
     var modelSelect = document.getElementById('modelSelect');
     if(modelSelect) renderModelOptions(modelSelect, app);
     var effortSelect = document.getElementById('effortSelect');
@@ -260,6 +287,7 @@
       metaItem('Session ID', sessionId) +
       metaItem(nextRun.label, nextRun.value);
     renderLimitStats();
+    applyMobileCollapseState();
   }
   function renderLimitStats(){
     var el = document.getElementById('limitStats'); var rl = snap.rateLimits || {}; var buckets = rl.buckets || [];
@@ -510,7 +538,13 @@
       renderOutput();
       return;
     }
-    if(t.id === 'addBtn') addQueue();
+    var mobileCollapseBtn = t.closest && t.closest('#headerCollapseBtn, #limitsCollapseBtn, #queueCollapseBtn');
+    if(mobileCollapseBtn) {
+      if(mobileCollapseBtn.id === 'headerCollapseBtn') setMobileCollapsed('header', !mobileCollapsed.header);
+      else if(mobileCollapseBtn.id === 'limitsCollapseBtn') setMobileCollapsed('limits', !mobileCollapsed.limits);
+      else if(mobileCollapseBtn.id === 'queueCollapseBtn') setMobileCollapsed('queue', !mobileCollapsed.queue);
+    }
+    else if(t.id === 'addBtn') addQueue();
     else if(t.id === 'cancelSendBtn') api('/api/control/cancel-send');
     else if(t.id === 'pauseBtn') api('/api/control/pause');
     else if(t.id === 'resumeBtn') api('/api/control/resume');
