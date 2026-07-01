@@ -10,6 +10,7 @@
   var expandedDiffOutput = Object.create(null);
   var activeQueueFilter = 'all';
   var renderKeys = Object.create(null);
+  var confirmAction = null;
   var composer = document.getElementById('composer');
   var outputEl = document.getElementById('output');
   var compactHeaderQuery = window.matchMedia ? window.matchMedia('(max-width: 1679px)') : null;
@@ -133,6 +134,7 @@
     renderSection('header', renderHeader, force);
     renderSection('sessions', renderSessions, force);
     renderSection('approval', renderApproval, force);
+    renderConfirm();
     renderSection('queue', renderQueue, force);
     renderSection('output', renderOutput, force);
     renderSection('debug', function(){
@@ -254,6 +256,21 @@
     var p = a.params || {}; var cmd = Array.isArray(p.command) ? p.command.join(' ') : (p.command || '');
     box.classList.remove('hidden');
     box.innerHTML = '<div class="approval-modal"><div class="approval-head"><b>Approval required</b><span>Auto-decline in <b>' + esc(fmtCountdown(a.expiresAt)) + '</b></span></div><pre>Method: ' + esc(a.method) + '\\nCommand: ' + esc(cmd || '—') + '\\nCWD: ' + esc(p.cwd || '—') + '\\nReason: ' + esc(p.reason || '—') + '</pre><div class="actions"><button data-approval="accept" class="primary">Accept once</button><button data-approval="accept-for-session">Accept for session</button><button data-approval="decline">Decline</button><button data-approval="cancel" class="danger">Cancel turn</button></div></div>';
+  }
+  function openConfirm(action, title, message, yesText, danger){
+    confirmAction = { action:action, title:title, message:message, yesText:yesText, danger:!!danger };
+    renderConfirm();
+  }
+  function closeConfirm(){
+    confirmAction = null;
+    renderConfirm();
+  }
+  function renderConfirm(){
+    var box = document.getElementById('confirmBox');
+    if(!box) return;
+    if(!confirmAction) { box.classList.add('hidden'); box.innerHTML = ''; return; }
+    box.classList.remove('hidden');
+    box.innerHTML = '<div class="confirm-modal" role="dialog" aria-modal="true" aria-labelledby="confirmTitle"><div class="confirm-head"><b id="confirmTitle">' + esc(confirmAction.title) + '</b></div><p>' + esc(confirmAction.message) + '</p><div class="actions"><button id="confirmYesBtn" class="' + (confirmAction.danger ? 'danger' : 'primary') + '">' + esc(confirmAction.yesText || 'Yes') + '</button><button id="confirmCancelBtn">Cancel</button></div></div>';
   }
   function renderQueue(){
     var q = snap.queue || []; var el = document.getElementById('queue'); var app = snap.app || {};
@@ -379,7 +396,7 @@
     else if(t.id === 'cancelSendBtn') api('/api/control/cancel-send');
     else if(t.id === 'pauseBtn') api('/api/control/pause');
     else if(t.id === 'resumeBtn') api('/api/control/resume');
-    else if(t.id === 'interruptBtn') { if(confirm('Interrupt the current running prompt?')) api('/api/control/interrupt').then(function(r){ if(r.message) alert(r.message); }).catch(function(e){ alert(e.message); }); }
+    else if(t.id === 'interruptBtn') openConfirm('interrupt', 'Interrupt prompt?', 'The current running prompt will be interrupted. The queue will remain available after the turn stops.', 'Yes, interrupt', true);
     else if(t.id === 'undoBtn') api('/api/queue/undo').then(function(r){ if(r.composerText !== undefined) composer.value = r.composerText; if(r.message) alert(r.message); updateCounter(); });
     else if(t.id === 'queueMenuBtn') {
       var menu = document.getElementById('queueMenu');
@@ -387,7 +404,14 @@
     }
     else if(t.id === 'clearBtn') { setQueueMenuOpen(false); if(confirm('Clear all pending prompts?')) api('/api/queue/clear'); }
     else if(t.id === 'clearCompletedBtn') { setQueueMenuOpen(false); if(confirm('Clear all completed prompts?')) api('/api/queue/clear-completed'); }
-    else if(t.id === 'stopBtn') { if(confirm('Stop local server and app-server?')) api('/api/control/stop'); }
+    else if(t.id === 'stopBtn') openConfirm('stop', 'Stop server?', 'This will stop the local web server and the Codex app-server. A running prompt will be interrupted.', 'Yes, stop server', true);
+    else if(t.id === 'confirmCancelBtn') closeConfirm();
+    else if(t.id === 'confirmYesBtn') {
+      var action = confirmAction && confirmAction.action;
+      closeConfirm();
+      if(action === 'interrupt') api('/api/control/interrupt').then(function(r){ if(r.message) alert(r.message); }).catch(function(e){ alert(e.message); });
+      else if(action === 'stop') api('/api/control/stop').catch(function(e){ alert(e.message); });
+    }
     else if(t.id === 'clearOutputBtn') api('/api/output/clear');
     else if(t.id === 'bottomBtn') outputEl.scrollTop = outputEl.scrollHeight;
     else if(t.id === 'themeBtn') {
@@ -427,6 +451,11 @@
   document.addEventListener('keydown', function(ev){
     var t = ev.target;
     if(ev.key === 'Escape') {
+      if(confirmAction) {
+        ev.preventDefault();
+        closeConfirm();
+        return;
+      }
       var queueMenu = document.getElementById('queueMenu');
       if(queueMenu && !queueMenu.classList.contains('hidden')) {
         ev.preventDefault();

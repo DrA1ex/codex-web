@@ -506,6 +506,10 @@ class CodexLimitWatchApp {
     return ['countdown', 'sending', 'streaming', 'waiting-limits'].includes(this.app.state);
   }
 
+  hasActivePrompt() {
+    return !!(this.currentItemId || this.currentTurnId || this.queue.some((i) => i.status === 'sending' || i.status === 'sent'));
+  }
+
   canChangeSession() {
     const unsafeQueue = this.queue.some((i) => i.status === 'pending' || i.status === 'sending' || i.status === 'sent');
     return !!this.app.sessionId && !unsafeQueue && !this.isQueueProcessingActive() && !this.currentItemId && !this.currentTurnId && !this.approval && !['initializing', 'selecting-session', 'approval-required', 'shutting-down'].includes(this.app.state);

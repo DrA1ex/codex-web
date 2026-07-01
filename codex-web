@@ -14,8 +14,28 @@ const { CodexLimitWatchApp } = require('./src/app');
 async function main() {
   const opts = parseArgs(process.argv.slice(2));
   const app = new CodexLimitWatchApp(opts);
-  process.on('SIGINT', () => app.shutdown('SIGINT'));
-  process.on('SIGTERM', () => app.shutdown('SIGTERM'));
+  let forceShutdownUntil = 0;
+  function requestShutdown(signal) {
+    if (app.hasActivePrompt && app.hasActivePrompt()) {
+      const now = Date.now();
+      if (now < forceShutdownUntil) {
+        app.shutdown(`${signal} forced`);
+        return;
+      }
+      forceShutdownUntil = now + 5000;
+      const keyName = signal === 'SIGINT' ? 'Ctrl+C' : signal;
+      const message = `A prompt is running. Press ${keyName} again within 5 seconds to stop the server and interrupt it.`;
+      console.error(message);
+      if (app.appendOutput) app.appendOutput(message, 'system');
+      setTimeout(() => {
+        if (Date.now() >= forceShutdownUntil) forceShutdownUntil = 0;
+      }, 5100).unref();
+      return;
+    }
+    app.shutdown(signal);
+  }
+  process.on('SIGINT', () => requestShutdown('SIGINT'));
+  process.on('SIGTERM', () => requestShutdown('SIGTERM'));
   process.on('uncaughtException', (err) => {
     console.error(err.stack || err.message || err);
     app.setError(err.message || String(err));

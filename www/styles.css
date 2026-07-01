@@ -810,6 +810,35 @@ textarea:focus { border-color: rgba(88, 166, 255, .78); box-shadow: 0 0 0 2px rg
 }
 :root[data-theme="light"] .approval pre { background: #fff; border-color: #ead79c; }
 
+.confirm {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 18px;
+  background: rgba(3, 6, 10, .68);
+}
+.confirm-modal {
+  width: min(460px, 100%);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, .42);
+  padding: 16px;
+}
+.confirm-head {
+  color: var(--text);
+  font-size: 16px;
+  margin-bottom: 8px;
+}
+.confirm-modal p {
+  margin: 0 0 14px;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
 .hidden { display: none !important; }
 .empty { color: var(--muted); padding: 8px; }
 pre { margin: 0; white-space: pre-wrap; word-break: break-word; }
