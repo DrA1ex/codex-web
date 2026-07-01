@@ -1,0 +1,1553 @@
+#!/usr/bin/env node
+'use strict';
+
+/*
+ * Codex Limit Watch Web
+ * Local Web UI for Codex app-server prompt queueing.
+ * Browser assets are loaded from ./www next to this executable.
+ * Runtime dependencies: Node.js built-ins only.
+ */
+
+const http = require('node:http');
+const fs = require('node:fs');
+const fsp = require('node:fs/promises');
+const path = require('node:path');
+const os = require('node:os');
+const crypto = require('node:crypto');
+const readline = require('node:readline');
+const { spawn } = require('node:child_process');
+const { URL } = require('node:url');
+
+const VERSION = '0.1.0';
+const MAX_OUTPUT_LINES = 4000;
+const SCRIPT_DIR = path.dirname(fs.realpathSync(__filename));
+const ASSET_DIRS = [
+  path.join(SCRIPT_DIR, 'www'),
+  path.join(path.dirname(__filename), 'www'),
+  path.join(process.cwd(), 'www'),
+];
+const STATIC_TYPES = {
+  '.css': 'text/css; charset=utf-8',
+  '.js': 'application/javascript; charset=utf-8',
+  '.html': 'text/html; charset=utf-8',
+};
+
+function nowIso() { return new Date().toISOString(); }
+function sleep(ms) { return new Promise((resolve) => setTimeout(resolve, ms)); }
+function randomId(bytes = 4) { return crypto.randomBytes(bytes).toString('hex'); }
+function sha256(input) { return crypto.createHash('sha256').update(input).digest('hex'); }
+function homeExpand(p) {
+  if (!p) return p;
+  if (p === '~') return os.homedir();
+  if (p.startsWith('~/')) return path.join(os.homedir(), p.slice(2));
+  return p;
+}
+function isLocalHost(host) {
+  return host === '127.0.0.1' || host === 'localhost' || host === '::1';
+}
+function toBool(value, fallback) {
+  if (value === undefined || value === null) return fallback;
+  if (typeof value === 'boolean') return value;
+  const s = String(value).toLowerCase();
+  if (['true', '1', 'yes', 'on'].includes(s)) return true;
+  if (['false', '0', 'no', 'off'].includes(s)) return false;
+  return fallback;
+}
+function safeJson(value) {
+  try { return JSON.stringify(value); } catch (_) { return JSON.stringify(String(value)); }
+}
+function truncate(s, n = 120) {
+  s = String(s || '').replace(/\s+/g, ' ').trim();
+  return s.length > n ? s.slice(0, n - 1) + '…' : s;
+}
+function lineCount(text) {
+  if (!text) return 0;
+  return String(text).split(/\r?\n/).length;
+}
+function previewOf(text) {
+  const line = String(text || '').split(/\r?\n/).find((l) => l.trim());
+  return truncate(line || '', 160);
+}
+function normalizeProjectDir(raw) {
+  const resolved = path.resolve(homeExpand(raw || process.cwd()));
+  if (!fs.existsSync(resolved)) {
+    throw new Error(`Project dir does not exist: ${resolved}`);
+  }
+  return fs.realpathSync(resolved);
+}
+function ensureDirSync(dir) {
+  fs.mkdirSync(dir, { recursive: true });
+}
+function stripTrailingSep(p) {
+  return path.resolve(p).replace(/[\\/]+$/, '');
+}
+function pathRelation(projectDir, cwd) {
+  if (!cwd) return 99;
+  let a, b;
+  try {
+    a = stripTrailingSep(fs.existsSync(projectDir) ? fs.realpathSync(projectDir) : projectDir);
+    b = stripTrailingSep(fs.existsSync(cwd) ? fs.realpathSync(cwd) : cwd);
+  } catch (_) {
+    a = stripTrailingSep(projectDir);
+    b = stripTrailingSep(cwd);
+  }
+  if (a === b) return 0;
+  const relAB = path.relative(a, b);
+  const relBA = path.relative(b, a);
+  if (relAB && !relAB.startsWith('..') && !path.isAbsolute(relAB)) return 1;
+  if (relBA && !relBA.startsWith('..') && !path.isAbsolute(relBA)) return 2;
+  return 10;
+}
+function asArray(x) {
+  if (!x) return [];
+  return Array.isArray(x) ? x : [x];
+}
+
+function parseArgs(argv) {
+  const opts = {
+    host: '127.0.0.1',
+    port: 0,
+    noOpen: false,
+    stateDir: '~/.local/state/codex-limit-watch-web',
+    codexBin: 'codex',
+    projectDir: process.cwd(),
+    allSessions: false,
+    sessionPickerLimit: 50,
+    watchInterval: 30,
+    countdown: 5,
+    sandbox: 'workspace-write',
+    approvalPolicy: 'on-request',
+    approvalResponse: 'accept-for-session',
+    network: true,
+    logJsonrpc: false,
+    debug: false,
+    force: false,
+    addDirs: [],
+  };
+  const positional = [];
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    const next = () => {
+      if (i + 1 >= argv.length) throw new Error(`Missing value for ${a}`);
+      return argv[++i];
+    };
+    if (a === '--help' || a === '-h') {
+      printHelp();
+      process.exit(0);
+    } else if (a === '--host') opts.host = next();
+    else if (a === '--port') opts.port = Number(next());
+    else if (a === '--no-open') opts.noOpen = true;
+    else if (a === '--state-dir') opts.stateDir = next();
+    else if (a === '--codex-bin') opts.codexBin = next();
+    else if (a === '--project-dir') opts.projectDir = next();
+    else if (a === '--all-sessions') opts.allSessions = true;
+    else if (a === '--session-picker-limit') opts.sessionPickerLimit = Number(next());
+    else if (a === '--watch-interval') opts.watchInterval = Number(next());
+    else if (a === '--countdown') opts.countdown = Number(next());
+    else if (a === '--sandbox') opts.sandbox = next();
+    else if (a === '--approval-policy') opts.approvalPolicy = next();
+    else if (a === '--approval-response') opts.approvalResponse = next();
+    else if (a === '--network') opts.network = toBool(next(), true);
+    else if (a === '--log-jsonrpc') opts.logJsonrpc = true;
+    else if (a === '--debug') opts.debug = true;
+    else if (a === '--force') opts.force = true;
+    else if (a === '--add-dir') opts.addDirs.push(next());
+    else if (a.startsWith('--')) throw new Error(`Unknown option: ${a}`);
+    else positional.push(a);
+  }
+  opts.sessionId = positional[0] || null;
+  opts.port = Number.isFinite(opts.port) ? opts.port : 0;
+  opts.watchInterval = Math.max(5, Number(opts.watchInterval) || 30);
+  opts.countdown = Math.max(0, Number(opts.countdown) || 0);
+  opts.sessionPickerLimit = Math.max(1, Number(opts.sessionPickerLimit) || 50);
+  opts.projectDir = normalizeProjectDir(opts.projectDir);
+  opts.stateDir = path.resolve(homeExpand(opts.stateDir));
+  opts.addDirs = opts.addDirs.map((d) => normalizeProjectDir(d));
+  validateOptions(opts);
+  return opts;
+}
+
+function validateOptions(opts) {
+  const sandboxes = new Set(['read-only', 'workspace-write', 'danger-full-access']);
+  if (!sandboxes.has(opts.sandbox)) throw new Error(`Unsupported --sandbox: ${opts.sandbox}`);
+  const approvals = new Set(['on-request', 'never', 'untrusted', 'on-failure']);
+  if (!approvals.has(opts.approvalPolicy)) throw new Error(`Unsupported --approval-policy: ${opts.approvalPolicy}`);
+  const responses = new Set(['manual', 'accept', 'accept-for-session', 'decline', 'cancel']);
+  if (!responses.has(opts.approvalResponse)) throw new Error(`Unsupported --approval-response: ${opts.approvalResponse}`);
+}
+
+function printHelp() {
+  console.log(`Codex Limit Watch Web ${VERSION}\n\nUsage:\n  codex-limit-watch-web [session_id] [options]\n\nOptions:\n  --host 127.0.0.1\n  --port 0\n  --no-open\n  --state-dir ~/.local/state/codex-limit-watch-web\n  --codex-bin codex\n  --project-dir <dir>\n  --all-sessions\n  --session-picker-limit 50\n  --watch-interval 30\n  --countdown 5\n  --sandbox read-only|workspace-write|danger-full-access\n  --approval-policy on-request|never|untrusted|on-failure\n  --approval-response manual|accept|accept-for-session|decline|cancel\n  --network true|false\n  --add-dir <dir>\n  --log-jsonrpc\n  --debug\n`);
+}
+
+function mapApprovalPolicy(v) {
+  return v;
+}
+function mapSandbox(v) {
+  return ({
+    'read-only': 'readOnly',
+    'workspace-write': 'workspaceWrite',
+    'danger-full-access': 'dangerFullAccess',
+  })[v] || v;
+}
+function mapApprovalResponse(v) {
+  return ({
+    'manual': 'manual',
+    'accept': 'accept',
+    'accept-for-session': 'acceptForSession',
+    'decline': 'decline',
+    'cancel': 'cancel',
+  })[v] || v;
+}
+function humanApprovalResponse(v) {
+  return ({ acceptForSession: 'accept-for-session' })[v] || v;
+}
+function makeSandboxPolicy(opts) {
+  const type = mapSandbox(opts.sandbox);
+  const policy = { type };
+  if (type === 'workspaceWrite') {
+    policy.writableRoots = [opts.projectDir, ...opts.addDirs];
+    policy.networkAccess = opts.network;
+  } else if (type === 'readOnly') {
+    policy.networkAccess = opts.network;
+  } else if (type === 'dangerFullAccess') {
+    policy.networkAccess = opts.network;
+  }
+  return policy;
+}
+
+class JsonRpcClient {
+  constructor(app) {
+    this.app = app;
+    this.proc = null;
+    this.rl = null;
+    this.nextId = 1;
+    this.pending = new Map();
+    this.started = false;
+    this.exited = false;
+  }
+  start() {
+    const opts = this.app.opts;
+    return new Promise((resolve, reject) => {
+      let settled = false;
+      const child = spawn(opts.codexBin, ['app-server'], {
+        cwd: opts.projectDir,
+        stdio: ['pipe', 'pipe', 'pipe'],
+        env: process.env,
+        detached: process.platform !== 'win32',
+      });
+      this.proc = child;
+      const onSpawn = () => {
+        this.started = true;
+        if (!settled) { settled = true; resolve(); }
+      };
+      const onError = (err) => {
+        if (!settled) { settled = true; reject(err); }
+        else this.app.setError(`app-server error: ${err.message}`);
+      };
+      child.once('spawn', onSpawn);
+      child.once('error', onError);
+      child.stderr.on('data', (buf) => {
+        const text = buf.toString('utf8');
+        this.app.debugLog('app-server stderr', text.trim());
+        if (this.app.opts.debug) this.app.appendOutput('[stderr] ' + text.trimEnd(), 'stderr');
+      });
+      this.rl = readline.createInterface({ input: child.stdout });
+      this.rl.on('line', (line) => this.handleLine(line));
+      child.on('exit', (code, signal) => {
+        this.exited = true;
+        this.app.debug.appServerStatus = `exited code=${code} signal=${signal || ''}`;
+        for (const [id, p] of this.pending) {
+          p.reject(new Error(`app-server exited before response to request ${id}`));
+        }
+        this.pending.clear();
+        if (!this.app.shuttingDown) {
+          this.app.setError(`codex app-server exited: code=${code}, signal=${signal || 'none'}`);
+        }
+      });
+      setTimeout(() => {
+        if (!settled) {
+          settled = true;
+          reject(new Error('codex app-server did not emit spawn event in time'));
+        }
+      }, 3000).unref();
+    });
+  }
+  async initialize() {
+    await this.request('initialize', {
+      clientInfo: { name: 'codex_limit_watch_web', title: 'Codex Limit Watch Web', version: VERSION },
+      capabilities: { experimentalApi: true, mcpServerOpenaiFormElicitation: false },
+    });
+    this.notify('initialized', {});
+  }
+  request(method, params = undefined, timeoutMs = 0) {
+    if (!this.proc || !this.proc.stdin.writable) return Promise.reject(new Error('app-server is not running'));
+    const id = this.nextId++;
+    const msg = { method, id };
+    if (params !== undefined) msg.params = params;
+    this.write(msg);
+    return new Promise((resolve, reject) => {
+      let timeout = null;
+      if (timeoutMs > 0) {
+        timeout = setTimeout(() => {
+          this.pending.delete(id);
+          reject(new Error(`JSON-RPC request timed out: ${method}`));
+        }, timeoutMs);
+        timeout.unref();
+      }
+      this.pending.set(id, { method, resolve, reject, timeout });
+    });
+  }
+  notify(method, params = {}) {
+    this.write({ method, params });
+  }
+  respond(id, result, isError = false) {
+    if (isError) this.write({ id, error: result });
+    else this.write({ id, result });
+  }
+  write(msg) {
+    this.logJsonRpc('client', msg);
+    this.proc.stdin.write(JSON.stringify(msg) + '\n');
+  }
+  logJsonRpc(direction, msg) {
+    if (!this.app.jsonRpcLogPath) return;
+    const masked = maskSecrets(msg);
+    fs.appendFile(this.app.jsonRpcLogPath, `${nowIso()} ${direction} ${safeJson(masked)}\n`, () => {});
+  }
+  handleLine(line) {
+    if (!line.trim()) return;
+    let msg;
+    try { msg = JSON.parse(line); }
+    catch (e) {
+      this.app.debugLog('jsonrpc parse error', line.slice(0, 500));
+      return;
+    }
+    this.logJsonRpc('server', msg);
+    if (Object.prototype.hasOwnProperty.call(msg, 'id') && (Object.prototype.hasOwnProperty.call(msg, 'result') || Object.prototype.hasOwnProperty.call(msg, 'error'))) {
+      const pending = this.pending.get(msg.id);
+      if (!pending) {
+        this.app.debugLog('orphan rpc response', safeJson(msg));
+        return;
+      }
+      this.pending.delete(msg.id);
+      if (pending.timeout) clearTimeout(pending.timeout);
+      if (msg.error) {
+        const err = new Error(msg.error.message || `JSON-RPC error for ${pending.method}`);
+        err.code = msg.error.code;
+        err.data = msg.error.data;
+        this.app.debug.lastJsonRpcError = msg.error;
+        pending.reject(err);
+      } else {
+        pending.resolve(msg.result);
+      }
+      return;
+    }
+    if (Object.prototype.hasOwnProperty.call(msg, 'id') && msg.method) {
+      this.app.handleServerRequest(msg).catch((err) => {
+        this.respond(msg.id, { code: -32603, message: err.message || String(err) }, true);
+      });
+      return;
+    }
+    if (msg.method) this.app.handleNotification(msg.method, msg.params || {});
+  }
+  async stop() {
+    if (!this.proc || this.exited) return;
+    try { this.rl && this.rl.close(); } catch (_) {}
+    try { this.proc.stdin.end(); } catch (_) {}
+    await sleep(100);
+    if (!this.exited) {
+      try {
+        if (process.platform !== 'win32' && this.proc.pid) process.kill(-this.proc.pid, 'SIGTERM');
+        else this.proc.kill('SIGTERM');
+      } catch (_) {}
+    }
+    await sleep(500);
+    if (!this.exited) {
+      try {
+        if (process.platform !== 'win32' && this.proc.pid) process.kill(-this.proc.pid, 'SIGKILL');
+        else this.proc.kill('SIGKILL');
+      } catch (_) {}
+    }
+  }
+}
+
+function maskSecrets(value) {
+  if (Array.isArray(value)) return value.map(maskSecrets);
+  if (!value || typeof value !== 'object') return value;
+  const out = {};
+  for (const [k, v] of Object.entries(value)) {
+    if (/token|secret|password|authorization|api[-_]?key/i.test(k)) out[k] = '[masked]';
+    else out[k] = maskSecrets(v);
+  }
+  return out;
+}
+
+class CodexLimitWatchApp {
+  constructor(opts) {
+    this.opts = opts;
+    this.token = randomId(18);
+    this.server = null;
+    this.rpc = new JsonRpcClient(this);
+    this.clients = new Set();
+    this.shuttingDown = false;
+    this.stateDirForPair = null;
+    this.queuePath = null;
+    this.statePath = null;
+    this.eventsLogPath = null;
+    this.jsonRpcLogPath = null;
+    this.lockPath = null;
+    this.lockAcquired = false;
+    this.pumpTimer = null;
+    this.limitTimer = null;
+    this.countdownCancel = false;
+    this.currentTurnResolve = null;
+    this.currentTurnReject = null;
+    this.currentItemId = null;
+    this.currentTurnId = null;
+    this.turnStarted = false;
+    this.turnCompletionSeen = false;
+    this.turnCompletionStatus = null;
+    this.lastComposerText = '';
+    this.sessionsLoaded = false;
+    this.app = {
+      state: 'initializing',
+      message: '',
+      url: '',
+      projectDir: opts.projectDir,
+      stateDir: opts.stateDir,
+      sessionId: opts.sessionId,
+      sessionTitle: opts.sessionId ? shortId(opts.sessionId) : 'not selected',
+      sandbox: opts.sandbox,
+      approvalPolicy: opts.approvalPolicy,
+      approvalResponse: opts.approvalResponse,
+      network: opts.network,
+      writableRoots: [opts.projectDir, ...opts.addDirs],
+      allSessions: opts.allSessions,
+      connectedClients: 0,
+      startedAt: nowIso(),
+    };
+    this.queue = [];
+    this.output = [];
+    this.sessions = [];
+    this.rateLimits = { status: 'unknown', message: 'not checked yet', buckets: [], resetAt: null, raw: null, updatedAt: null };
+    this.approval = null;
+    this.debug = {
+      appServerStatus: 'not started',
+      lastJsonRpcError: null,
+      lastRateLimitPayload: null,
+      lastTurnId: null,
+      connectedBrowserClients: 0,
+      stateDirForPair: null,
+      queuePath: null,
+    };
+  }
+
+  async start() {
+    ensureDirSync(this.opts.stateDir);
+    if (!isLocalHost(this.opts.host)) {
+      console.warn(`Warning: host ${this.opts.host} is not localhost. The UI is token-protected, but localhost is safer.`);
+    }
+    this.server = http.createServer((req, res) => this.handleHttp(req, res));
+    await new Promise((resolve, reject) => {
+      this.server.once('error', reject);
+      this.server.listen(this.opts.port, this.opts.host, () => resolve());
+    });
+    const address = this.server.address();
+    this.app.url = `http://${this.opts.host}:${address.port}/?token=${this.token}`;
+
+    await this.rpc.start().catch((err) => {
+      throw friendlyStartError(err, this.opts.codexBin);
+    });
+    this.debug.appServerStatus = 'started';
+    await this.rpc.initialize();
+
+    if (this.opts.sessionId) {
+      await this.selectSession(this.opts.sessionId, true);
+    } else {
+      this.app.state = 'selecting-session';
+      await this.loadSessions();
+    }
+
+    await this.pollRateLimits();
+    this.scheduleLimitPolling();
+    this.printStartup();
+    if (!this.opts.noOpen) openBrowser(this.app.url);
+    this.broadcastAll();
+    this.schedulePump(500);
+  }
+
+  printStartup() {
+    console.log('Codex Limit Watch Web');
+    console.log(`Project: ${this.opts.projectDir}`);
+    console.log(`Session: ${this.app.sessionId || 'not selected'}`);
+    console.log(`Sandbox: ${this.opts.sandbox}`);
+    console.log(`Approval policy: ${this.opts.approvalPolicy}`);
+    console.log(`Approval response: ${this.opts.approvalResponse}`);
+    console.log(`URL: ${this.app.url}`);
+    if (this.opts.sandbox === 'danger-full-access') {
+      console.log('Warning: danger-full-access disables normal sandbox isolation. Use only in a trusted local environment.');
+    }
+  }
+
+  async setupPairState(sessionId) {
+    const key = sha256(`${stripTrailingSep(this.opts.projectDir)}\n${sessionId}`).slice(0, 32);
+    this.stateDirForPair = path.join(this.opts.stateDir, key);
+    ensureDirSync(this.stateDirForPair);
+    this.queuePath = path.join(this.stateDirForPair, 'queue.json');
+    this.statePath = path.join(this.stateDirForPair, 'state.json');
+    this.eventsLogPath = path.join(this.stateDirForPair, 'events.log');
+    this.jsonRpcLogPath = this.opts.logJsonrpc ? path.join(this.stateDirForPair, 'jsonrpc.log') : null;
+    this.lockPath = path.join(this.stateDirForPair, 'app.lock');
+    this.debug.stateDirForPair = this.stateDirForPair;
+    this.debug.queuePath = this.queuePath;
+    await this.acquireLock();
+    await this.loadQueue();
+    await this.saveState();
+  }
+
+  async acquireLock() {
+    if (!this.lockPath || this.lockAcquired) return;
+    if (fs.existsSync(this.lockPath) && !this.opts.force) {
+      let existing = null;
+      try { existing = JSON.parse(fs.readFileSync(this.lockPath, 'utf8')); } catch (_) {}
+      if (existing && existing.pid && isPidAlive(existing.pid)) {
+        const url = existing.url ? `\nURL: ${existing.url}` : '';
+        throw new Error(`Another Codex Limit Watch Web instance is already running for this project/session (pid ${existing.pid}).${url}\nUse --force only if this is stale.`);
+      }
+    }
+    fs.writeFileSync(this.lockPath, JSON.stringify({ pid: process.pid, url: this.app.url, startedAt: nowIso() }, null, 2));
+    this.lockAcquired = true;
+  }
+
+  releaseLock() {
+    if (!this.lockAcquired || !this.lockPath) return;
+    try {
+      const raw = JSON.parse(fs.readFileSync(this.lockPath, 'utf8'));
+      if (raw.pid === process.pid) fs.unlinkSync(this.lockPath);
+    } catch (_) {
+      try { fs.unlinkSync(this.lockPath); } catch (_) {}
+    }
+    this.lockAcquired = false;
+  }
+
+  async loadQueue() {
+    if (!this.queuePath) return;
+    if (!fs.existsSync(this.queuePath)) {
+      this.queue = [];
+      await this.saveQueue();
+      return;
+    }
+    try {
+      const data = JSON.parse(await fsp.readFile(this.queuePath, 'utf8'));
+      this.queue = Array.isArray(data) ? data : (Array.isArray(data.items) ? data.items : []);
+      for (const item of this.queue) {
+        if (item.status === 'sending' || item.status === 'sent') {
+          item.status = 'unknown';
+          item.error = 'Previous run exited while this prompt may already have been accepted by Codex.';
+        }
+        normalizeQueueItem(item);
+      }
+      await this.saveQueue();
+    } catch (err) {
+      const backup = `${this.queuePath}.corrupt.${Date.now()}.bak`;
+      try { fs.renameSync(this.queuePath, backup); } catch (_) {}
+      this.queue = [];
+      await this.saveQueue();
+      this.appendOutput(`[error] queue file was corrupted. Backup: ${backup}`, 'error');
+      this.eventLog('error', `queue file corrupted; backup=${backup}; ${err.message}`);
+    }
+  }
+
+  async saveQueue() {
+    if (!this.queuePath) return;
+    const tmp = this.queuePath + '.tmp';
+    await fsp.writeFile(tmp, JSON.stringify(this.queue, null, 2));
+    await fsp.rename(tmp, this.queuePath);
+    this.broadcast('queue', this.queue);
+  }
+  async saveState() {
+    if (!this.statePath) return;
+    const data = {
+      version: VERSION,
+      projectDir: this.opts.projectDir,
+      sessionId: this.app.sessionId,
+      sessionTitle: this.app.sessionTitle,
+      state: this.app.state,
+      updatedAt: nowIso(),
+    };
+    await fsp.writeFile(this.statePath, JSON.stringify(data, null, 2)).catch(() => {});
+  }
+
+  eventLog(level, message) {
+    if (!this.eventsLogPath) return;
+    fs.appendFile(this.eventsLogPath, `${nowIso()} ${level} ${message}\n`, () => {});
+  }
+  debugLog(message, data = '') {
+    this.eventLog('debug', `${message}${data ? ' ' + data : ''}`);
+  }
+
+  async loadSessions() {
+    this.app.state = 'selecting-session';
+    this.app.message = 'Loading sessions…';
+    this.broadcastAll();
+    let threads = [];
+    let errors = [];
+    try {
+      const exact = await this.rpc.request('thread/list', {
+        cursor: null,
+        limit: this.opts.sessionPickerLimit,
+        sortKey: 'recency_at',
+        sortDirection: 'desc',
+        cwd: this.opts.projectDir,
+      });
+      threads.push(...extractThreadList(exact));
+    } catch (err) { errors.push(err.message); }
+
+    try {
+      const general = await this.rpc.request('thread/list', {
+        cursor: null,
+        limit: this.opts.sessionPickerLimit,
+        sortKey: 'recency_at',
+        sortDirection: 'desc',
+        sourceKinds: ['cli', 'vscode', 'appServer', 'unknown'],
+      });
+      threads.push(...extractThreadList(general));
+    } catch (err) { errors.push(err.message); }
+
+    const byId = new Map();
+    for (const t of threads) byId.set(t.id || t.threadId || t.sessionId, t);
+    const ranked = [...byId.values()].map((t) => normalizeSession(t, this.opts.projectDir));
+    ranked.sort((a, b) => a.rank - b.rank || (b.updatedAtMs || 0) - (a.updatedAtMs || 0));
+    this.sessions = this.opts.allSessions ? ranked : ranked.filter((s) => s.rank <= 2 || s.cwdMatch === 'exact').slice(0, this.opts.sessionPickerLimit);
+    if (this.sessions.length === 0 && !this.opts.allSessions) {
+      this.sessions = ranked.slice(0, Math.min(10, this.opts.sessionPickerLimit));
+    }
+    this.app.message = errors.length ? `Session list loaded with warnings: ${errors.join('; ')}` : 'Select a session';
+    this.sessionsLoaded = true;
+    this.broadcastAll();
+  }
+
+  async selectSession(sessionId, startup = false) {
+    this.app.state = 'initializing';
+    this.app.message = `Resuming session ${shortId(sessionId)}…`;
+    this.broadcastAll();
+    let result;
+    try {
+      result = await this.rpc.request('thread/resume', {
+        threadId: sessionId,
+        cwd: this.opts.projectDir,
+        approvalPolicy: mapApprovalPolicy(this.opts.approvalPolicy),
+        sandbox: mapSandbox(this.opts.sandbox),
+      });
+    } catch (err) {
+      try {
+        result = await this.rpc.request('thread/resume', { threadId: sessionId });
+      } catch (err2) {
+        throw new Error(`Cannot resume session ${sessionId}: ${err2.message || err.message}`);
+      }
+    }
+    const thread = result?.thread || result || {};
+    this.app.sessionId = thread.id || thread.threadId || thread.sessionId || sessionId;
+    this.app.sessionTitle = fallbackThreadTitle(thread, this.opts.projectDir);
+    await this.setupPairState(this.app.sessionId);
+    await this.tryReadSession();
+    this.app.state = 'watching';
+    this.app.message = startup ? 'Session resumed' : 'Session selected';
+    this.appendOutput(`[session] ${this.app.sessionTitle} · ${this.app.sessionId}`, 'system');
+    this.eventLog('info', `session selected ${this.app.sessionId}`);
+    this.broadcastAll();
+    this.schedulePump(200);
+  }
+
+  async createSession() {
+    this.app.state = 'initializing';
+    this.app.message = 'Creating new session...';
+    this.broadcastAll();
+    let result;
+    try {
+      result = await this.rpc.request('thread/start', {
+        cwd: this.opts.projectDir,
+        approvalPolicy: mapApprovalPolicy(this.opts.approvalPolicy),
+        sandbox: mapSandbox(this.opts.sandbox),
+        serviceName: 'codex-limit-watch-web',
+      });
+    } catch (err) {
+      try {
+        result = await this.rpc.request('thread/start', { cwd: this.opts.projectDir });
+      } catch (err2) {
+        this.app.state = 'selecting-session';
+        this.app.message = 'Could not create a new session';
+        this.appendOutput(`[error] Cannot create new session: ${err2.message || err.message}`, 'error');
+        this.broadcastAll();
+        throw new Error(`Cannot create new session: ${err2.message || err.message}`);
+      }
+    }
+    const thread = result?.thread || result || {};
+    const sessionId = thread.id || thread.threadId || thread.sessionId;
+    if (!sessionId) {
+      this.app.state = 'selecting-session';
+      this.app.message = 'Could not create a new session';
+      this.broadcastAll();
+      throw new Error('Cannot create new session: app-server did not return a session id');
+    }
+    this.app.sessionId = sessionId;
+    this.app.sessionTitle = fallbackThreadTitle(thread, this.opts.projectDir);
+    await this.setupPairState(this.app.sessionId);
+    await this.tryReadSession();
+    this.app.state = 'watching';
+    this.app.message = 'Session created';
+    this.appendOutput(`[session] created ${this.app.sessionTitle} · ${this.app.sessionId}`, 'system');
+    this.eventLog('info', `session created ${this.app.sessionId}`);
+    this.broadcastAll();
+    this.schedulePump(200);
+  }
+
+  async tryReadSession() {
+    if (!this.app.sessionId) return;
+    try {
+      const read = await this.rpc.request('thread/read', { threadId: this.app.sessionId, includeTurns: false }, 6000);
+      const thread = read?.thread || read || {};
+      this.app.sessionTitle = fallbackThreadTitle(thread, this.opts.projectDir) || this.app.sessionTitle;
+      this.app.session = normalizeSession(thread, this.opts.projectDir);
+    } catch (err) {
+      this.debugLog('thread/read failed', err.message);
+    }
+  }
+
+  scheduleLimitPolling() {
+    if (this.limitTimer) clearInterval(this.limitTimer);
+    this.limitTimer = setInterval(() => this.pollRateLimits().catch((err) => this.debugLog('pollRateLimits failed', err.message)), this.opts.watchInterval * 1000);
+    this.limitTimer.unref();
+  }
+  async pollRateLimits() {
+    if (!this.rpc || this.rpc.exited) return;
+    try {
+      const result = await this.rpc.request('account/rateLimits/read', undefined, 12000);
+      this.rateLimits = normalizeRateLimits(result);
+      this.debug.lastRateLimitPayload = result;
+      this.broadcast('rateLimits', this.rateLimits);
+      this.broadcastAll();
+    } catch (err) {
+      this.rateLimits = { status: 'unknown', message: err.message, buckets: [], resetAt: null, raw: null, updatedAt: nowIso() };
+      this.debug.lastJsonRpcError = { message: err.message, code: err.code, data: err.data };
+      this.broadcast('rateLimits', this.rateLimits);
+      this.broadcastAll();
+    }
+  }
+
+  schedulePump(delay = 0) {
+    if (this.pumpTimer) clearTimeout(this.pumpTimer);
+    this.pumpTimer = setTimeout(() => this.pumpQueue().catch((err) => this.setError(err.message)), delay);
+    this.pumpTimer.unref();
+  }
+
+  async pumpQueue() {
+    if (this.shuttingDown) return;
+    if (!this.app.sessionId) return;
+    if (this.app.state === 'paused' || this.app.state === 'approval-required') return;
+    if (this.currentItemId || this.currentTurnId) return;
+    const pending = this.queue.find((i) => i.status === 'pending');
+    if (!pending) {
+      if (this.queue.length && this.queue.every((i) => ['completed', 'cancelled', 'failed', 'unknown'].includes(i.status))) {
+        if (this.app.state !== 'done' && !this.queue.some((i) => i.status === 'failed' || i.status === 'unknown')) {
+          this.app.state = 'done';
+          this.appendOutput('/done', 'system');
+          this.broadcastAll();
+        } else if (!['paused', 'error', 'done'].includes(this.app.state)) {
+          this.app.state = 'watching';
+          this.broadcastAll();
+        }
+      } else if (!['paused', 'error', 'done'].includes(this.app.state)) {
+        this.app.state = 'watching';
+        this.broadcastAll();
+      }
+      return;
+    }
+
+    if (this.rateLimits.status === 'unknown') {
+      await this.pollRateLimits();
+    }
+    if (this.rateLimits.status === 'limited') {
+      this.app.state = 'waiting-limits';
+      const resetAt = this.rateLimits.resetAt ? new Date(this.rateLimits.resetAt * 1000) : null;
+      const waitMs = resetAt ? Math.max(1000, resetAt.getTime() - Date.now() + 1000) : this.opts.watchInterval * 1000;
+      this.app.message = resetAt ? `Waiting for limit reset at ${resetAt.toLocaleTimeString()}` : 'Waiting for rate limits';
+      this.broadcastAll();
+      this.schedulePump(Math.min(waitMs, this.opts.watchInterval * 1000));
+      return;
+    }
+    if (this.rateLimits.status === 'unknown') {
+      this.app.state = 'waiting-limits';
+      this.app.message = 'Limits unknown; retrying before auto-send';
+      this.broadcastAll();
+      this.schedulePump(this.opts.watchInterval * 1000);
+      return;
+    }
+    await this.runCountdownAndSend(pending);
+  }
+
+  async runCountdownAndSend(item) {
+    this.countdownCancel = false;
+    this.app.state = 'countdown';
+    this.broadcastAll();
+    const idx = this.visibleIndex(item.id);
+    for (let n = this.opts.countdown; n > 0; n--) {
+      if (this.app.state === 'paused' || this.countdownCancel) return;
+      this.appendOutput(`Sending prompt #${idx} in ${n}…`, 'system');
+      await sleep(1000);
+    }
+    if (this.app.state === 'paused' || this.countdownCancel) return;
+    await this.sendPrompt(item);
+  }
+
+  visibleIndex(id) {
+    const i = this.queue.findIndex((x) => x.id === id);
+    return i >= 0 ? i + 1 : '?';
+  }
+
+  async sendPrompt(item) {
+    normalizeQueueItem(item);
+    item.status = 'sending';
+    item.startedAt = nowIso();
+    item.error = null;
+    this.currentItemId = item.id;
+    this.turnStarted = false;
+    this.turnCompletionSeen = false;
+    this.turnCompletionStatus = null;
+    await this.saveQueue();
+    this.app.state = 'sending';
+    this.appendOutput(`[send] #${item.id} · ${item.lineCount} lines`, 'send');
+    this.broadcastAll();
+
+    const params = {
+      threadId: this.app.sessionId,
+      cwd: this.opts.projectDir,
+      input: [{ type: 'text', text: item.text }],
+      approvalPolicy: mapApprovalPolicy(this.opts.approvalPolicy),
+      sandboxPolicy: makeSandboxPolicy(this.opts),
+    };
+    try {
+      const result = await this.rpc.request('turn/start', params);
+      const turn = result?.turn || result || {};
+      this.currentTurnId = turn.id || this.currentTurnId;
+      this.debug.lastTurnId = this.currentTurnId;
+      if (!this.turnCompletionSeen) {
+        item.status = 'sent';
+        await this.saveQueue();
+        this.app.state = 'streaming';
+        this.broadcastAll();
+        await this.waitForTurnCompletion();
+      }
+    } catch (err) {
+      item.finishedAt = nowIso();
+      item.error = err.message;
+      if (this.turnStarted) {
+        item.status = 'failed';
+        this.pause(`Error after turn/started: ${err.message}`);
+      } else {
+        item.status = 'failed';
+        this.pause(`turn/start failed before confirmation: ${err.message}`);
+      }
+      await this.saveQueue();
+      this.appendOutput(`[error] ${err.message}`, 'error');
+    } finally {
+      this.currentItemId = null;
+      this.currentTurnId = null;
+      this.currentTurnResolve = null;
+      this.currentTurnReject = null;
+      this.turnStarted = false;
+      await this.saveState();
+      this.broadcastAll();
+      if (this.app.state !== 'paused' && this.app.state !== 'approval-required' && this.app.state !== 'error') {
+        this.app.state = 'watching';
+        this.broadcastAll();
+        this.schedulePump(1500);
+      }
+    }
+  }
+
+  waitForTurnCompletion() {
+    return new Promise((resolve, reject) => {
+      this.currentTurnResolve = resolve;
+      this.currentTurnReject = reject;
+    });
+  }
+
+  pause(message = 'Auto-send paused. Type /resume or click Resume to continue.') {
+    this.countdownCancel = true;
+    this.app.state = 'paused';
+    this.app.message = message;
+    this.appendOutput(message, 'system');
+    this.broadcastAll();
+  }
+  resume() {
+    if (this.approval) {
+      this.app.state = 'approval-required';
+      this.app.message = 'Resolve approval request first';
+      this.broadcastAll();
+      return;
+    }
+    this.app.state = 'watching';
+    this.app.message = 'Auto-send resumed';
+    this.appendOutput('[queue] resumed', 'system');
+    this.broadcastAll();
+    this.schedulePump(200);
+  }
+
+  handleNotification(method, params) {
+    this.eventLog('debug', `notify ${method} ${safeJson(maskSecrets(params)).slice(0, 1000)}`);
+    if (method === 'account/rateLimits/updated') {
+      this.rateLimits = normalizeRateLimits(params);
+      this.debug.lastRateLimitPayload = params;
+      this.broadcast('rateLimits', this.rateLimits);
+      this.broadcastAll();
+      return;
+    }
+    if (method === 'serverRequest/resolved') {
+      if (this.approval && (!params.requestId || params.requestId === this.approval.requestId)) {
+        this.approval = null;
+        this.broadcast('approval', null);
+        if (this.app.state === 'approval-required') this.resume();
+      }
+      return;
+    }
+    if (method === 'error') {
+      const message = params?.error?.message || params?.message || safeJson(params);
+      this.appendOutput(`[error] ${message}`, 'error');
+      return;
+    }
+    if (method === 'turn/started') {
+      const turn = params.turn || params;
+      this.currentTurnId = turn.id || turn.turnId || this.currentTurnId;
+      this.debug.lastTurnId = this.currentTurnId;
+      this.turnStarted = true;
+      const item = this.currentItem();
+      if (item) {
+        item.status = 'sent';
+        this.saveQueue().catch(() => {});
+      }
+      this.app.state = 'streaming';
+      this.appendOutput('[turn] started', 'turn');
+      this.broadcastAll();
+      return;
+    }
+    if (method === 'turn/completed' || method === 'turn/failed') {
+      const turn = params.turn || params;
+      const status = turn.status || (method === 'turn/failed' ? 'failed' : 'completed');
+      const errMessage = turn?.error?.message || params?.error?.message || null;
+      this.turnCompletionSeen = true;
+      this.turnCompletionStatus = status;
+      const item = this.currentItem();
+      if (item) {
+        item.finishedAt = nowIso();
+        item.status = status === 'completed' ? 'completed' : 'failed';
+        item.error = errMessage;
+        this.saveQueue().catch(() => {});
+      }
+      this.appendOutput(status === 'completed' ? '[turn] completed' : `[turn] ${status}${errMessage ? ': ' + errMessage : ''}`, status === 'completed' ? 'turn' : 'error');
+      if (this.currentTurnResolve) this.currentTurnResolve();
+      if (status !== 'completed') this.pause('Auto-send paused after turn failure. Type /resume after reviewing the error.');
+      return;
+    }
+    if (method === 'item/started') {
+      const item = params.item || params;
+      const label = formatItemStarted(item);
+      if (label) this.appendOutput(label, item?.type === 'commandExecution' ? 'tool' : 'item');
+      return;
+    }
+    if (method === 'item/completed') {
+      const item = params.item || params;
+      const label = formatItemCompleted(item);
+      if (label) this.appendOutput(label, item?.status === 'failed' ? 'error' : 'item');
+      return;
+    }
+    if (method.includes('/delta') || method.includes('Delta')) {
+      const text = extractDeltaText(method, params);
+      if (text) this.appendOutput(text, method.includes('commandExecution') || method.includes('tool') ? 'tool-delta' : 'delta', true);
+      return;
+    }
+    if (method === 'turn/plan/updated') {
+      const plan = asArray(params.plan).map((p) => `${p.status || '-'} ${p.step || ''}`).join('\n');
+      if (plan) this.appendOutput('[plan]\n' + plan, 'plan');
+      return;
+    }
+    if (method === 'turn/diff/updated' && params.diff) {
+      this.appendOutput('[diff updated]', 'tool');
+      return;
+    }
+    if (this.opts.debug) this.appendOutput(`[event] ${method} ${truncate(safeJson(params), 500)}`, 'event');
+  }
+
+  currentItem() {
+    if (!this.currentItemId) return null;
+    return this.queue.find((i) => i.id === this.currentItemId) || null;
+  }
+
+  async handleServerRequest(msg) {
+    const method = msg.method;
+    const params = msg.params || {};
+    this.eventLog('info', `server request ${method}`);
+    if (isApprovalMethod(method)) {
+      const configured = mapApprovalResponse(this.opts.approvalResponse);
+      if (configured !== 'manual') {
+        const result = configured;
+        this.appendOutput(`[approval] ${method}: ${humanApprovalResponse(configured)}`, 'system');
+        this.rpc.respond(msg.id, result);
+        return;
+      }
+      this.approval = {
+        rpcId: msg.id,
+        requestId: params.requestId || params.itemId || String(msg.id),
+        method,
+        params,
+        createdAt: nowIso(),
+      };
+      this.app.state = 'approval-required';
+      this.app.message = 'Approval required';
+      this.appendOutput('[approval] required. Use UI buttons or /approve, /approve-session, /decline, /cancel.', 'system');
+      this.broadcast('approval', this.approval);
+      this.broadcastAll();
+      return;
+    }
+    if (method === 'currentTime/read') {
+      this.rpc.respond(msg.id, { currentTimeAt: Math.floor(Date.now() / 1000) });
+      return;
+    }
+    if (method === 'item/tool/requestUserInput' || method === 'mcpServer/elicitation/request') {
+      this.rpc.respond(msg.id, { action: 'decline', content: null });
+      return;
+    }
+    this.rpc.respond(msg.id, { code: -32601, message: `Unsupported server request: ${method}` }, true);
+  }
+
+  async respondApproval(decision) {
+    if (!this.approval) throw new Error('No pending approval request');
+    const mapped = mapApprovalResponse(decision);
+    const id = this.approval.rpcId;
+    this.rpc.respond(id, mapped);
+    this.appendOutput(`[approval] ${humanApprovalResponse(mapped)}`, 'system');
+    this.approval = null;
+    this.broadcast('approval', null);
+    if (this.app.state === 'approval-required') this.resume();
+  }
+
+  appendOutput(text, type = 'text', appendToPrevious = false) {
+    if (text === undefined || text === null || text === '') return;
+    if (appendToPrevious && this.output.length) {
+      const last = this.output[this.output.length - 1];
+      if (last.type === type || last.type === 'delta' || type === 'delta' || type === 'tool-delta') {
+        last.text += String(text);
+        last.ts = nowIso();
+      } else {
+        this.output.push({ id: randomId(5), ts: nowIso(), type, text: String(text) });
+      }
+    } else {
+      this.output.push({ id: randomId(5), ts: nowIso(), type, text: String(text) });
+    }
+    if (this.output.length > MAX_OUTPUT_LINES) this.output.splice(0, this.output.length - MAX_OUTPUT_LINES);
+    this.broadcast('output', this.output);
+  }
+  clearOutput() {
+    this.output = [];
+    this.broadcast('output', this.output);
+    this.broadcastAll();
+  }
+
+  async addPrompt(text) {
+    const trimmed = String(text || '').trim();
+    if (!trimmed) return { ok: false, message: 'Prompt is empty' };
+    const command = parseExactCommand(trimmed);
+    if (command) return await this.executeCommand(command);
+    const item = makeQueueItem(String(text).replace(/\r\n/g, '\n'));
+    this.queue.push(item);
+    await this.saveQueue();
+    this.app.state = this.app.state === 'done' ? 'watching' : this.app.state;
+    this.appendOutput(`[queue] added #${item.id} · ${item.lineCount} lines`, 'system');
+    this.broadcastAll();
+    this.schedulePump(200);
+    return { ok: true, clearComposer: true, item };
+  }
+
+  async executeCommand(command) {
+    switch (command) {
+      case '/send':
+        return { ok: false, message: 'Type a prompt and press Cmd+Enter or click Add to queue. /send is accepted only as a standalone command, so there is no prompt body to enqueue.' };
+      case '/undo': return await this.undoLast();
+      case '/clear': await this.clearPending(); return { ok: true, clearComposer: true };
+      case '/pause': this.pause(); return { ok: true, clearComposer: true };
+      case '/resume': this.resume(); return { ok: true, clearComposer: true };
+      case '/done': return await this.doneCommand();
+      case '/quit': await this.shutdown('quit command'); return { ok: true, clearComposer: true };
+      case '/help': return { ok: true, message: '/send, /undo, /clear, /pause, /resume, /done, /quit, /approve, /approve-session, /decline, /cancel' };
+      case '/approve': await this.respondApproval('accept'); return { ok: true, clearComposer: true };
+      case '/approve-session': await this.respondApproval('accept-for-session'); return { ok: true, clearComposer: true };
+      case '/decline': await this.respondApproval('decline'); return { ok: true, clearComposer: true };
+      case '/cancel': await this.respondApproval('cancel'); return { ok: true, clearComposer: true };
+      default: return { ok: false, message: `Unknown command: ${command}` };
+    }
+  }
+
+  async undoLast() {
+    for (let i = this.queue.length - 1; i >= 0; i--) {
+      if (this.queue[i].status === 'pending') {
+        const [item] = this.queue.splice(i, 1);
+        await this.saveQueue();
+        this.appendOutput(`[queue] undo #${item.id}`, 'system');
+        this.broadcastAll();
+        return { ok: true, composerText: item.text };
+      }
+    }
+    return { ok: false, message: 'No pending prompt to undo' };
+  }
+  async clearPending() {
+    const before = this.queue.length;
+    this.queue = this.queue.filter((i) => i.status !== 'pending');
+    await this.saveQueue();
+    this.appendOutput(`[queue] cleared ${before - this.queue.length} pending prompt(s)`, 'system');
+    this.broadcastAll();
+  }
+  async doneCommand() {
+    const unsafe = this.currentItemId || this.currentTurnId || this.approval || this.queue.some((i) => i.status === 'pending' || i.status === 'sending' || i.status === 'sent');
+    if (unsafe) return { ok: false, message: 'Queue is not empty or Codex is still running. Use /quit to stop anyway.' };
+    this.appendOutput('/done', 'system');
+    await this.shutdown('done command');
+    return { ok: true, clearComposer: true };
+  }
+
+  async updateQueueItem(body) {
+    const item = this.queue.find((i) => i.id === body.id);
+    if (!item) throw new Error('Queue item not found');
+    if (body.action === 'edit') {
+      if (!['pending', 'failed', 'unknown', 'cancelled'].includes(item.status)) throw new Error('Only pending/failed/unknown/cancelled items can be edited');
+      item.text = String(body.text || '');
+      item.status = 'pending';
+      item.error = null;
+      normalizeQueueItem(item);
+    } else if (body.action === 'duplicate') {
+      const dup = makeQueueItem(item.text);
+      const idx = this.queue.indexOf(item);
+      this.queue.splice(idx + 1, 0, dup);
+    } else if (body.action === 'sendNow') {
+      if (item.status !== 'pending') item.status = 'pending';
+      const idx = this.queue.indexOf(item);
+      this.queue.splice(idx, 1);
+      this.queue.unshift(item);
+      this.resume();
+    } else if (body.action === 'markCompleted') {
+      item.status = 'completed';
+      item.finishedAt = nowIso();
+      item.error = null;
+    } else if (body.action === 'retry') {
+      item.status = 'pending';
+      item.startedAt = null;
+      item.finishedAt = null;
+      item.error = null;
+    } else if (body.status) {
+      item.status = String(body.status);
+    }
+    normalizeQueueItem(item);
+    await this.saveQueue();
+    this.broadcastAll();
+    this.schedulePump(200);
+  }
+  async removeQueueItem(id) {
+    const idx = this.queue.findIndex((i) => i.id === id);
+    if (idx < 0) throw new Error('Queue item not found');
+    const item = this.queue[idx];
+    if (item.id === this.currentItemId) throw new Error('Cannot remove active prompt');
+    this.queue.splice(idx, 1);
+    await this.saveQueue();
+    this.broadcastAll();
+  }
+  async reorderQueueItem(id, direction) {
+    const idx = this.queue.findIndex((i) => i.id === id);
+    if (idx < 0) throw new Error('Queue item not found');
+    const j = direction === 'up' ? idx - 1 : idx + 1;
+    if (j < 0 || j >= this.queue.length) return;
+    const tmp = this.queue[idx];
+    this.queue[idx] = this.queue[j];
+    this.queue[j] = tmp;
+    await this.saveQueue();
+    this.broadcastAll();
+  }
+
+  async handleHttp(req, res) {
+    try {
+      const parsed = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
+      if (req.method === 'GET' && parsed.pathname === '/') return this.serveIndex(res);
+      if (req.method === 'GET' && (parsed.pathname === '/styles.css' || parsed.pathname === '/app.js')) return this.serveStatic(res, parsed.pathname.slice(1));
+      if (req.method === 'GET' && parsed.pathname === '/events') return this.serveEvents(req, res, parsed);
+      if (parsed.pathname.startsWith('/api/')) {
+        if (!this.validateToken(req, parsed)) return sendJson(res, 403, { error: 'Invalid token' });
+        const body = req.method === 'POST' ? await readJsonBody(req) : {};
+        return await this.handleApi(req, res, parsed.pathname, body);
+      }
+      sendText(res, 404, 'not found');
+    } catch (err) {
+      sendJson(res, 500, { error: err.message || String(err) });
+    }
+  }
+  validateToken(req, parsed) {
+    const q = parsed.searchParams.get('token');
+    const h = req.headers['x-codex-limit-watch-token'];
+    return q === this.token || h === this.token;
+  }
+  serveIndex(res) {
+    sendText(res, 200, readAsset('index.html').replaceAll('__TOKEN__', this.token), 'text/html; charset=utf-8');
+  }
+  serveStatic(res, name) {
+    sendText(res, 200, readAsset(name), STATIC_TYPES[path.extname(name)] || 'application/octet-stream');
+  }
+  serveEvents(req, res, parsed) {
+    if (!this.validateToken(req, parsed)) return sendText(res, 403, 'invalid token');
+    res.writeHead(200, {
+      'Content-Type': 'text/event-stream; charset=utf-8',
+      'Cache-Control': 'no-cache, no-transform',
+      'Connection': 'keep-alive',
+      'X-Accel-Buffering': 'no',
+    });
+    res.write(': connected\n\n');
+    const client = { res };
+    this.clients.add(client);
+    this.debug.connectedBrowserClients = this.clients.size;
+    this.app.connectedClients = this.clients.size;
+    this.sendSse(client, 'state', this.snapshot());
+    req.on('close', () => {
+      this.clients.delete(client);
+      this.debug.connectedBrowserClients = this.clients.size;
+      this.app.connectedClients = this.clients.size;
+      this.broadcast('state', this.snapshot());
+    });
+  }
+  async handleApi(req, res, route, body) {
+    if (req.method === 'GET' && route === '/api/state') return sendJson(res, 200, this.snapshot());
+    if (req.method !== 'POST') return sendJson(res, 405, { error: 'method not allowed' });
+    if (route === '/api/session/select') {
+      await this.selectSession(String(body.sessionId || body.threadId || ''));
+      return sendJson(res, 200, { ok: true });
+    }
+    if (route === '/api/session/create') {
+      await this.createSession();
+      return sendJson(res, 200, { ok: true });
+    }
+    if (route === '/api/session/reload') {
+      await this.loadSessions();
+      return sendJson(res, 200, { ok: true });
+    }
+    if (route === '/api/queue/add') return sendJson(res, 200, await this.addPrompt(body.text || ''));
+    if (route === '/api/queue/update') { await this.updateQueueItem(body); return sendJson(res, 200, { ok: true }); }
+    if (route === '/api/queue/remove') { await this.removeQueueItem(String(body.id)); return sendJson(res, 200, { ok: true }); }
+    if (route === '/api/queue/reorder') { await this.reorderQueueItem(String(body.id), body.direction); return sendJson(res, 200, { ok: true }); }
+    if (route === '/api/queue/clear') { await this.clearPending(); return sendJson(res, 200, { ok: true }); }
+    if (route === '/api/queue/undo') return sendJson(res, 200, await this.undoLast());
+    if (route === '/api/control/pause') { this.pause(); return sendJson(res, 200, { ok: true }); }
+    if (route === '/api/control/resume') { this.resume(); return sendJson(res, 200, { ok: true }); }
+    if (route === '/api/control/stop') { await this.shutdown('stop requested'); return sendJson(res, 200, { ok: true }); }
+    if (route === '/api/control/done') return sendJson(res, 200, await this.doneCommand());
+    if (route === '/api/approval/respond') { await this.respondApproval(String(body.decision)); return sendJson(res, 200, { ok: true }); }
+    if (route === '/api/output/clear') { this.clearOutput(); return sendJson(res, 200, { ok: true }); }
+    return sendJson(res, 404, { error: 'unknown api route' });
+  }
+
+  snapshot() {
+    const counts = countQueue(this.queue);
+    const nextPending = this.queue.find((i) => i.status === 'pending') || null;
+    return {
+      app: { ...this.app, queueCounts: counts, nextPendingId: nextPending?.id || null },
+      sessions: this.sessions,
+      queue: this.queue,
+      output: this.output,
+      rateLimits: this.rateLimits,
+      approval: this.approval,
+      debug: this.opts.debug ? this.debug : { connectedBrowserClients: this.debug.connectedBrowserClients },
+    };
+  }
+  broadcastAll() { this.broadcast('state', this.snapshot()); }
+  broadcast(event, data) {
+    for (const client of this.clients) this.sendSse(client, event, data);
+  }
+  sendSse(client, event, data) {
+    try {
+      client.res.write(`event: ${event}\n`);
+      client.res.write(`data: ${JSON.stringify(data)}\n\n`);
+    } catch (_) {
+      this.clients.delete(client);
+    }
+  }
+
+  setError(message) {
+    this.app.state = 'error';
+    this.app.message = message;
+    this.appendOutput(`[error] ${message}`, 'error');
+    this.eventLog('error', message);
+    this.broadcastAll();
+  }
+
+  async shutdown(reason = 'shutdown') {
+    if (this.shuttingDown) return;
+    this.shuttingDown = true;
+    this.app.state = 'shutting-down';
+    this.app.message = reason;
+    this.broadcastAll();
+    this.eventLog('info', `shutdown ${reason}`);
+    try {
+      if (this.currentTurnId && this.app.sessionId) {
+        await this.rpc.request('turn/interrupt', { threadId: this.app.sessionId, turnId: this.currentTurnId }, 3000).catch(() => {});
+      }
+    } catch (_) {}
+    try { await this.saveQueue(); } catch (_) {}
+    try { await this.saveState(); } catch (_) {}
+    try { await this.rpc.stop(); } catch (_) {}
+    for (const c of this.clients) {
+      try { c.res.write('event: done\ndata: {}\n\n'); c.res.end(); } catch (_) {}
+    }
+    this.clients.clear();
+    try { this.server && this.server.close(); } catch (_) {}
+    this.releaseLock();
+    setTimeout(() => process.exit(0), 100).unref();
+  }
+}
+
+function friendlyStartError(err, codexBin) {
+  if (err && err.code === 'ENOENT') {
+    return new Error(`Cannot start codex app-server.\nCommand: ${codexBin} app-server\nReason: codex binary was not found in PATH.\n\nFix:\nInstall Codex CLI or pass --codex-bin /path/to/codex.`);
+  }
+  return new Error(`Cannot start codex app-server.\nCommand: ${codexBin} app-server\nReason: ${err.message || String(err)}`);
+}
+function isPidAlive(pid) {
+  try { process.kill(pid, 0); return true; } catch (_) { return false; }
+}
+function shortId(id) {
+  if (!id) return '';
+  const s = String(id);
+  return s.length <= 12 ? s : s.slice(0, 6) + '…' + s.slice(-4);
+}
+function extractThreadList(result) {
+  return result?.data || result?.threads || result?.items || (Array.isArray(result) ? result : []);
+}
+function normalizeSession(t, projectDir) {
+  const id = t.id || t.threadId || t.sessionId || '';
+  const cwd = t.cwd || t.currentWorkingDirectory || t.projectDir || t.path || t.metadata?.cwd || t.session?.cwd || null;
+  const rank = pathRelation(projectDir, cwd);
+  const updated = t.updatedAt || t.recencyAt || t.createdAt || t.lastActivityAt || null;
+  const updatedAtMs = typeof updated === 'number' ? updated * 1000 : (updated ? Date.parse(updated) : 0);
+  return {
+    id,
+    title: fallbackThreadTitle(t, projectDir),
+    preview: t.preview || t.lastUserMessage || extractMessagePreview(t) || '',
+    cwd,
+    cwdMatch: rank === 0 ? 'exact' : (rank === 1 ? 'child' : (rank === 2 ? 'parent' : 'other')),
+    rank,
+    updatedAt: updatedAtMs ? new Date(updatedAtMs).toISOString() : null,
+    updatedAtMs,
+    status: t.status || null,
+  };
+}
+function fallbackThreadTitle(t, projectDir) {
+  return t.name || t.title || t.preview || extractMessagePreview(t) || path.basename(projectDir) || shortId(t.id || t.threadId || t.sessionId || 'session');
+}
+function extractMessagePreview(t) {
+  const turns = asArray(t.turns);
+  for (let i = turns.length - 1; i >= 0; i--) {
+    const items = asArray(turns[i].items);
+    for (let j = items.length - 1; j >= 0; j--) {
+      const item = items[j];
+      if (item.type === 'userMessage') {
+        const c = asArray(item.content).find((x) => x.type === 'text');
+        if (c?.text) return truncate(c.text, 120);
+      }
+    }
+  }
+  return '';
+}
+function makeQueueItem(text) {
+  const item = {
+    id: randomId(4),
+    text,
+    status: 'pending',
+    createdAt: nowIso(),
+    startedAt: null,
+    finishedAt: null,
+    lineCount: 0,
+    preview: '',
+    error: null,
+  };
+  normalizeQueueItem(item);
+  return item;
+}
+function normalizeQueueItem(item) {
+  item.id = item.id || randomId(4);
+  item.text = String(item.text || '');
+  item.status = item.status || 'pending';
+  item.createdAt = item.createdAt || nowIso();
+  item.startedAt = item.startedAt || null;
+  item.finishedAt = item.finishedAt || null;
+  item.lineCount = lineCount(item.text);
+  item.preview = previewOf(item.text);
+  if (!Object.prototype.hasOwnProperty.call(item, 'error')) item.error = null;
+  return item;
+}
+function countQueue(queue) {
+  const counts = { total: queue.length, pending: 0, sending: 0, sent: 0, completed: 0, failed: 0, paused: 0, unknown: 0, cancelled: 0 };
+  for (const item of queue) counts[item.status] = (counts[item.status] || 0) + 1;
+  return counts;
+}
+function parseExactCommand(text) {
+  const trimmed = String(text || '').trim();
+  const commands = new Set(['/send', '/undo', '/clear', '/pause', '/resume', '/done', '/quit', '/help', '/approve', '/approve-session', '/decline', '/cancel']);
+  return commands.has(trimmed) ? trimmed : null;
+}
+function normalizeRateLimits(result) {
+  const root = result || {};
+  const by = root.rateLimitsByLimitId || (root.rateLimits ? { [root.rateLimits.limitId || 'default']: root.rateLimits } : {});
+  function normalizeWindow(w, fallbackName) {
+    if (!w) return null;
+    const usedPercent = Number(w.usedPercent ?? NaN);
+    const windowDurationMins = Number(w.windowDurationMins || 0) || null;
+    const resetsAt = Number(w.resetsAt || 0) || null;
+    if (!Number.isFinite(usedPercent) && !windowDurationMins && !resetsAt) return null;
+    return {
+      name: fallbackName,
+      usedPercent: Number.isFinite(usedPercent) ? usedPercent : null,
+      remainingPercent: Number.isFinite(usedPercent) ? Math.max(0, 100 - usedPercent) : null,
+      windowDurationMins,
+      resetsAt,
+    };
+  }
+  const buckets = Object.values(by).map((b) => {
+    const primary = b.primary || {};
+    const secondary = b.secondary || {};
+    const resetAt = Number(primary.resetsAt || secondary.resetsAt || b.resetsAt || 0) || null;
+    const usedPercent = Number(primary.usedPercent ?? secondary.usedPercent ?? b.usedPercent ?? NaN);
+    const windows = [
+      normalizeWindow(primary, 'primary'),
+      normalizeWindow(secondary, 'secondary'),
+    ].filter(Boolean);
+    return {
+      limitId: b.limitId || b.id || 'unknown',
+      limitName: b.limitName || b.name || null,
+      usedPercent: Number.isFinite(usedPercent) ? usedPercent : null,
+      windowDurationMins: primary.windowDurationMins || secondary.windowDurationMins || null,
+      resetsAt: resetAt,
+      windows,
+      rateLimitReachedType: b.rateLimitReachedType || null,
+      planType: b.planType || null,
+      credits: b.credits || null,
+    };
+  });
+  let limitedBuckets = buckets.filter((b) => b.rateLimitReachedType || (b.usedPercent !== null && b.usedPercent >= 100));
+  let status = 'available';
+  let message = 'available';
+  let resetAt = null;
+  if (!buckets.length) {
+    status = 'unknown';
+    message = 'no rate-limit buckets returned';
+  } else if (limitedBuckets.length) {
+    status = 'limited';
+    message = limitedBuckets.map((b) => `${b.limitName || b.limitId}${b.rateLimitReachedType ? ': ' + b.rateLimitReachedType : ''}`).join(', ');
+    const resets = limitedBuckets.map((b) => b.resetsAt).filter(Boolean);
+    resetAt = resets.length ? Math.min(...resets) : null;
+  }
+  return { status, message, buckets, resetAt, resetCredits: root.rateLimitResetCredits || null, raw: root, updatedAt: nowIso() };
+}
+function isApprovalMethod(method) {
+  return /requestApproval$/.test(method) || method.includes('/requestApproval') || method.includes('/permissions/requestApproval') || method.includes('/commandExecution/requestApproval') || method.includes('/fileChange/requestApproval');
+}
+function extractDeltaText(method, params) {
+  if (!params) return '';
+  if (typeof params.delta === 'string') return params.delta;
+  if (typeof params.textDelta === 'string') return params.textDelta;
+  if (typeof params.outputDelta === 'string') return params.outputDelta;
+  if (typeof params.chunk === 'string') return params.chunk;
+  if (typeof params.text === 'string' && /delta/i.test(method)) return params.text;
+  if (params.deltaBase64) {
+    try { return Buffer.from(params.deltaBase64, 'base64').toString('utf8'); } catch (_) {}
+  }
+  if (params.bytesBase64) {
+    try { return Buffer.from(params.bytesBase64, 'base64').toString('utf8'); } catch (_) {}
+  }
+  return '';
+}
+function formatItemStarted(item) {
+  if (!item) return '';
+  if (item.type === 'commandExecution') return `[tool] command: ${asArray(item.command).join(' ') || item.command || ''}`;
+  if (item.type === 'mcpToolCall') return `[tool] ${item.server || 'mcp'}:${item.tool || ''}`;
+  if (item.type === 'dynamicToolCall') return `[tool] ${item.tool || 'dynamicTool'}`;
+  if (item.type === 'fileChange') return `[tool] file changes proposed`;
+  if (item.type === 'webSearch') return `[tool] web search ${item.query || ''}`;
+  if (item.type === 'agentMessage') return '';
+  if (item.type === 'reasoning') return '[reasoning]';
+  if (item.type === 'plan') return '[plan]';
+  return item.type ? `[item] ${item.type}` : '';
+}
+function formatItemCompleted(item) {
+  if (!item) return '';
+  if (item.type === 'commandExecution') return `[tool] completed${item.exitCode !== undefined ? ' exit=' + item.exitCode : ''}`;
+  if (item.type === 'fileChange') return `[tool] file change ${item.status || 'completed'}`;
+  if (item.type === 'mcpToolCall' || item.type === 'dynamicToolCall') return `[tool] ${item.status || 'completed'}`;
+  if (item.type === 'agentMessage' || item.type === 'reasoning' || item.type === 'plan') return '';
+  return item.status ? `[item] ${item.type || 'item'} ${item.status}` : '';
+}
+function openBrowser(url) {
+  const cmd = process.platform === 'darwin' ? 'open' : (process.platform === 'win32' ? 'cmd' : 'xdg-open');
+  const args = process.platform === 'win32' ? ['/c', 'start', '', url] : [url];
+  const child = spawn(cmd, args, { detached: true, stdio: 'ignore' });
+  child.unref();
+}
+function sendText(res, status, text, contentType = 'text/plain; charset=utf-8') {
+  res.writeHead(status, { 'Content-Type': contentType, 'Cache-Control': 'no-store' });
+  res.end(text);
+}
+function sendJson(res, status, obj) {
+  res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
+  res.end(JSON.stringify(obj));
+}
+function readAsset(name) {
+  for (const dir of ASSET_DIRS) {
+    const file = path.join(dir, name);
+    try {
+      if (fs.existsSync(file)) return fs.readFileSync(file, 'utf8');
+    } catch (_) {}
+  }
+  throw new Error(`Missing web asset: ${name}`);
+}
+function readJsonBody(req) {
+  return new Promise((resolve, reject) => {
+    let data = '';
+    req.on('data', (chunk) => {
+      data += chunk;
+      if (data.length > 20 * 1024 * 1024) {
+        reject(new Error('Request body too large'));
+        req.destroy();
+      }
+    });
+    req.on('end', () => {
+      if (!data) return resolve({});
+      try { resolve(JSON.parse(data)); }
+      catch (err) { reject(new Error('Invalid JSON body')); }
+    });
+    req.on('error', reject);
+  });
+}
+
+async function main() {
+  const opts = parseArgs(process.argv.slice(2));
+  const app = new CodexLimitWatchApp(opts);
+  process.on('SIGINT', () => app.shutdown('SIGINT'));
+  process.on('SIGTERM', () => app.shutdown('SIGTERM'));
+  process.on('uncaughtException', (err) => {
+    console.error(err.stack || err.message || err);
+    app.setError(err.message || String(err));
+  });
+  process.on('unhandledRejection', (err) => {
+    console.error(err && err.stack || err);
+    app.setError(err && err.message || String(err));
+  });
+  try { await app.start(); }
+  catch (err) {
+    console.error(err.message || String(err));
+    process.exit(1);
+  }
+}
+
+main();

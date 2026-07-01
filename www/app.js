@@ -1,0 +1,138 @@
+(function(){
+  var TOKEN = window.CODEX_LIMIT_WATCH_TOKEN || '';
+  var snap = null;
+  var composer = document.getElementById('composer');
+  var outputEl = document.getElementById('output');
+  function esc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
+  function fmtTime(iso){ if(!iso) return ''; try { return new Date(iso).toLocaleString(); } catch(e){ return iso; } }
+  function fmtClock(ts){ if(!ts) return '—'; try { return new Date(ts * 1000).toLocaleTimeString(); } catch(e){ return '—'; } }
+  function fmtRelative(ts){
+    if(!ts) return 'unknown';
+    var mins = Math.max(0, Math.ceil(((ts * 1000) - Date.now()) / 60000));
+    if(mins < 60) return mins + 'm';
+    var hours = Math.floor(mins / 60); var rem = mins % 60;
+    if(hours < 24) return hours + 'h' + (rem ? ' ' + rem + 'm' : '');
+    var days = Math.floor(hours / 24); var hrem = hours % 24;
+    return days + 'd' + (hrem ? ' ' + hrem + 'h' : '');
+  }
+  function windowLabel(w){
+    var mins = Number(w && w.windowDurationMins) || 0;
+    if(mins === 300) return '5h';
+    if(mins === 10080) return 'weekly';
+    if(mins && mins % 1440 === 0) return (mins / 1440) + 'd';
+    if(mins && mins % 60 === 0) return (mins / 60) + 'h';
+    return (w && w.name) || 'window';
+  }
+  function pct(n){ n = Number(n); return Number.isFinite(n) ? Math.max(0, Math.min(100, n)) : null; }
+  function api(path, body){ return fetch(path + '?token=' + encodeURIComponent(TOKEN), { method:'POST', headers:{'content-type':'application/json','x-codex-limit-watch-token':TOKEN}, body:JSON.stringify(body || {}) }).then(function(r){ return r.json().then(function(j){ if(!r.ok) throw new Error(j.error || r.statusText); return j; }); }); }
+  function getState(){ return fetch('/api/state?token=' + encodeURIComponent(TOKEN), { headers:{'x-codex-limit-watch-token':TOKEN} }).then(function(r){return r.json();}).then(update); }
+  function update(s){ snap = s; render(); }
+  function render(){ if(!snap) return; renderHeader(); renderSessions(); renderApproval(); renderQueue(); renderOutput(); document.getElementById('debug').textContent = JSON.stringify(snap.debug || {}, null, 2); }
+  function renderHeader(){
+    var app = snap.app || {}; var rl = snap.rateLimits || {}; var c = app.queueCounts || {};
+    var stateBadge = document.getElementById('stateBadge'); stateBadge.textContent = app.state || 'unknown'; stateBadge.className = 'badge ' + (app.state === 'error' ? 'danger' : (app.state === 'paused' || app.state === 'waiting-limits' || app.state === 'approval-required' ? 'warn' : 'ok'));
+    var limitBadge = document.getElementById('limitBadge'); limitBadge.textContent = rl.status === 'limited' ? 'limits waiting' : (rl.status === 'available' ? 'limits available' : 'limits unknown'); limitBadge.className = 'badge ' + (rl.status === 'available' ? 'ok' : (rl.status === 'limited' ? 'warn' : 'danger'));
+    var reset = rl.resetAt ? new Date(rl.resetAt * 1000) : null; var resetText = reset ? reset.toLocaleTimeString() + ' · in ' + Math.max(0, Math.ceil((reset.getTime()-Date.now())/60000)) + 'm' : '—';
+    document.getElementById('meta').innerHTML =
+      '<div>Project: <b>' + esc(app.projectDir) + '</b></div>' +
+      '<div>Session: <b>' + esc(app.sessionTitle || 'not selected') + '</b></div>' +
+      '<div>Session ID: <b>' + esc(app.sessionId || '—') + '</b></div>' +
+      '<div>Queue: <b>' + (c.pending||0) + ' pending, ' + ((c.sending||0)+(c.sent||0)) + ' running</b></div>' +
+      '<div>Limits: <b>' + esc(rl.message || rl.status) + '</b></div>' +
+      '<div>Reset: <b>' + esc(resetText) + '</b></div>' +
+      '<div>Sandbox: <b>' + esc(app.sandbox) + '</b> · Network: <b>' + esc(String(app.network)) + '</b></div>' +
+      '<div>Approval: <b>' + esc(app.approvalPolicy) + ' / ' + esc(app.approvalResponse) + '</b></div>';
+    renderLimitStats();
+  }
+  function renderLimitStats(){
+    var el = document.getElementById('limitStats'); var rl = snap.rateLimits || {}; var buckets = rl.buckets || [];
+    var html = '';
+    buckets.forEach(function(b){
+      var windows = b.windows && b.windows.length ? b.windows : [{ name:'primary', usedPercent:b.usedPercent, remainingPercent:b.usedPercent == null ? null : 100 - b.usedPercent, windowDurationMins:b.windowDurationMins, resetsAt:b.resetsAt }];
+      windows.forEach(function(w){
+        var used = pct(w.usedPercent); var remaining = used == null ? null : Math.max(0, 100 - used);
+        var barClass = used == null ? 'unknown' : (used >= 100 ? 'danger' : (used >= 85 ? 'warn' : 'ok'));
+        html += '<div class="limit-card">' +
+          '<div class="limit-card-top"><span>' + esc(b.limitName || b.limitId || 'limit') + ' · ' + esc(windowLabel(w)) + '</span><b>' + (used == null ? '—' : Math.round(remaining) + '% left') + '</b></div>' +
+          '<div class="limit-bar ' + barClass + '"><span style="width:' + (used == null ? 0 : used) + '%"></span></div>' +
+          '<div class="limit-card-foot"><span>' + (used == null ? 'usage unknown' : Math.round(used) + '% used') + '</span><span>reset ' + esc(fmtClock(w.resetsAt)) + ' · in ' + esc(fmtRelative(w.resetsAt)) + '</span></div>' +
+        '</div>';
+      });
+    });
+    if(!html) html = '<div class="limit-card muted">Rate-limit data unavailable.</div>';
+    el.innerHTML = html;
+  }
+  function renderSessions(){
+    var picker = document.getElementById('sessionPicker'); var app = snap.app || {};
+    if(app.state !== 'selecting-session'){ picker.classList.add('hidden'); return; }
+    picker.classList.remove('hidden');
+    var sessions = snap.sessions || [];
+    var html = '<div class="panel-head"><h2>Select Codex session</h2><div class="panel-actions"><button id="createSessionBtn" class="primary">Create new session</button><button id="reloadSessionsBtn">Reload</button></div></div>';
+    if(!sessions.length) html += '<div class="empty">No active sessions found for this project. Create a new session to start queueing prompts, or reload after starting Codex elsewhere.</div>';
+    sessions.forEach(function(s){ html += '<div class="session"><div class="session-title">' + esc(s.title || s.id) + ' <span class="badge">' + esc(s.cwdMatch || 'other') + '</span></div><div class="session-meta">ID: ' + esc(s.id) + '</div><div class="session-meta">CWD: ' + esc(s.cwd || '—') + '</div><div class="session-meta">Updated: ' + esc(fmtTime(s.updatedAt)) + '</div><div class="session-meta">' + esc(s.preview || '') + '</div><div class="actions"><button data-session="' + esc(s.id) + '" class="primary">Select</button></div></div>'; });
+    picker.innerHTML = html;
+  }
+  function renderApproval(){
+    var box = document.getElementById('approvalBox'); var a = snap.approval;
+    if(!a){ box.classList.add('hidden'); box.innerHTML=''; return; }
+    var p = a.params || {}; var cmd = Array.isArray(p.command) ? p.command.join(' ') : (p.command || '');
+    box.classList.remove('hidden');
+    box.innerHTML = '<b>Approval required</b><pre>Method: ' + esc(a.method) + '\\nCommand: ' + esc(cmd || '—') + '\\nCWD: ' + esc(p.cwd || '—') + '\\nReason: ' + esc(p.reason || '—') + '</pre><div class="actions"><button data-approval="accept">Accept once</button><button data-approval="accept-for-session">Accept for session</button><button data-approval="decline">Decline</button><button data-approval="cancel" class="danger">Cancel turn</button></div>';
+  }
+  function renderQueue(){
+    var q = snap.queue || []; var el = document.getElementById('queue'); var app = snap.app || {};
+    if(!q.length){ el.innerHTML = '<div class="empty">Queue is empty.</div>'; return; }
+    var html = '';
+    q.forEach(function(item, i){
+      var active = item.id === app.nextPendingId || item.status === 'sending' || item.status === 'sent';
+      html += '<div class="queue-item ' + (active ? 'active' : '') + '"><div class="queue-top"><span>#' + (i+1) + ' <span class="status ' + esc(item.status) + '">' + esc(item.status) + '</span> · ' + item.lineCount + ' lines</span><span>' + esc(fmtTime(item.createdAt)) + '</span></div><div class="preview">' + esc(item.preview || item.text || '') + '</div>';
+      if(item.error) html += '<div class="preview" style="color:var(--danger)">' + esc(item.error) + '</div>';
+      html += '<div class="actions"><button data-act="edit" data-id="' + item.id + '">Edit</button><button data-act="duplicate" data-id="' + item.id + '">Duplicate</button><button data-act="up" data-id="' + item.id + '">Up</button><button data-act="down" data-id="' + item.id + '">Down</button><button data-act="sendNow" data-id="' + item.id + '">Send now</button><button data-act="remove" data-id="' + item.id + '" class="danger">Remove</button>';
+      if(item.status === 'unknown' || item.status === 'failed') html += '<button data-act="markCompleted" data-id="' + item.id + '">Mark completed</button><button data-act="retry" data-id="' + item.id + '">Retry</button>';
+      html += '</div></div>';
+    });
+    el.innerHTML = html;
+  }
+  function renderOutput(){
+    var atBottom = outputEl.scrollHeight - outputEl.scrollTop - outputEl.clientHeight < 30;
+    outputEl.innerHTML = (snap.output || []).map(function(l){ return '<div class="out-line ' + esc(l.type || '') + '">' + esc(l.text) + '</div>'; }).join('');
+    if(atBottom) outputEl.scrollTop = outputEl.scrollHeight;
+  }
+  function updateCounter(){ var text = composer.value; var lines = text ? text.split(/\r?\n/).length : 0; document.getElementById('counter').textContent = 'Lines: ' + lines + ' · Chars: ' + text.length; }
+  function addQueue(){ api('/api/queue/add', { text: composer.value }).then(function(r){ if(r.clearComposer) composer.value=''; if(r.composerText !== undefined) composer.value = r.composerText; if(r.message) alert(r.message); updateCounter(); }).catch(function(e){ alert(e.message); }); }
+  document.addEventListener('click', function(ev){
+    var t = ev.target;
+    if(t.id === 'addBtn') addQueue();
+    else if(t.id === 'pauseBtn') api('/api/control/pause');
+    else if(t.id === 'resumeBtn') api('/api/control/resume');
+    else if(t.id === 'undoBtn') api('/api/queue/undo').then(function(r){ if(r.composerText !== undefined) composer.value = r.composerText; if(r.message) alert(r.message); updateCounter(); });
+    else if(t.id === 'clearBtn') { if(confirm('Clear all pending prompts?')) api('/api/queue/clear'); }
+    else if(t.id === 'doneBtn') api('/api/control/done').then(function(r){ if(r.message) alert(r.message); });
+    else if(t.id === 'stopBtn') { if(confirm('Stop local server and app-server?')) api('/api/control/stop'); }
+    else if(t.id === 'clearOutputBtn') api('/api/output/clear');
+    else if(t.id === 'bottomBtn') outputEl.scrollTop = outputEl.scrollHeight;
+    else if(t.id === 'createSessionBtn') api('/api/session/create').catch(function(e){ alert(e.message); });
+    else if(t.id === 'reloadSessionsBtn') api('/api/session/reload');
+    else if(t.dataset.session) api('/api/session/select', { sessionId:t.dataset.session }).catch(function(e){ alert(e.message); });
+    else if(t.dataset.approval) api('/api/approval/respond', { decision:t.dataset.approval }).catch(function(e){ alert(e.message); });
+    else if(t.dataset.act){
+      var id = t.dataset.id; var act = t.dataset.act; var item = (snap.queue || []).find(function(x){return x.id === id;});
+      if(act === 'remove') { if(confirm('Remove this prompt?')) api('/api/queue/remove', { id:id }); }
+      else if(act === 'up' || act === 'down') api('/api/queue/reorder', { id:id, direction:act });
+      else if(act === 'edit') { var text = prompt('Edit prompt:', item ? item.text : ''); if(text !== null) api('/api/queue/update', { id:id, action:'edit', text:text }); }
+      else api('/api/queue/update', { id:id, action:act });
+    }
+  });
+  composer.addEventListener('input', updateCounter);
+  composer.addEventListener('keydown', function(ev){
+    if((ev.metaKey || ev.ctrlKey) && ev.key === 'Enter'){ ev.preventDefault(); addQueue(); }
+    else if(ev.key === 'Escape'){ ev.preventDefault(); api('/api/control/pause'); }
+  });
+  updateCounter();
+  setInterval(function(){ if(snap) renderHeader(); }, 30000);
+  var es = new EventSource('/events?token=' + encodeURIComponent(TOKEN));
+  es.addEventListener('state', function(ev){ update(JSON.parse(ev.data)); });
+  es.addEventListener('done', function(){ es.close(); });
+  es.onerror = function(){ setTimeout(getState, 1000); };
+  getState();
+})();

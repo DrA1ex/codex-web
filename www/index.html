@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Codex Limit Watch Web</title>
+<link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+<header class="header">
+  <div class="title"><h1>Codex Limit Watch Web</h1><span id="stateBadge" class="badge">initializing</span><span id="limitBadge" class="badge">limits unknown</span></div>
+  <div class="meta" id="meta"></div>
+  <div class="limit-stats" id="limitStats"></div>
+</header>
+<div id="sessionPicker" class="session-list hidden"></div>
+<div id="approvalBox" class="approval hidden"></div>
+<main class="main">
+  <section class="panel">
+    <div class="panel-head"><h2>Queue</h2><div><button id="undoBtn">Undo last</button> <button id="clearBtn">Clear pending</button></div></div>
+    <div id="queue" class="panel-body"></div>
+  </section>
+  <section class="panel">
+    <div class="panel-head"><h2>Output</h2><div><button id="bottomBtn">Scroll to bottom</button> <button id="clearOutputBtn">Clear output</button></div></div>
+    <div id="output" class="panel-body output"></div>
+  </section>
+</main>
+<section class="composer">
+  <textarea id="composer" spellcheck="false" placeholder="Write a multiline prompt. Cmd+Enter or Ctrl+Enter adds it to the queue. Standalone commands: /undo, /clear, /pause, /resume, /done, /quit, /help"></textarea>
+  <div class="composer-row">
+    <div class="composer-actions">
+      <button id="addBtn" class="primary">Add to queue</button>
+      <button id="pauseBtn">Pause</button>
+      <button id="resumeBtn">Resume</button>
+      <button id="doneBtn">Done</button>
+      <button id="stopBtn" class="danger">Stop server</button>
+    </div>
+    <div id="counter" class="counter">Lines: 0 · Chars: 0</div>
+  </div>
+</section>
+<details class="debug"><summary>Debug</summary><pre id="debug"></pre></details>
+<script>window.CODEX_LIMIT_WATCH_TOKEN = "__TOKEN__";</script>
+<script src="/app.js"></script>
+</body>
+</html>
