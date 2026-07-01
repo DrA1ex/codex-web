@@ -316,7 +316,15 @@
       }
       html += '</div>';
     });
-    var activeEditId = document.activeElement && document.activeElement.dataset ? document.activeElement.dataset.editText : null;
+    var activeEdit = document.activeElement && document.activeElement.dataset && document.activeElement.dataset.editText ? document.activeElement : null;
+    var activeEditId = activeEdit ? activeEdit.dataset.editText : null;
+    var activeEditSelection = activeEdit ? {
+      value: activeEdit.value,
+      start: activeEdit.selectionStart,
+      end: activeEdit.selectionEnd,
+      scrollTop: activeEdit.scrollTop
+    } : null;
+    if(activeEditId) editDrafts[activeEditId] = activeEdit.value;
     el.innerHTML = html;
     if(pendingQueueScrollId) {
       var target = Array.prototype.find.call(el.querySelectorAll('[data-queue-id]'), function(node){ return node.dataset.queueId === pendingQueueScrollId; });
@@ -335,10 +343,18 @@
     if(editingQueueItemId) {
       var editor = el.querySelector('[data-edit-text]');
       if(editor && (pendingEditFocusId === editingQueueItemId || activeEditId === editingQueueItemId)) {
+        if(activeEditSelection && activeEditId === editingQueueItemId) {
+          editor.value = activeEditSelection.value;
+          editDrafts[editingQueueItemId] = activeEditSelection.value;
+        }
         editor.focus();
         if(pendingEditFocusId === editingQueueItemId) {
           editor.selectionStart = editor.selectionEnd = editor.value.length;
           pendingEditFocusId = null;
+        } else if(activeEditSelection && activeEditId === editingQueueItemId) {
+          editor.selectionStart = activeEditSelection.start;
+          editor.selectionEnd = activeEditSelection.end;
+          editor.scrollTop = activeEditSelection.scrollTop;
         }
       }
     }
