@@ -17,8 +17,8 @@ No npm packages are required. The app uses only Node.js built-ins.
 Clone the repo:
 
 ```bash
-git clone https://github.com/YOUR_NAME/YOUR_REPO.git
-cd YOUR_REPO
+git clone https://github.com/DrA1ex/codex-web
+cd codex-web
 ```
 
 Run it directly:
@@ -52,17 +52,10 @@ Restart your shell, then run:
 codex-web
 ```
 
-### Option 2: symlink into `~/bin`
+### Option 2: symlink into `/usr/local/bin`
 
 ```bash
-mkdir -p ~/bin
-ln -sf "$(pwd)/codex-limit-watch-web" ~/bin/codex-web
-```
-
-Make sure `~/bin` is on your `PATH`:
-
-```bash
-echo 'export PATH="$HOME/bin:$PATH"' >> ~/.zshrc
+ln -sf "$(pwd)/codex-limit-watch-web" /usr/local/bin/codex-web
 ```
 
 Restart your shell, then run:
