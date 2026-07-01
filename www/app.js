@@ -9,6 +9,7 @@
   var didInitialQueueScroll = false;
   var expandedDiffOutput = Object.create(null);
   var activeQueueFilter = 'all';
+  var renderKeys = Object.create(null);
   var composer = document.getElementById('composer');
   var outputEl = document.getElementById('output');
   var compactHeaderQuery = window.matchMedia ? window.matchMedia('(max-width: 1679px)') : null;
@@ -101,16 +102,43 @@
   }
   function api(path, body){ return fetch(path + '?token=' + encodeURIComponent(TOKEN), { method:'POST', headers:{'content-type':'application/json','x-codex-limit-watch-token':TOKEN}, body:JSON.stringify(body || {}) }).then(function(r){ return r.json().then(function(j){ if(!r.ok) throw new Error(j.error || r.statusText); return j; }); }); }
   function getState(){ return fetch('/api/state?token=' + encodeURIComponent(TOKEN), { headers:{'x-codex-limit-watch-token':TOKEN} }).then(function(r){return r.json();}).then(update); }
-  function update(s){ snap = s; render(); }
+  function stableKey(value){
+    try { return JSON.stringify(value == null ? null : value); } catch(e) { return String(Date.now()); }
+  }
+  function sectionKey(name, s){
+    var app = (s && s.app) || {};
+    if(name === 'header') return stableKey({ app:app, rateLimits:s && s.rateLimits });
+    if(name === 'sessions') return stableKey({ state:app.state, sessionId:app.sessionId, sessions:s && s.sessions });
+    if(name === 'approval') return stableKey(s && s.approval);
+    if(name === 'queue') return stableKey({ queue:s && s.queue, counts:app.queueCounts, nextPendingId:app.nextPendingId, canInterrupt:app.canInterrupt });
+    if(name === 'output') return stableKey(s && s.output);
+    if(name === 'debug') return stableKey(s && s.debug);
+    return '';
+  }
+  function renderSection(name, fn, force){
+    var key = sectionKey(name, snap);
+    if(force || renderKeys[name] !== key) {
+      renderKeys[name] = key;
+      fn();
+    }
+  }
+  function update(s){
+    var first = !snap;
+    snap = s;
+    render(first);
+  }
   function render(){
     if(!snap) return;
-    renderHeader();
-    renderSessions();
-    renderApproval();
-    renderQueue();
-    renderOutput();
-    var debug = document.getElementById('debug');
-    if(debug) debug.textContent = JSON.stringify(snap.debug || {}, null, 2);
+    var force = arguments.length ? !!arguments[0] : false;
+    renderSection('header', renderHeader, force);
+    renderSection('sessions', renderSessions, force);
+    renderSection('approval', renderApproval, force);
+    renderSection('queue', renderQueue, force);
+    renderSection('output', renderOutput, force);
+    renderSection('debug', function(){
+      var debug = document.getElementById('debug');
+      if(debug) debug.textContent = JSON.stringify(snap.debug || {}, null, 2);
+    }, force);
   }
   function renderTheme(app){
     var theme = app.theme === 'light' ? 'light' : 'dark';
@@ -437,7 +465,7 @@
   setInterval(function(){ if(snap && snap.approval) renderApproval(); }, 1000);
   var es = new EventSource('/events?token=' + encodeURIComponent(TOKEN));
   es.addEventListener('state', function(ev){ update(JSON.parse(ev.data)); });
-  es.addEventListener('output', function(ev){ if(!snap) return; snap.output = JSON.parse(ev.data); renderOutput(); });
+  es.addEventListener('output', function(ev){ if(!snap) return; snap.output = JSON.parse(ev.data); renderKeys.output = sectionKey('output', snap); renderOutput(); });
   es.addEventListener('done', function(){ es.close(); });
   es.onerror = function(){ setTimeout(getState, 1000); };
   getState();
