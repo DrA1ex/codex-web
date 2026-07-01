@@ -71,7 +71,7 @@ function outputTypeForItem(item) {
 }
 function formatItemCompleted(item) {
   if (!item) return '';
-  if (item.type === 'commandExecution') return `[tool] completed${item.exitCode !== undefined ? ' exit=' + item.exitCode : ''}`;
+  if (item.type === 'commandExecution') return '';
   if (item.type === 'fileChange') return '';
   if (item.type === 'mcpToolCall' || item.type === 'dynamicToolCall') return `[tool] ${item.status || 'completed'}`;
   if (item.type === 'agentMessage' || item.type === 'userMessage' || item.type === 'reasoning' || item.type === 'plan') return '';
