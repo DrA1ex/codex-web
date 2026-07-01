@@ -20,6 +20,9 @@ const { URL } = require('node:url');
 
 const VERSION = '0.1.0';
 const MAX_OUTPUT_LINES = 4000;
+const MAX_OUTPUT_ENTRY_CHARS = 200 * 1024;
+const MAX_OUTPUT_TOTAL_CHARS = 1200 * 1024;
+const OUTPUT_TRUNCATED_MARKER = '\n[output truncated]';
 const DEFAULT_MODEL = 'gpt-5.5';
 const MODEL_OPTIONS = [
   { value: '', label: `${DEFAULT_MODEL} (default)` },
@@ -1045,7 +1048,7 @@ class CodexLimitWatchApp {
     }
     if (method.includes('/delta') || method.includes('Delta')) {
       const text = extractDeltaText(method, params);
-      const type = method.includes('commandExecution') || method.includes('tool') ? 'tool-delta' : (/reasoning/i.test(method) ? 'reasoning-delta' : 'delta');
+      const type = isCompactionMethod(method) ? 'context-delta' : (method.includes('commandExecution') || method.includes('tool') ? 'tool-delta' : (/reasoning/i.test(method) ? 'reasoning-delta' : 'delta'));
       if (text) this.appendOutput(text, type, true);
       return;
     }
@@ -1143,17 +1146,28 @@ class CodexLimitWatchApp {
     if (text === undefined || text === null || text === '') return;
     if (appendToPrevious && this.output.length) {
       const last = this.output[this.output.length - 1];
-      if (last.type === type || last.type === 'delta' || type === 'delta' || type === 'tool-delta') {
-        last.text += String(text);
+      if (canAppendOutput(last.type, type)) {
+        last.text = appendLimitedOutputText(last.text, text);
         last.ts = nowIso();
       } else {
-        this.output.push({ id: randomId(5), ts: nowIso(), type, text: String(text) });
+        this.output.push({ id: randomId(5), ts: nowIso(), type, text: limitOutputText(text) });
       }
     } else {
-      this.output.push({ id: randomId(5), ts: nowIso(), type, text: String(text) });
+      this.output.push({ id: randomId(5), ts: nowIso(), type, text: limitOutputText(text) });
     }
-    if (this.output.length > MAX_OUTPUT_LINES) this.output.splice(0, this.output.length - MAX_OUTPUT_LINES);
+    this.trimOutput();
     this.broadcast('output', this.output);
+  }
+  trimOutput() {
+    if (this.output.length > MAX_OUTPUT_LINES) this.output.splice(0, this.output.length - MAX_OUTPUT_LINES);
+    let total = 0;
+    for (let i = this.output.length - 1; i >= 0; i--) {
+      total += String(this.output[i].text || '').length;
+      if (total > MAX_OUTPUT_TOTAL_CHARS) {
+        this.output.splice(0, i + 1);
+        break;
+      }
+    }
   }
   clearOutput() {
     this.output = [];
@@ -1572,6 +1586,13 @@ function normalizeRateLimits(result) {
 }
 function isApprovalMethod(method) {
   return /requestApproval$/.test(method) || method.includes('/requestApproval') || method.includes('/permissions/requestApproval') || method.includes('/commandExecution/requestApproval') || method.includes('/fileChange/requestApproval');
+}
+function isCompactionMethod(method) {
+  return /compact|compaction|summari[sz]|summary/i.test(String(method || ''));
+}
+function canAppendOutput(previousType, nextType) {
+  if (!previousType || !nextType || previousType !== nextType) return false;
+  return nextType === 'delta' || nextType === 'tool-delta' || nextType === 'reasoning-delta' || nextType === 'context-delta';
 }
 function extractDeltaText(method, params) {
   if (!params) return '';

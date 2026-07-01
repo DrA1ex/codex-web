@@ -201,7 +201,7 @@
     }
   }
   function outputLabel(type, text){
-    var labels = { error:'Error', stderr:'Stderr', system:'System', turn:'Turn', send:'Send', tool:'Tool', 'tool-delta':'Tool', reasoning:'Reasoning', 'reasoning-delta':'Reasoning', plan:'Plan', diff:'Diff', item:'Item', event:'Event', delta:'Assistant' };
+    var labels = { error:'Error', stderr:'Stderr', system:'System', turn:'Turn', send:'Send', tool:'Tool', 'tool-delta':'Tool', reasoning:'Reasoning', 'reasoning-delta':'Reasoning', plan:'Plan', diff:'Diff', item:'Item', event:'Event', delta:'Assistant', 'context-delta':'Context' };
     var label = labels[type] || 'Output';
     var body = String(text == null ? '' : text);
     var m = body.match(/^\[([^\]]+)\]\s*/);
@@ -214,7 +214,7 @@
   function renderOutputLine(l){
     var type = l.type || 'text';
     var meta = outputLabel(type, l.text);
-    var block = type === 'diff' || type === 'plan' || type === 'tool-delta' || type === 'delta' || type === 'reasoning-delta';
+    var block = type === 'diff' || type === 'plan' || type === 'tool-delta' || type === 'delta' || type === 'reasoning-delta' || type === 'context-delta';
     return '<div class="out-line ' + esc(type) + '"><span class="out-label">' + esc(meta.label) + '</span>' + (block ? '<pre class="out-body">' + esc(meta.body) + '</pre>' : '<span class="out-body">' + esc(meta.body) + '</span>') + '</div>';
   }
   function renderOutput(){
