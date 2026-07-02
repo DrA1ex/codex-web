@@ -2,10 +2,14 @@
 
 const assert = require('node:assert/strict');
 const test = require('node:test');
+const fs = require('node:fs');
+const fsp = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
 
 const { CodexLimitWatchApp } = require('../src/app');
+const { makeSandboxPolicy, mapApprovalResponse, humanApprovalResponse } = require('../src/policies');
+const { extractThreadList, normalizeSession } = require('../src/codex-sessions');
 const { makeQueueItem, normalizeQueueItem, countQueue, parseExactCommand } = require('../src/queue');
 const { normalizeRateLimits } = require('../src/rate-limits');
 const {
@@ -18,6 +22,10 @@ const {
 
 function item(id, status = 'pending') {
   return normalizeQueueItem({ id, text: `Prompt ${id}`, status });
+}
+
+async function tempDir() {
+  return await fsp.mkdtemp(path.join(os.tmpdir(), 'codex-web-test-'));
 }
 
 function makeAppWithQueue(queue) {
@@ -249,4 +257,129 @@ test('command output completion updates existing tool block once', () => {
 
   assert.equal(app.output.length, 1);
   assert.equal((app.output[0].text.match(/\nexit: 0/g) || []).length, 1);
+});
+
+test('loadQueue recovers interrupted sending items as unknown', async () => {
+  const dir = await tempDir();
+  const queuePath = path.join(dir, 'queue.json');
+  await fsp.writeFile(queuePath, JSON.stringify([
+    { id: 'sending', text: 'was sending', status: 'sending' },
+    { id: 'sent', text: 'was sent', status: 'sent' },
+    { id: 'pending', text: 'still pending', status: 'pending' },
+  ]));
+  const app = makeAppWithQueue([]);
+  app.queuePath = queuePath;
+  app.saveQueue = CodexLimitWatchApp.prototype.saveQueue.bind(app);
+
+  await app.loadQueue();
+
+  assert.deepEqual(app.queue.map((i) => i.status), ['unknown', 'unknown', 'pending']);
+  assert.match(app.queue[0].error, /Previous run exited/);
+  assert.match(app.queue[1].error, /Previous run exited/);
+  const persisted = JSON.parse(await fsp.readFile(queuePath, 'utf8'));
+  assert.deepEqual(persisted.map((i) => i.status), ['unknown', 'unknown', 'pending']);
+});
+
+test('loadQueue backs up corrupted queue file and starts empty', async () => {
+  const dir = await tempDir();
+  const queuePath = path.join(dir, 'queue.json');
+  await fsp.writeFile(queuePath, '{not json');
+  const app = makeAppWithQueue([]);
+  app.queuePath = queuePath;
+  app.eventsLogPath = path.join(dir, 'events.log');
+  app.saveQueue = CodexLimitWatchApp.prototype.saveQueue.bind(app);
+
+  await app.loadQueue();
+
+  assert.deepEqual(app.queue, []);
+  assert.deepEqual(JSON.parse(await fsp.readFile(queuePath, 'utf8')), []);
+  assert.equal(fs.readdirSync(dir).some((name) => /^queue\.json\.corrupt\..+\.bak$/.test(name)), true);
+  assert.equal(app.output.at(-1).type, 'error');
+});
+
+test('undo and clear operations affect only expected queue items', async () => {
+  const app = makeAppWithQueue([item('done', 'completed'), item('first'), item('second')]);
+
+  const undo = await app.undoLast();
+  assert.equal(undo.ok, true);
+  assert.equal(undo.composerText, 'Prompt second');
+  assert.deepEqual(app.queue.map((i) => i.id), ['done', 'first']);
+
+  await app.clearPending();
+  assert.deepEqual(app.queue.map((i) => i.id), ['done']);
+
+  await app.clearCompleted();
+  assert.deepEqual(app.queue, []);
+});
+
+test('updateQueueItem handles edit, duplicate, retry, and completed transitions', async () => {
+  const failed = item('failed', 'failed');
+  failed.error = 'boom';
+  failed.startedAt = '2026-01-01T00:00:00.000Z';
+  failed.finishedAt = '2026-01-01T00:01:00.000Z';
+  const app = makeAppWithQueue([failed]);
+
+  await app.updateQueueItem({ id: 'failed', action: 'edit', text: 'new\ntext' });
+  assert.equal(app.queue[0].status, 'pending');
+  assert.equal(app.queue[0].error, null);
+  assert.equal(app.queue[0].lineCount, 2);
+
+  await app.updateQueueItem({ id: 'failed', action: 'duplicate' });
+  assert.equal(app.queue.length, 2);
+  assert.equal(app.queue[1].text, 'new\ntext');
+  assert.notEqual(app.queue[1].id, 'failed');
+
+  await app.updateQueueItem({ id: 'failed', action: 'markCompleted' });
+  assert.equal(app.queue[0].status, 'completed');
+  assert.equal(typeof app.queue[0].finishedAt, 'string');
+
+  app.queue[0].status = 'failed';
+  app.queue[0].error = 'again';
+  app.queue[0].startedAt = '2026-01-01T00:00:00.000Z';
+  app.queue[0].finishedAt = '2026-01-01T00:01:00.000Z';
+  await app.updateQueueItem({ id: 'failed', action: 'retry' });
+  assert.equal(app.queue[0].status, 'pending');
+  assert.equal(app.queue[0].error, null);
+  assert.equal(app.queue[0].startedAt, null);
+  assert.equal(app.queue[0].finishedAt, null);
+});
+
+test('sandbox and approval policy payload mapping preserves app-server values', () => {
+  assert.deepEqual(makeSandboxPolicy({
+    sandbox: 'workspace-write',
+    projectDir: '/project',
+    addDirs: ['/extra'],
+    network: true,
+  }), {
+    type: 'workspaceWrite',
+    writableRoots: ['/project', '/extra'],
+    networkAccess: true,
+  });
+  assert.deepEqual(makeSandboxPolicy({ sandbox: 'read-only', projectDir: '/project', addDirs: [], network: false }), {
+    type: 'readOnly',
+    networkAccess: false,
+  });
+  assert.equal(mapApprovalResponse('accept-for-session'), 'acceptForSession');
+  assert.equal(humanApprovalResponse('acceptForSession'), 'accept-for-session');
+});
+
+test('session list normalization extracts IDs, preview, cwd match, and updated time', () => {
+  const projectDir = process.cwd();
+  const result = { threads: [{ threadId: 'thread-1' }] };
+  assert.deepEqual(extractThreadList(result), result.threads);
+
+  const session = normalizeSession({
+    threadId: 'thread-1',
+    cwd: projectDir,
+    updatedAt: '2026-01-02T03:04:05.000Z',
+    turns: [{
+      items: [{ type: 'userMessage', content: [{ type: 'text', text: 'Latest prompt text' }] }],
+    }],
+  }, projectDir);
+
+  assert.equal(session.id, 'thread-1');
+  assert.equal(session.cwdMatch, 'exact');
+  assert.equal(session.preview, 'Latest prompt text');
+  assert.equal(session.title, 'Latest prompt text');
+  assert.equal(session.updatedAt, '2026-01-02T03:04:05.000Z');
 });
