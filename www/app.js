@@ -392,7 +392,6 @@
       (scheduled ? '<div class="schedule-current">Current: ' + esc(fmtRunMeta(scheduled)) + '</div>' : '') +
       '<div class="actions schedule-actions">' +
         '<button id="scheduleSaveBtn" class="primary">Save</button>' +
-        (scheduled ? '<button id="scheduleResetBtn">Reset</button>' : '') +
         '<button id="scheduleCancelQueueBtn" class="danger">Cancel queue</button>' +
       '</div>' +
     '</div>';
@@ -666,7 +665,6 @@
       if(!scheduledRunAt) { alert('Select a valid time.'); return; }
       api('/api/queue/schedule', { scheduledRunAt:scheduledRunAt }).then(function(){ closeScheduleModal(); getState(); }).catch(function(e){ alert(e.message); });
     }
-    else if(t.id === 'scheduleResetBtn') api('/api/queue/schedule-reset').then(function(){ closeScheduleModal(); getState(); }).catch(function(e){ alert(e.message); });
     else if(t.id === 'scheduleCancelQueueBtn') api('/api/queue/cancel-run').then(function(){ closeScheduleModal(); getState(); }).catch(function(e){ alert(e.message); });
     else if(t.id === 'clearOutputBtn') api('/api/output/clear');
     else if(t.id === 'bottomBtn') outputEl.scrollTop = outputEl.scrollHeight;
