@@ -188,8 +188,8 @@ test('reorderQueueItem reorders only pending slots and preserves non-pending pos
 
   await app.reorderQueueItem('third', { beforeId: 'first' });
 
-  assert.deepEqual(app.queue.map((i) => i.id), ['third', 'first', 'second', 'running', 'done']);
-  assert.deepEqual(app.queue.map((i) => i.status), ['pending', 'pending', 'pending', 'sent', 'completed']);
+  assert.deepEqual(app.queue.map((i) => i.id), ['done', 'running', 'third', 'first', 'second']);
+  assert.deepEqual(app.queue.map((i) => i.status), ['completed', 'sent', 'pending', 'pending', 'pending']);
 });
 
 test('reorderQueueItem rejects moving non-pending items or targeting non-pending items', async () => {
@@ -204,7 +204,7 @@ test('reorderQueueItem supports explicit move to end of pending segment', async 
 
   await app.reorderQueueItem('a', { beforeId: null });
 
-  assert.deepEqual(app.queue.map((i) => i.id), ['b', 'c', 'a', 'done']);
+  assert.deepEqual(app.queue.map((i) => i.id), ['done', 'b', 'c', 'a']);
 });
 
 test('sendComposerNow creates a queue item and sends immediately only when idle', async () => {
@@ -258,7 +258,7 @@ test('sendComposerNow queues and clears composer when limits are not available',
   assert.equal(app.lastScheduledDelay, 200);
 });
 
-test('sendItemNow keeps pending item above active prompt when queue is already processing', async () => {
+test('sendItemNow keeps active prompt above pending item when queue is already processing', async () => {
   const active = item('active', 'sent');
   const first = item('first');
   const second = item('second');
@@ -267,7 +267,7 @@ test('sendItemNow keeps pending item above active prompt when queue is already p
 
   await app.sendItemNow(second);
 
-  assert.deepEqual(app.queue.map((i) => i.id), ['first', 'second', 'active']);
+  assert.deepEqual(app.queue.map((i) => i.id), ['active', 'first', 'second']);
   assert.equal(app.lastScheduledDelay, 200);
   assert.match(app.output.at(-1).text, /\[queue\] next #second/);
 });
@@ -287,7 +287,7 @@ test('sendItemNow promotes idle item to first pending slot before manual send', 
   const result = await app.sendItemNow(second);
 
   assert.equal(result.ok, true);
-  assert.deepEqual(app.queue.map((i) => i.id), ['second', 'first', 'third', 'done']);
+  assert.deepEqual(app.queue.map((i) => i.id), ['done', 'second', 'first', 'third']);
   assert.equal(sent.length, 1);
   assert.equal(sent[0].queueItem.id, 'second');
   assert.deepEqual(sent[0].options, { continueQueue: false });
@@ -375,11 +375,11 @@ test('loadQueue recovers interrupted sending items as unknown', async () => {
 
   await app.loadQueue();
 
-  assert.deepEqual(app.queue.map((i) => i.status), ['pending', 'unknown', 'unknown']);
+  assert.deepEqual(app.queue.map((i) => i.status), ['unknown', 'unknown', 'pending']);
+  assert.match(app.queue[0].error, /Previous run exited/);
   assert.match(app.queue[1].error, /Previous run exited/);
-  assert.match(app.queue[2].error, /Previous run exited/);
   const persisted = JSON.parse(await fsp.readFile(queuePath, 'utf8'));
-  assert.deepEqual(persisted.map((i) => i.status), ['pending', 'unknown', 'unknown']);
+  assert.deepEqual(persisted.map((i) => i.status), ['unknown', 'unknown', 'pending']);
 });
 
 test('loadQueue backs up corrupted queue file and starts empty', async () => {
@@ -405,7 +405,7 @@ test('undo and clear operations affect only expected queue items', async () => {
   const undo = await app.undoLast();
   assert.equal(undo.ok, true);
   assert.equal(undo.composerText, 'Prompt second');
-  assert.deepEqual(app.queue.map((i) => i.id), ['first', 'done']);
+  assert.deepEqual(app.queue.map((i) => i.id), ['done', 'first']);
 
   await app.clearPending();
   assert.deepEqual(app.queue.map((i) => i.id), ['done']);

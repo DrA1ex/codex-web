@@ -279,8 +279,9 @@ class CodexLimitWatchApp {
     this.queue = this.queue
       .map((item, index) => ({ item, index }))
       .sort((a, b) => {
-        const ap = a.item.status === 'pending' ? 0 : 1;
-        const bp = b.item.status === 'pending' ? 0 : 1;
+        const priority = (item) => item.status === 'completed' ? 0 : (item.status === 'pending' ? 2 : 1);
+        const ap = priority(a.item);
+        const bp = priority(b.item);
         return ap - bp || a.index - b.index;
       })
       .map((entry) => entry.item);

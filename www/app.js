@@ -7,6 +7,8 @@
   var savingQueueEdits = Object.create(null);
   var pendingEditFocusId = null;
   var pendingQueueScrollId = null;
+  var pendingQueueScrollKind = '';
+  var pendingQueueScrollReady = false;
   var queueFlashId = null;
   var didInitialQueueScroll = false;
   var expandedDiffOutput = Object.create(null);
@@ -433,6 +435,12 @@
       }
     });
   }
+  function queueItemVisibleInPanel(item, panel){
+    if(!item || !panel) return false;
+    var itemRect = item.getBoundingClientRect();
+    var panelRect = panel.getBoundingClientRect();
+    return itemRect.top >= panelRect.top && itemRect.bottom <= panelRect.bottom;
+  }
   function clearQueueDropMarker(){
     queueDropBeforeId = undefined;
     var el = document.getElementById('queue');
@@ -516,14 +524,20 @@
     if(pendingQueueScrollId) {
       var target = Array.prototype.find.call(el.querySelectorAll('[data-queue-id]'), function(node){ return node.dataset.queueId === pendingQueueScrollId; });
       if(target) {
-        pendingQueueScrollId = null;
-        target.scrollIntoView({ behavior:'smooth', block:'center' });
-        queueFlashId = target.dataset.queueId;
-        target.classList.add('queue-item-flash');
-        setTimeout(function(){
-          target.classList.remove('queue-item-flash');
-          if(queueFlashId === target.dataset.queueId) queueFlashId = null;
-        }, 900);
+        var targetItem = (snap.queue || []).find(function(x){ return x.id === pendingQueueScrollId; });
+        var waitForSendPosition = pendingQueueScrollKind === 'send' && targetItem && targetItem.status === 'pending' && !pendingQueueScrollReady;
+        if(!waitForSendPosition) {
+          pendingQueueScrollId = null;
+          pendingQueueScrollKind = '';
+          pendingQueueScrollReady = false;
+          if(!queueItemVisibleInPanel(target, el)) target.scrollIntoView({ behavior:'smooth', block:'center' });
+          queueFlashId = target.dataset.queueId;
+          target.classList.add('queue-item-flash');
+          setTimeout(function(){
+            target.classList.remove('queue-item-flash');
+            if(queueFlashId === target.dataset.queueId) queueFlashId = null;
+          }, 900);
+        }
       }
     } else if(!didInitialQueueScroll) {
       didInitialQueueScroll = true;
@@ -614,7 +628,7 @@
     if(atBottom) outputEl.scrollTop = outputEl.scrollHeight;
   }
   function updateCounter(){ var text = composer.value; var lines = text ? text.split(/\r?\n/).length : 0; document.getElementById('counter').textContent = 'Lines: ' + lines + ' · Chars: ' + text.length; setButtonState('addBtn', !text.trim(), false); }
-  function addQueue(){ api('/api/queue/add', { text: composer.value }).then(function(r){ if(r.item && r.item.id) pendingQueueScrollId = r.item.id; if(r.clearComposer) composer.value=''; if(r.composerText !== undefined) composer.value = r.composerText; if(r.message) alert(r.message); updateCounter(); getState(); }).catch(function(e){ alert(e.message); }); }
+  function addQueue(){ api('/api/queue/add', { text: composer.value }).then(function(r){ if(r.item && r.item.id) { pendingQueueScrollId = r.item.id; pendingQueueScrollKind = ''; pendingQueueScrollReady = true; } if(r.clearComposer) composer.value=''; if(r.composerText !== undefined) composer.value = r.composerText; if(r.message) alert(r.message); updateCounter(); getState(); }).catch(function(e){ alert(e.message); }); }
   function sendComposerNow(){ api('/api/queue/send-composer', { text: composer.value }).then(function(r){ if(r.clearComposer) composer.value=''; if(r.composerText !== undefined) composer.value = r.composerText; if(r.message) alert(r.message); updateCounter(); getState(); }).catch(function(e){ alert(e.message); }); }
   document.addEventListener('click', function(ev){
     var rawTarget = ev.target && ev.target.nodeType === 3 ? ev.target.parentElement : ev.target;
@@ -693,10 +707,13 @@
       else if(act === 'saveEdit') saveQueueEdit(id);
       else if(act === 'sendNow') {
         pendingQueueScrollId = id;
+        pendingQueueScrollKind = 'send';
+        pendingQueueScrollReady = false;
         api('/api/queue/update', { id:id, action:act }).then(function(r){
           if(r && r.item && r.item.id) pendingQueueScrollId = r.item.id;
+          pendingQueueScrollReady = true;
           getState();
-        }).catch(function(e){ pendingQueueScrollId = null; alert(e.message); getState(); });
+        }).catch(function(e){ pendingQueueScrollId = null; pendingQueueScrollKind = ''; pendingQueueScrollReady = false; alert(e.message); getState(); });
       }
       else api('/api/queue/update', { id:id, action:act });
     }
