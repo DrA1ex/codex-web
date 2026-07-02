@@ -272,6 +272,40 @@ test('sendItemNow places item after active prompt when queue is already processi
   assert.match(app.output.at(-1).text, /\[queue\] next #second/);
 });
 
+test('sendItemNow promotes idle item to first pending slot before manual send', async () => {
+  const first = item('first');
+  const second = item('second');
+  const done = item('done', 'completed');
+  const third = item('third');
+  const app = makeAppWithQueue([first, done, second, third]);
+  app.rateLimits = { status: 'available', buckets: [], resetAt: null };
+  const sent = [];
+  app.runCountdownAndSend = async (queueItem, options) => {
+    sent.push({ queueItem, options });
+  };
+
+  const result = await app.sendItemNow(second);
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(app.queue.map((i) => i.id), ['second', 'first', 'done', 'third']);
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0].queueItem.id, 'second');
+  assert.deepEqual(sent[0].options, { continueQueue: false });
+});
+
+test('manual send disables queue pause control while prompt is running', () => {
+  const app = makeAppWithQueue([item('active', 'sending')]);
+  app.app.state = 'sending';
+  app.currentItemId = 'active';
+  app.currentManualSend = true;
+
+  const snap = app.snapshot();
+
+  assert.equal(snap.app.isManualSend, true);
+  assert.equal(snap.app.canPause, false);
+  assert.equal(snap.app.canInterrupt, false);
+});
+
 test('canChangeSession blocks unsafe queue states and allows completed idle session', () => {
   const pending = makeAppWithQueue([item('pending')]);
   pending.app.state = 'paused';

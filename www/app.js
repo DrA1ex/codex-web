@@ -7,6 +7,7 @@
   var savingQueueEdits = Object.create(null);
   var pendingEditFocusId = null;
   var pendingQueueScrollId = null;
+  var queueFlashId = null;
   var didInitialQueueScroll = false;
   var expandedDiffOutput = Object.create(null);
   var activeQueueFilter = 'all';
@@ -517,6 +518,12 @@
       if(target) {
         pendingQueueScrollId = null;
         target.scrollIntoView({ behavior:'smooth', block:'center' });
+        queueFlashId = target.dataset.queueId;
+        target.classList.add('queue-item-flash');
+        setTimeout(function(){
+          target.classList.remove('queue-item-flash');
+          if(queueFlashId === target.dataset.queueId) queueFlashId = null;
+        }, 900);
       }
     } else if(!didInitialQueueScroll) {
       didInitialQueueScroll = true;
@@ -684,6 +691,13 @@
       else if(act === 'edit') { editingQueueItemId = id; editDrafts[id] = item ? item.text || '' : ''; pendingEditFocusId = id; expandedQueueItems[id] = true; renderQueue(); }
       else if(act === 'cancelEdit') { delete editDrafts[id]; editingQueueItemId = null; renderQueue(); }
       else if(act === 'saveEdit') saveQueueEdit(id);
+      else if(act === 'sendNow') {
+        pendingQueueScrollId = id;
+        api('/api/queue/update', { id:id, action:act }).then(function(r){
+          if(r && r.item && r.item.id) pendingQueueScrollId = r.item.id;
+          getState();
+        }).catch(function(e){ pendingQueueScrollId = null; alert(e.message); getState(); });
+      }
       else api('/api/queue/update', { id:id, action:act });
     }
   });

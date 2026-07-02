@@ -94,6 +94,7 @@ class CodexLimitWatchApp {
     this.currentTurnReject = null;
     this.currentItemId = null;
     this.currentTurnId = null;
+    this.currentManualSend = false;
     this.turnStarted = false;
     this.turnCompletionSeen = false;
     this.turnCompletionStatus = null;
@@ -607,6 +608,20 @@ class CodexLimitWatchApp {
     this.appendOutput(`[queue] next #${item.id}`, 'system');
     this.broadcastAll();
     this.schedulePump(200);
+    return { ok: true, item };
+  }
+
+  async movePendingToFirst(item) {
+    if (!item || item.status !== 'pending') throw new Error('Only pending prompts can be sent');
+    const from = this.queue.indexOf(item);
+    if (from < 0) throw new Error('Queue item not found');
+    const target = 0;
+    if (target === from) return { ok: true, item };
+    this.queue.splice(from, 1);
+    this.queue.splice(target, 0, item);
+    await this.saveQueue();
+    this.broadcastAll();
+    return { ok: true, item };
   }
 
   async pumpQueue() {
@@ -671,11 +686,11 @@ class CodexLimitWatchApp {
     if (this.shuttingDown) return;
     if (!this.app.sessionId) throw new Error('No Codex session selected');
     if (this.isQueueProcessingActive()) {
-      await this.movePendingToNext(item);
-      return;
+      return await this.movePendingToNext(item);
     }
     if (this.currentItemId || this.currentTurnId) throw new Error('A prompt is already running');
     if (!item || item.status !== 'pending') throw new Error('Only pending prompts can be sent');
+    await this.movePendingToFirst(item);
     this.app.state = 'watching';
     this.app.message = 'Manual send requested';
     this.broadcastAll();
@@ -687,15 +702,21 @@ class CodexLimitWatchApp {
       const resetAt = this.rateLimits.resetAt ? new Date(this.rateLimits.resetAt * 1000) : null;
       this.app.message = resetAt ? `Waiting for limit reset at ${resetAt.toLocaleTimeString()}` : 'Waiting for rate limits';
       this.broadcastAll();
-      return;
+      return { ok: true, item };
     }
     if (this.rateLimits.status === 'unknown') {
       this.app.state = 'waiting-limits';
       this.app.message = 'Limits unknown; retrying before manual send';
       this.broadcastAll();
-      return;
+      return { ok: true, item };
     }
-    await this.runCountdownAndSend(item, { continueQueue: false });
+    this.currentManualSend = true;
+    try {
+      await this.runCountdownAndSend(item, { continueQueue: false });
+    } finally {
+      this.currentManualSend = false;
+    }
+    return { ok: true, item };
   }
 
   async sendComposerNow(text) {
@@ -755,6 +776,7 @@ class CodexLimitWatchApp {
 
   async sendPrompt(item, options = {}) {
     const continueQueue = options.continueQueue !== false;
+    this.currentManualSend = !continueQueue;
     normalizeQueueItem(item);
     item.status = 'sending';
     item.startedAt = nowIso();
@@ -805,6 +827,7 @@ class CodexLimitWatchApp {
     } finally {
       this.currentItemId = null;
       this.currentTurnId = null;
+      this.currentManualSend = false;
       this.currentTurnResolve = null;
       this.currentTurnReject = null;
       this.turnStarted = false;
@@ -1272,8 +1295,7 @@ class CodexLimitWatchApp {
       const idx = this.queue.indexOf(item);
       this.queue.splice(idx + 1, 0, dup);
     } else if (body.action === 'sendNow') {
-      await this.sendItemNow(item);
-      return;
+      return await this.sendItemNow(item);
     } else if (body.action === 'markCompleted') {
       item.status = 'completed';
       item.finishedAt = nowIso();
@@ -1428,7 +1450,8 @@ class CodexLimitWatchApp {
         queueCounts: counts,
         nextPendingId: nextPending?.id || null,
         canInterrupt: !!(this.currentTurnId && this.app.sessionId),
-        canPause: !!this.app.sessionId && this.isQueueProcessingActive() && !['paused', 'done', 'error', 'initializing', 'selecting-session', 'approval-required'].includes(this.app.state),
+        isManualSend: !!this.currentManualSend,
+        canPause: !!this.app.sessionId && !this.currentManualSend && this.isQueueProcessingActive() && !['paused', 'done', 'error', 'initializing', 'selecting-session', 'approval-required'].includes(this.app.state),
         canChangeSession: this.canChangeSession(),
         canScheduleQueue: this.canScheduleQueue(),
       },
