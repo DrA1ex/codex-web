@@ -683,6 +683,7 @@ class CodexLimitWatchApp {
   async sendItemNow(item) {
     if (this.shuttingDown) return;
     if (!this.app.sessionId) throw new Error('No Codex session selected');
+    if (this.app.state === 'countdown') throw new Error('A prompt is already scheduled to send');
     if (this.isQueueProcessingActive()) {
       return await this.movePendingToNext(item);
     }

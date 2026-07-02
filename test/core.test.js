@@ -293,6 +293,18 @@ test('sendItemNow promotes idle item to first pending slot before manual send', 
   assert.deepEqual(sent[0].options, { continueQueue: false });
 });
 
+test('sendItemNow rejects extra sends while countdown is active', async () => {
+  const first = item('first');
+  const second = item('second');
+  const app = makeAppWithQueue([first, second]);
+  app.app.state = 'countdown';
+
+  await assert.rejects(() => app.sendItemNow(second), /already scheduled to send/);
+
+  assert.deepEqual(app.queue.map((i) => i.id), ['first', 'second']);
+  assert.equal(app.lastScheduledDelay, undefined);
+});
+
 test('manual send disables queue pause control while prompt is running', () => {
   const app = makeAppWithQueue([item('active', 'sending')]);
   app.app.state = 'sending';
