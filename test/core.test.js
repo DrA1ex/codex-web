@@ -81,7 +81,7 @@ test('queue items are normalized and counted', () => {
 
   assert.deepEqual(countQueue([
     { status: 'pending' },
-    { status: 'pending' },
+    { status: 'next' },
     { status: 'completed' },
     { status: 'custom' },
   ]), {
@@ -345,12 +345,16 @@ test('countdown tick emits only output event after initial state update', async 
   app.opts.countdown = 1;
   app.broadcast = (event) => { events.push(event); };
   app.broadcastAll = () => { stateBroadcasts += 1; };
-  app.sendPrompt = async () => {};
+  app.sendPrompt = async (queueItem) => {
+    assert.equal(queueItem.status, 'next');
+    queueItem.status = 'sending';
+  };
 
   await app.runCountdownAndSend(pending);
 
   assert.equal(stateBroadcasts, 1);
   assert.deepEqual(events, ['output']);
+  assert.equal(pending.status, 'sending');
 });
 
 test('sendItemNow reserves manual send before async rate-limit polling', async () => {
@@ -532,6 +536,7 @@ test('loadQueue recovers interrupted sending items as unknown', async () => {
   await fsp.writeFile(queuePath, JSON.stringify([
     { id: 'sending', text: 'was sending', status: 'sending' },
     { id: 'sent', text: 'was sent', status: 'sent' },
+    { id: 'next', text: 'was next', status: 'next' },
     { id: 'pending', text: 'still pending', status: 'pending' },
   ]));
   const app = makeAppWithQueue([]);
@@ -540,11 +545,11 @@ test('loadQueue recovers interrupted sending items as unknown', async () => {
 
   await app.loadQueue();
 
-  assert.deepEqual(app.queue.map((i) => i.status), ['unknown', 'unknown', 'pending']);
+  assert.deepEqual(app.queue.map((i) => i.status), ['unknown', 'unknown', 'pending', 'pending']);
   assert.match(app.queue[0].error, /Previous run exited/);
   assert.match(app.queue[1].error, /Previous run exited/);
   const persisted = JSON.parse(await fsp.readFile(queuePath, 'utf8'));
-  assert.deepEqual(persisted.map((i) => i.status), ['unknown', 'unknown', 'pending']);
+  assert.deepEqual(persisted.map((i) => i.status), ['unknown', 'unknown', 'pending', 'pending']);
 });
 
 test('loadQueue backs up corrupted queue file and starts empty', async () => {

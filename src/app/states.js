@@ -29,8 +29,8 @@ const NON_PAUSABLE_STATES = new Set([
   'approval-required',
 ]);
 
-const PENDING_QUEUE_STATUSES = new Set(['pending']);
-const ACTIVE_QUEUE_STATUSES = new Set(['pending', 'sending', 'sent']);
+const PENDING_QUEUE_STATUSES = new Set(['pending', 'next']);
+const ACTIVE_QUEUE_STATUSES = new Set(['pending', 'next', 'sending', 'sent']);
 const RUNNING_QUEUE_STATUSES = new Set(['sending', 'sent']);
 const FINISHED_QUEUE_STATUSES = new Set(['completed', 'cancelled', 'failed', 'unknown']);
 const FAILURE_QUEUE_STATUSES = new Set(['failed', 'unknown']);

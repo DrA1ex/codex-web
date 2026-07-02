@@ -76,7 +76,9 @@ module.exports = {
       const data = JSON.parse(await fsp.readFile(this.queuePath, 'utf8'));
       this.queue = Array.isArray(data) ? data : (Array.isArray(data.items) ? data.items : []);
       for (const item of this.queue) {
-        if (item.status === 'sending' || item.status === 'sent') {
+        if (item.status === 'next') {
+          item.status = 'pending';
+        } else if (item.status === 'sending' || item.status === 'sent') {
           item.status = 'unknown';
           item.error = 'Previous run exited while this prompt may already have been accepted by Codex.';
         }

@@ -86,6 +86,7 @@ function renderQueueActions(item, idAttr, app) {
 
 function renderQueueItem(item, index, app) {
   const running = isRunningStatus(item.status);
+  const next = item.status === 'next';
   const completed = item.status === 'completed';
   const editing = state.editingQueueItemId === item.id && !completed && !running;
   const expanded = Boolean(state.expandedQueueItems[item.id]) || editing;
@@ -94,7 +95,7 @@ function renderQueueItem(item, index, app) {
 
   return `
     <div class="${queueItemClassName({
-      active: running,
+      active: running || next,
       running,
       completed,
       draggable,

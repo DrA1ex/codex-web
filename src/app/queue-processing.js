@@ -8,6 +8,7 @@ const {
 } = require('./states');
 const { waitForAvailableLimits } = require('./limit-wait');
 const {
+  isPendingLikeStatus,
   movePendingToNext: movePendingToNextItem,
   movePendingToFirst: movePendingToFirstItem,
 } = require('../queue');
@@ -85,7 +86,7 @@ module.exports = {
     if ((this.app.state === 'paused' && !this.app.scheduledRunAt) || this.app.state === 'approval-required') return;
     if (this.currentItemId || this.currentTurnId) return;
 
-    const pending = this.queue.find((item) => item.status === 'pending');
+    const pending = this.queue.find((item) => isPendingLikeStatus(item.status));
     if (!pending) {
       updateIdleStateAfterQueueDrain(this);
       return;

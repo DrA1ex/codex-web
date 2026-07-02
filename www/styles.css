@@ -820,7 +820,7 @@ button:disabled {
     color: var(--danger);
 }
 
-.status.sending, .status.sent {
+.status.next, .status.sending, .status.sent {
     color: var(--accent);
 }
 

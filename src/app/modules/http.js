@@ -2,7 +2,7 @@
 
 const { URL } = require('node:url');
 
-const { countQueue } = require('../../queue');
+const { countQueue, isPendingLikeStatus } = require('../../queue');
 const {
   NON_PAUSABLE_STATES,
 } = require('../states');
@@ -113,9 +113,9 @@ module.exports = {
 
   snapshot() {
     const counts = countQueue(this.queue);
-    const nextPending = this.queue.find((item) => item.status === 'pending') || null;
+    const nextPending = this.queue.find((item) => isPendingLikeStatus(item.status)) || null;
     const manualPromptActive = !!(this.currentManualSend && (this.currentItemId || this.currentTurnId));
-    const hasPendingQueue = this.queue.some((item) => item.status === 'pending');
+    const hasPendingQueue = this.queue.some((item) => isPendingLikeStatus(item.status));
     const hasScheduledQueue = !!this.app.scheduledRunAt;
     const hasAutoQueueWork = hasPendingQueue || hasScheduledQueue;
     const canPauseProcessing = !this.currentManualSend

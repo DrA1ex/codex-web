@@ -4,6 +4,7 @@ const { nowIso, sleep } = require('../shared/utils');
 const { mapApprovalPolicy, makeSandboxPolicy } = require('../codex/policies');
 const {
   makeQueueItem,
+  isPendingLikeStatus,
   normalizeQueueItem,
   parseExactCommand,
 } = require('../queue');
@@ -22,7 +23,7 @@ function shouldOnlyQueuePrompt(ctx) {
     ctx.currentItemId
     || ctx.currentTurnId
     || ctx.isQueueProcessingActive()
-    || ctx.queue.some((item) => item.status === 'pending')
+    || ctx.queue.some((item) => isPendingLikeStatus(item.status))
   );
 }
 
@@ -80,7 +81,7 @@ module.exports = {
     }
 
     if (this.currentItemId || this.currentTurnId) throw new Error('A prompt is already running');
-    if (!item || item.status !== 'pending') throw new Error('Only pending prompts can be sent');
+    if (!item || !isPendingLikeStatus(item.status)) throw new Error('Only pending prompts can be sent');
 
     this.currentManualSend = true;
 
@@ -156,18 +157,36 @@ module.exports = {
     const continueQueue = options.continueQueue !== false;
 
     this.countdownCancel = false;
+    normalizeQueueItem(item);
+    if (item.status === 'pending') {
+      item.status = 'next';
+      await this.saveQueue();
+    }
     this.app.state = 'countdown';
     this.broadcastAll();
 
+    const resetNext = async () => {
+      if (item.status !== 'next') return;
+      item.status = 'pending';
+      await this.saveQueue();
+      this.broadcastAll();
+    };
+
     const idx = this.visibleIndex(item.id);
     for (let secondsLeft = this.opts.countdown; secondsLeft > 0; secondsLeft--) {
-      if (this.app.state === 'paused' || this.countdownCancel) return;
+      if (this.app.state === 'paused' || this.countdownCancel) {
+        await resetNext();
+        return;
+      }
 
       this.appendOutput(`Sending prompt #${idx} in ${secondsLeft}…`, 'system');
       await sleep(1000);
     }
 
-    if (this.app.state === 'paused' || this.countdownCancel) return;
+    if (this.app.state === 'paused' || this.countdownCancel) {
+      await resetNext();
+      return;
+    }
     await this.sendPrompt(item, { continueQueue });
   },
 

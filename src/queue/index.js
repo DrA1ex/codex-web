@@ -2,6 +2,12 @@
 
 const { nowIso, randomId, lineCount, previewOf } = require('../shared/utils');
 
+const PENDING_LIKE_STATUSES = new Set(['pending', 'next']);
+
+function isPendingLikeStatus(status) {
+  return PENDING_LIKE_STATUSES.has(status);
+}
+
 function makeQueueItem(text) {
   const item = {
     id: randomId(4),
@@ -31,11 +37,14 @@ function normalizeQueueItem(item) {
 }
 function countQueue(queue) {
   const counts = { total: queue.length, pending: 0, sending: 0, sent: 0, completed: 0, failed: 0, paused: 0, unknown: 0, cancelled: 0 };
-  for (const item of queue) counts[item.status] = (counts[item.status] || 0) + 1;
+  for (const item of queue) {
+    if (item.status === 'next') counts.pending += 1;
+    else counts[item.status] = (counts[item.status] || 0) + 1;
+  }
   return counts;
 }
 function queueStatusPriority(item) {
-  return item.status === 'completed' ? 0 : (item.status === 'pending' ? 2 : 1);
+  return item.status === 'completed' ? 0 : (isPendingLikeStatus(item.status) ? 2 : 1);
 }
 function normalizeQueueOrder(queue) {
   return queue
@@ -44,7 +53,7 @@ function normalizeQueueOrder(queue) {
     .map((entry) => entry.item);
 }
 function movePendingToNext(queue, item, currentItemId) {
-  if (!item || item.status !== 'pending') throw new Error('Only pending prompts can be sent');
+  if (!item || !isPendingLikeStatus(item.status)) throw new Error('Only pending prompts can be sent');
   queue = normalizeQueueOrder(queue);
   const from = queue.indexOf(item);
   if (from < 0) throw new Error('Queue item not found');
@@ -57,7 +66,7 @@ function movePendingToNext(queue, item, currentItemId) {
   return { queue, item };
 }
 function movePendingToFirst(queue, item) {
-  if (!item || item.status !== 'pending') throw new Error('Only pending prompts can be sent');
+  if (!item || !isPendingLikeStatus(item.status)) throw new Error('Only pending prompts can be sent');
   const from = queue.indexOf(item);
   if (from < 0) throw new Error('Queue item not found');
   if (from === 0) return { queue, item };
@@ -67,7 +76,7 @@ function movePendingToFirst(queue, item) {
 }
 function undoLastPending(queue) {
   for (let i = queue.length - 1; i >= 0; i--) {
-    if (queue[i].status === 'pending') {
+    if (isPendingLikeStatus(queue[i].status)) {
       const [item] = queue.splice(i, 1);
       return { queue, item };
     }
@@ -76,7 +85,7 @@ function undoLastPending(queue) {
 }
 function clearPending(queue) {
   const before = queue.length;
-  const next = queue.filter((i) => i.status !== 'pending');
+  const next = queue.filter((i) => !isPendingLikeStatus(i.status));
   return { queue: next, removed: before - next.length };
 }
 function clearCompleted(queue) {
@@ -88,7 +97,7 @@ function updateQueueItemData(queue, body) {
   const item = queue.find((i) => i.id === body.id);
   if (!item) throw new Error('Queue item not found');
   if (body.action === 'edit') {
-    if (!['pending', 'failed', 'unknown', 'cancelled'].includes(item.status)) throw new Error('Only pending/failed/unknown/cancelled items can be edited');
+    if (!['pending', 'next', 'failed', 'unknown', 'cancelled'].includes(item.status)) throw new Error('Only pending/failed/unknown/cancelled items can be edited');
     item.text = String(body.text || '');
     item.status = 'pending';
     item.error = null;
@@ -124,8 +133,8 @@ function reorderPendingItem(queue, id, body = {}) {
   const idx = queue.findIndex((i) => i.id === id);
   if (idx < 0) throw new Error('Queue item not found');
   const item = queue[idx];
-  if (item.status !== 'pending') throw new Error('Only pending prompts can be reordered');
-  const pending = queue.filter((i) => i.status === 'pending');
+  if (!isPendingLikeStatus(item.status)) throw new Error('Only pending prompts can be reordered');
+  const pending = queue.filter((i) => isPendingLikeStatus(i.status));
   const fromPending = pending.findIndex((i) => i.id === id);
   if (fromPending < 0) throw new Error('Queue item not found');
   pending.splice(fromPending, 1);
@@ -134,7 +143,7 @@ function reorderPendingItem(queue, id, body = {}) {
     toPending = pending.length;
     if (body.beforeId) {
       const beforeItem = queue.find((i) => i.id === body.beforeId);
-      if (!beforeItem || beforeItem.status !== 'pending') throw new Error('Can reorder only around pending prompts');
+      if (!beforeItem || !isPendingLikeStatus(beforeItem.status)) throw new Error('Can reorder only around pending prompts');
       const beforePending = pending.findIndex((i) => i.id === body.beforeId);
       if (beforePending >= 0) toPending = beforePending;
     }
@@ -144,7 +153,7 @@ function reorderPendingItem(queue, id, body = {}) {
   pending.splice(toPending, 0, item);
   let pendingIndex = 0;
   return {
-    queue: queue.map((queueItem) => queueItem.status === 'pending' ? pending[pendingIndex++] : queueItem),
+    queue: queue.map((queueItem) => isPendingLikeStatus(queueItem.status) ? pending[pendingIndex++] : queueItem),
     item,
   };
 }
@@ -156,6 +165,7 @@ function parseExactCommand(text) {
 
 module.exports = {
   makeQueueItem,
+  isPendingLikeStatus,
   normalizeQueueItem,
   normalizeQueueOrder,
   countQueue,
