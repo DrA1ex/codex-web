@@ -231,10 +231,19 @@ function windowsForBucket(bucket) {
   }];
 }
 
-function renderLimitCard(bucket) {
+function rateLimitsRefreshStatus(show) {
+  return show
+    ? '<em class="limit-refresh-status" title="Refreshing rate-limit data">(refreshing)</em>'
+    : '';
+}
+
+function renderLimitCard(bucket, showRefreshStatus = false) {
   return `
     <div class="limit-card">
-      <div class="limit-card-head"><span>Limits</span><b>${esc(bucket.limitName || bucket.limitId || 'limit')}</b></div>
+      <div class="limit-card-head"><span>Limits</span>
+        <b>${esc(bucket.limitName || bucket.limitId || 'limit')}</b>
+        ${rateLimitsRefreshStatus(showRefreshStatus)}
+      </div>
       ${windowsForBucket(bucket).map(renderLimitWindow).join('')}
     </div>
   `;
@@ -244,10 +253,13 @@ export function renderLimitStats() {
   const element = byId('limitStats');
   if (!element) return;
 
-  const buckets = state.snap?.rateLimits?.buckets || [];
+  const rateLimits = state.snap?.rateLimits || {};
+  const buckets = rateLimits.buckets || [];
+  const isRefreshing = rateLimits.refreshing === true;
+
   element.innerHTML = buckets.length
-    ? buckets.map(renderLimitCard).join('')
-    : '<div class="limit-card muted"><div class="limit-card-head">Limits</div><p>Rate-limit data unavailable.</p></div>';
+    ? buckets.map((bucket, index) => renderLimitCard(bucket, index === 0 && isRefreshing)).join('')
+    : `<div class="limit-card muted"><div class="limit-card-head"><span>Limits</span>${rateLimitsRefreshStatus(isRefreshing)}</div><p>Rate-limit data unavailable.</p></div>`;
 }
 
 export function renderHeader() {

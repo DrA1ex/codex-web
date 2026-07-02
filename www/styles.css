@@ -384,6 +384,14 @@ button:disabled {
     flex: 0 0 auto;
 }
 
+.limit-refresh-status {
+    flex: 0 0 auto;
+    color: var(--muted);
+    font-size: 11px;
+    font-style: normal;
+    font-weight: 650;
+}
+
 .limit-card-head b {
     min-width: 0;
     color: var(--accent);
