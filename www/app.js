@@ -23,7 +23,7 @@
   var queueDropBeforeId = undefined;
   var composer = document.getElementById('composer');
   var outputEl = document.getElementById('output');
-  var compactHeaderQuery = window.matchMedia ? window.matchMedia('(max-width: 1679px)') : null;
+  var compactHeaderQuery = window.matchMedia ? window.matchMedia('(max-width: 1780px)') : null;
   var QUEUE_MOVE_ANIMATION_MS = 180;
   function esc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
   function fmtTime(iso){ if(!iso) return ''; try { return new Date(iso).toLocaleString(); } catch(e){ return iso; } }

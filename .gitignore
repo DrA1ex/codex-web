@@ -4,6 +4,8 @@
 *.swp
 *~
 
+.idea
+
 node_modules/
 dist/
 build/
