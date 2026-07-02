@@ -154,6 +154,7 @@ module.exports = {
       await this.runCountdownAndSend(item, { continueQueue: false });
     } finally {
       this.currentManualSend = false;
+      this.broadcastAll();
     }
     return { ok: true, item };
   },
@@ -301,6 +302,7 @@ module.exports = {
   },
 
   cancelPendingSend() {
+    this.currentManualSend = false;
     this.pause('Next prompt send cancelled. Click Resume to continue.');
   },
 

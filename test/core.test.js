@@ -351,6 +351,18 @@ test('manual send disables queue pause control while prompt is running', () => {
   assert.equal(snap.app.canInterrupt, false);
 });
 
+test('cancelPendingSend clears manual send reservation immediately', () => {
+  const app = makeAppWithQueue([item('pending')]);
+  app.app.state = 'countdown';
+  app.currentManualSend = true;
+
+  app.cancelPendingSend();
+  const snap = app.snapshot();
+
+  assert.equal(app.app.state, 'paused');
+  assert.equal(snap.app.isManualSend, false);
+});
+
 test('canChangeSession blocks unsafe queue states and allows completed idle session', () => {
   const pending = makeAppWithQueue([item('pending')]);
   pending.app.state = 'paused';
