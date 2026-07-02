@@ -161,7 +161,7 @@ test('reorderQueueItem supports explicit move to end of pending segment', async 
   assert.deepEqual(app.queue.map((i) => i.id), ['b', 'done', 'c', 'a']);
 });
 
-test('sendComposerNow sends immediately only when idle and without pending queue', async () => {
+test('sendComposerNow creates a queue item and sends immediately only when idle', async () => {
   const app = makeAppWithQueue([]);
   app.rateLimits = { status: 'available', buckets: [], resetAt: null };
   const sent = [];
@@ -174,20 +174,42 @@ test('sendComposerNow sends immediately only when idle and without pending queue
   assert.equal(result.ok, true);
   assert.equal(result.clearComposer, true);
   assert.equal(result.item.text, 'hello from composer');
-  assert.equal(app.queue.length, 0);
+  assert.deepEqual(app.queue.map((i) => i.id), [result.item.id]);
   assert.equal(sent.length, 1);
+  assert.equal(sent[0].queueItem.id, result.item.id);
   assert.deepEqual(sent[0].options, { continueQueue: false });
 });
 
-test('sendComposerNow refuses one-shot send when queue is busy or has pending items', async () => {
+test('sendComposerNow queues instead of erroring when busy or pending exists', async () => {
   const busy = makeAppWithQueue([]);
   busy.rateLimits = { status: 'available', buckets: [], resetAt: null };
   busy.app.state = 'countdown';
-  assert.match((await busy.sendComposerNow('hello')).message, /busy/);
+  const busyResult = await busy.sendComposerNow('hello');
+  assert.equal(busyResult.ok, true);
+  assert.equal(busyResult.clearComposer, true);
+  assert.deepEqual(busy.queue.map((i) => i.text), ['hello']);
+  assert.equal(busy.lastScheduledDelay, 200);
 
   const queued = makeAppWithQueue([item('pending')]);
   queued.rateLimits = { status: 'available', buckets: [], resetAt: null };
-  assert.match((await queued.sendComposerNow('hello')).message, /pending prompts/);
+  const queuedResult = await queued.sendComposerNow('hello');
+  assert.equal(queuedResult.ok, true);
+  assert.equal(queuedResult.clearComposer, true);
+  assert.deepEqual(queued.queue.map((i) => i.text), ['Prompt pending', 'hello']);
+  assert.equal(queued.lastScheduledDelay, 200);
+});
+
+test('sendComposerNow queues and clears composer when limits are not available', async () => {
+  const app = makeAppWithQueue([]);
+  app.rateLimits = { status: 'limited', buckets: [], resetAt: null };
+  app.sendPrompt = async () => { throw new Error('should not send while limited'); };
+
+  const result = await app.sendComposerNow('wait for limit');
+
+  assert.equal(result.ok, true);
+  assert.equal(result.clearComposer, true);
+  assert.deepEqual(app.queue.map((i) => i.text), ['wait for limit']);
+  assert.equal(app.lastScheduledDelay, 200);
 });
 
 test('sendItemNow places item after active prompt when queue is already processing', async () => {

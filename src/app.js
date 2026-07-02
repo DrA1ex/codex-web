@@ -686,27 +686,31 @@ class CodexLimitWatchApp {
     const command = parseExactCommand(trimmed);
     if (command) return await this.executeCommand(command);
     if (!this.app.sessionId) throw new Error('No Codex session selected');
-    if (this.currentItemId || this.currentTurnId || this.isQueueProcessingActive()) {
-      return { ok: false, message: 'Queue is busy. Use Add to queue to enqueue this prompt.' };
-    }
-    if (this.queue.some((i) => i.status === 'pending')) {
-      return { ok: false, message: 'Queue has pending prompts. Use Add to queue to enqueue this prompt.' };
+    const shouldQueueOnly = this.currentItemId || this.currentTurnId || this.isQueueProcessingActive() || this.queue.some((i) => i.status === 'pending');
+    const item = makeQueueItem(String(text).replace(/\r\n/g, '\n'));
+    this.queue.push(item);
+    await this.saveQueue();
+    this.appendOutput(`[queue] added #${item.id} · ${item.lineCount} lines`, 'system');
+    this.broadcastAll();
+    if (shouldQueueOnly) {
+      this.schedulePump(200);
+      return { ok: true, clearComposer: true, item };
     }
     if (this.rateLimits.status === 'unknown') {
       await this.pollRateLimits();
     }
     if (this.rateLimits.status === 'limited') {
-      const resetAt = this.rateLimits.resetAt ? new Date(this.rateLimits.resetAt * 1000) : null;
-      return { ok: false, message: resetAt ? `Rate limit reached. Reset at ${resetAt.toLocaleTimeString()}.` : 'Rate limit reached.' };
+      this.schedulePump(200);
+      return { ok: true, clearComposer: true, item };
     }
     if (this.rateLimits.status === 'unknown') {
-      return { ok: false, message: 'Limits are unknown. Try again after the next limits refresh.' };
+      this.schedulePump(200);
+      return { ok: true, clearComposer: true, item };
     }
-    const item = makeQueueItem(String(text).replace(/\r\n/g, '\n'));
     this.app.state = 'watching';
     this.app.message = 'Sending prompt';
     this.broadcastAll();
-    await this.sendPrompt(item, { continueQueue: false });
+    this.sendPrompt(item, { continueQueue: false }).catch((err) => this.setError(err.message));
     return { ok: true, clearComposer: true, item };
   }
 
