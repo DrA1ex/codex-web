@@ -78,9 +78,21 @@ function normalizedClickTarget(event) {
   return rawTarget?.closest?.(CLICK_TARGET_SELECTOR) || rawTarget;
 }
 
-function handlePromptToggle(target) {
+function shouldSuppressPromptToggle() {
+  if (!state.suppressQueuePromptToggleUntil) return false;
+
+  const shouldSuppress = Date.now() < state.suppressQueuePromptToggleUntil;
+  if (shouldSuppress) state.suppressQueuePromptToggleUntil = 0;
+  return shouldSuppress;
+}
+
+function handlePromptToggle(target, event) {
+  if (event.target?.closest?.('.queue-drag-handle')) return false;
+
   const toggle = target.closest?.('[data-toggle-prompt]');
   if (!toggle) return false;
+
+  if (shouldSuppressPromptToggle()) return true;
 
   const item = queueItemById(toggle.dataset.id);
   if (item) {
@@ -184,7 +196,7 @@ export function attachClickHandlers() {
 
     closeQueueMenuIfOutside(target);
 
-    handlePromptToggle(target) ||
+    handlePromptToggle(target, event) ||
       handleQueueFilter(target) ||
       handleOutputDiffToggle(target) ||
       handleMobileCollapse(target) ||

@@ -6,6 +6,10 @@ function queueDragItemFromEvent(event) {
   return event.target?.closest?.('.queue-item[draggable="true"]') || null;
 }
 
+function suppressQueuePromptToggleClick() {
+  state.suppressQueuePromptToggleUntil = Date.now() + 500;
+}
+
 function clearDraggingClass() {
   const queue = byId('queue');
   if (!queue) return;
@@ -24,6 +28,7 @@ export function attachQueueDragHandlers() {
     }
 
     state.queueDragId = item.dataset.queueId;
+    suppressQueuePromptToggleClick();
     item.classList.add('dragging');
 
     if (event.dataTransfer) {
@@ -48,11 +53,13 @@ export function attachQueueDragHandlers() {
   document.addEventListener('drop', (event) => {
     if (!state.queueDragId) return;
     event.preventDefault();
+    suppressQueuePromptToggleClick();
     finishQueueDrag();
   });
 
   document.addEventListener('dragend', () => {
     clearDraggingClass();
+    suppressQueuePromptToggleClick();
     if (state.queueDragId) finishQueueDrag();
   });
 }

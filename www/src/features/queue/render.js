@@ -29,12 +29,13 @@ function promptToggleAttrs(item, expanded, editing) {
   ].join(' ');
 }
 
-function renderQueueHeader(item, index, draggable, completed) {
+function renderQueueHeader(item, index, draggable, completed, expanded, editing) {
   const finishedOrCreatedAt = completed && item.finishedAt ? item.finishedAt : item.createdAt;
   const dragHandle = draggable ? '<span class="queue-drag-handle" title="Drag to reorder">↕</span>' : '';
+  const toggleAttrs = promptToggleAttrs(item, expanded, editing);
 
   return `
-    <div class="queue-top">
+    <div class="queue-top" ${toggleAttrs}>
       <span>${dragHandle}#${index + 1} <span class="status ${esc(item.status)}">${esc(item.status)}</span> · ${item.lineCount || 0} lines</span>
       <span>${esc(fmtTime(finishedOrCreatedAt))}</span>
     </div>
@@ -99,7 +100,7 @@ function renderQueueItem(item, index, app) {
       expanded,
       editing,
     })}" data-queue-id="${idAttr}" data-queue-status="${esc(item.status)}"${draggable ? ' draggable="true"' : ''}>
-      ${renderQueueHeader(item, index, draggable, completed)}
+      ${renderQueueHeader(item, index, draggable, completed, expanded, editing)}
       ${renderQueuePrompt(item, idAttr, expanded, editing)}
       ${item.error ? `<div class="prompt-error">${esc(item.error)}</div>` : ''}
       ${editing ? renderEditActions(item, idAttr) : (!completed && !running ? renderQueueActions(item, idAttr, app) : '')}
