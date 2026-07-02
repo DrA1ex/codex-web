@@ -529,7 +529,7 @@ button:disabled {
     border-radius: 999px;
     background: rgba(119, 137, 160, .18);
     color: var(--text);
-    font-size: 12px;
+    font-size: 10px;
     font-weight: 750;
 }
 
@@ -618,7 +618,7 @@ button:disabled {
 
 .queue-tabs {
     display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 6px;
     padding: 8px 14px 6px;
     border-bottom: 1px solid var(--border-soft);

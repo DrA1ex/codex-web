@@ -18,8 +18,10 @@ export function isPendingQueueItem(item) {
 export function queueMatchesFilter(item) {
   const status = item?.status;
 
-  if (state.activeQueueFilter === 'pending') return status === 'pending';
-  if (state.activeQueueFilter === 'running') return isRunningStatus(status);
+  if (state.activeQueueFilter === 'pending' || state.activeQueueFilter === 'running') {
+    return status === 'pending' || isRunningStatus(status);
+  }
+
   if (state.activeQueueFilter === 'completed') return isDoneStatus(status);
 
   return true;

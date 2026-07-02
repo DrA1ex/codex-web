@@ -5,6 +5,7 @@ import { envChip, metaItem, queueTab, sessionMetaItem } from '#ui/html';
 
 const WARNING_STATES = new Set(['paused', 'scheduled', 'waiting-limits', 'approval-required']);
 const RUNNING_COUNT_KEYS = ['sending', 'sent'];
+const PENDING_TAB_COUNT_KEYS = ['pending', ...RUNNING_COUNT_KEYS];
 const TOTAL_COUNT_KEYS = ['pending', 'sending', 'sent', 'completed', 'failed', 'unknown'];
 
 function isCompactHeader() {
@@ -129,10 +130,13 @@ function renderQueueTabs(counts, total) {
   const tabs = byId('queueTabs');
   if (!tabs) return;
 
+  if (state.activeQueueFilter === 'running') {
+    state.activeQueueFilter = 'pending';
+  }
+
   tabs.innerHTML = [
     queueTab('all', 'All', total, state.activeQueueFilter === 'all'),
-    queueTab('pending', 'Pending', counts.pending || 0, state.activeQueueFilter === 'pending'),
-    queueTab('running', 'Running', countByKeys(counts, RUNNING_COUNT_KEYS), state.activeQueueFilter === 'running'),
+    queueTab('pending', 'Pending', countByKeys(counts, PENDING_TAB_COUNT_KEYS), state.activeQueueFilter === 'pending'),
     queueTab('completed', 'Done', counts.completed || 0, state.activeQueueFilter === 'completed'),
   ].join('');
 }
