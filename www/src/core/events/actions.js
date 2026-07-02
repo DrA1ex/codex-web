@@ -79,7 +79,7 @@ export function updateQueueItem(id, action) {
 export function sendQueueItemNow(id) {
   const app = state.snap?.app || {};
 
-  if (app.state === 'countdown' || app.isManualSend) {
+  if (app.state === 'countdown') {
     renderQueue();
     return;
   }

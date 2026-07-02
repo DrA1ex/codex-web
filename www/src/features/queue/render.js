@@ -68,7 +68,7 @@ function renderEditActions(item, idAttr) {
 }
 
 function renderQueueActions(item, idAttr, app) {
-  const sendDisabled = app.state === 'countdown' || app.isManualSend;
+  const sendDisabled = app.state === 'countdown';
   const recoveryActions = item.status === 'unknown' || item.status === 'failed'
     ? `<button data-act="markCompleted" data-id="${idAttr}">Done</button><button data-act="retry" data-id="${idAttr}">Retry</button>`
     : '';

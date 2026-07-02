@@ -8,17 +8,17 @@ const os = require('node:os');
 const path = require('node:path');
 
 const { CodexLimitWatchApp } = require('../src/app');
-const { makeSandboxPolicy, mapApprovalResponse, humanApprovalResponse } = require('../src/policies');
-const { extractThreadList, normalizeSession } = require('../src/codex-sessions');
+const { makeSandboxPolicy, mapApprovalResponse, humanApprovalResponse } = require('../src/codex/policies');
+const { extractThreadList, normalizeSession } = require('../src/codex/sessions');
 const { makeQueueItem, normalizeQueueItem, normalizeQueueOrder, countQueue, parseExactCommand } = require('../src/queue');
-const { normalizeRateLimits } = require('../src/rate-limits');
+const { normalizeRateLimits } = require('../src/codex/rate-limits');
 const {
   canAppendOutput,
   extractDeltaText,
   formatItemStarted,
   outputTypeForItem,
   formatItemCompleted,
-} = require('../src/output-format');
+} = require('../src/codex/output-format');
 
 function item(id, status = 'pending') {
   return normalizeQueueItem({ id, text: `Prompt ${id}`, status });
@@ -282,7 +282,7 @@ test('sendItemNow keeps active prompt above pending item when queue is already p
 
   await app.sendItemNow(second);
 
-  assert.deepEqual(app.queue.map((i) => i.id), ['active', 'first', 'second']);
+  assert.deepEqual(app.queue.map((i) => i.id), ['active', 'second', 'first']);
   assert.equal(app.lastScheduledDelay, 200);
   assert.match(app.output.at(-1).text, /\[queue\] next #second/);
 });
@@ -318,6 +318,23 @@ test('sendItemNow rejects extra sends while countdown is active', async () => {
 
   assert.deepEqual(app.queue.map((i) => i.id), ['first', 'second']);
   assert.equal(app.lastScheduledDelay, undefined);
+});
+
+test('sendItemNow queues next item during running manual send without resuming queue', async () => {
+  const active = item('active', 'sent');
+  const first = item('first');
+  const second = item('second');
+  const app = makeAppWithQueue([first, active, second]);
+  app.app.state = 'streaming';
+  app.currentItemId = 'active';
+  app.currentManualSend = true;
+
+  const result = await app.sendItemNow(second);
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(app.queue.map((i) => i.id), ['active', 'second', 'first']);
+  assert.equal(app.manualSendContinueQueue, false);
+  assert.equal(app.currentManualSend, true);
 });
 
 test('sendItemNow reserves manual send before async rate-limit polling', async () => {
@@ -440,7 +457,7 @@ test('cancelPendingSend clears manual send reservation immediately', () => {
 
 test('canChangeSession blocks unsafe queue states and allows completed idle session', () => {
   const pending = makeAppWithQueue([item('pending')]);
-  pending.app.state = 'paused';
+  pending.app.state = 'watching';
   assert.equal(pending.canChangeSession(), false);
 
   const completed = makeAppWithQueue([item('done', 'completed')]);

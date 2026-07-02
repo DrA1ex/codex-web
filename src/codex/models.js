@@ -146,8 +146,6 @@ function buildModelOptions(catalog) {
     && catalog.models.find((model) => model.value === catalog.defaultModel)?.displayName
     || DEFAULT_MODEL
 
-  console.log(catalog);
-
   const options = [
     { value: '', label: `${defaultModel} (default)` },
     ...catalog.models.map((model) => ({
@@ -158,8 +156,6 @@ function buildModelOptions(catalog) {
       ...(model.supportsPersonality === false ? { supportsPersonality: false } : {}),
     })),
   ];
-
-  console.log(options);
 
   return uniqueByValue(options);
 }

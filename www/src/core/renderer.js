@@ -43,7 +43,7 @@ export function sectionKey(name, snapshot) {
       counts: app.queueCounts,
       nextPendingId: app.nextPendingId,
       canInterrupt: app.canInterrupt,
-      sendLocked: app.state === 'countdown' || app.isManualSend,
+      sendLocked: app.state === 'countdown',
     });
   }
   if (name === 'output') return stableKey(snapshot?.output);

@@ -45,6 +45,7 @@ function normalizeQueueOrder(queue) {
 }
 function movePendingToNext(queue, item, currentItemId) {
   if (!item || item.status !== 'pending') throw new Error('Only pending prompts can be sent');
+  queue = normalizeQueueOrder(queue);
   const from = queue.indexOf(item);
   if (from < 0) throw new Error('Queue item not found');
   let target = 0;

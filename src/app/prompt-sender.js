@@ -63,7 +63,15 @@ module.exports = {
   async sendItemNow(item) {
     if (this.shuttingDown) return undefined;
     if (!this.app.sessionId) throw new Error('No Codex session selected');
-    if (this.currentManualSend || this.app.state === 'countdown') {
+    if (this.app.state === 'countdown') {
+      throw new Error('A prompt is already scheduled to send');
+    }
+
+    if (this.currentManualSend && (this.currentItemId || this.currentTurnId)) {
+      return await this.movePendingToNext(item);
+    }
+
+    if (this.currentManualSend) {
       throw new Error('A prompt is already scheduled to send');
     }
 
