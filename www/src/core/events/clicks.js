@@ -2,11 +2,11 @@ import { api, getState } from '#core/api';
 import { state } from '#core/state';
 import { renderOutput } from '#features/output';
 import {
-  cancelQueueEdit,
+  cancelQueueEditInDom,
   renderQueue,
   saveQueueEdit,
+  startQueueEditInDom,
   toggleQueueItemExpandedInDom,
-  startQueueEdit,
 } from '#features/queue';
 import { closeConfirm, confirmCurrentAction } from '#ui/confirm';
 import { closeScheduleModal, openScheduleModal } from '#ui/schedule';
@@ -170,11 +170,9 @@ function handleQueueItemAction(target) {
 
   if (act === 'remove') confirmRemoveQueueItem(id);
   else if (act === 'edit') {
-    startQueueEdit(id, item);
-    renderQueue();
+    startQueueEditInDom(id, item);
   } else if (act === 'cancelEdit') {
-    cancelQueueEdit(id);
-    renderQueue();
+    cancelQueueEditInDom(id);
   } else if (act === 'saveEdit') {
     saveQueueEdit(id);
   } else if (act === 'sendNow') {

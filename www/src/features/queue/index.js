@@ -1,13 +1,34 @@
 import { state } from '#core/state';
 import { api, getState } from '#core/api';
-import { renderQueue } from './render.js';
+import { renderQueue, renderQueueItemById } from './render.js';
 import { cancelQueueEdit, queueEditText, setQueueEditDraft, startQueueEdit } from './editor.js';
 
 export { clearQueueScrollRequest, requestQueueScroll } from './scroll.js';
 export { finishQueueDrag, setQueueDropMarker } from './drag.js';
-export { renderQueue, toggleQueueItemExpandedInDom } from './render.js';
+export { renderQueue, renderQueueItemById, toggleQueueItemExpandedInDom } from './render.js';
 export { queueMatchesFilter } from './status.js';
 export { cancelQueueEdit, setQueueEditDraft, startQueueEdit } from './editor.js';
+
+
+export function startQueueEditInDom(id, item) {
+  if (!id) return;
+
+  startQueueEdit(id, item);
+
+  if (!renderQueueItemById(id, { restoreEditor: true })) {
+    renderQueue();
+  }
+}
+
+export function cancelQueueEditInDom(id) {
+  if (!id) return;
+
+  cancelQueueEdit(id);
+
+  if (!renderQueueItemById(id)) {
+    renderQueue();
+  }
+}
 
 export async function saveQueueEdit(id) {
   if (!id || state.savingQueueEdits[id]) return;
@@ -16,26 +37,32 @@ export async function saveQueueEdit(id) {
   const text = queueEditText(id, item?.text || '');
 
   state.savingQueueEdits[id] = true;
-  renderQueue();
+  if (!renderQueueItemById(id, { restoreEditor: true })) renderQueue();
 
   try {
     const response = await api('/api/queue/update', { id, action: 'edit', text });
+    const updatedItem = response?.item;
 
-    if (response?.item && Array.isArray(state.snap?.queue)) {
+    if (updatedItem && Array.isArray(state.snap?.queue)) {
       const index = state.snap.queue.findIndex((queueItem) => queueItem.id === id);
-      if (index >= 0) state.snap.queue[index] = response.item;
+      if (index >= 0) state.snap.queue[index] = updatedItem;
     }
 
     delete state.editDrafts[id];
     delete state.savingQueueEdits[id];
     if (state.editingQueueItemId === id) state.editingQueueItemId = null;
 
+    if (updatedItem) {
+      if (!renderQueueItemById(updatedItem.id || id)) renderQueue();
+      return;
+    }
+
     renderQueue();
     getState();
   } catch (error) {
     delete state.savingQueueEdits[id];
     state.editDrafts[id] = text;
-    renderQueue();
+    if (!renderQueueItemById(id, { restoreEditor: true })) renderQueue();
     alert(error.message);
   }
 }

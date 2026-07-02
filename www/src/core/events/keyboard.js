@@ -1,7 +1,7 @@
 import { api } from '#core/api';
 import { state } from '#core/state';
 import { sendComposerNow } from '#features/composer';
-import { cancelQueueEdit, renderQueue, saveQueueEdit, toggleQueueItemExpandedInDom } from '#features/queue';
+import { cancelQueueEditInDom, saveQueueEdit, toggleQueueItemExpandedInDom } from '#features/queue';
 import { closeConfirm, confirmCurrentAction } from '#ui/confirm';
 import { closeScheduleModal } from '#ui/schedule';
 import { setQueueMenuOpen } from '#ui/header';
@@ -14,8 +14,7 @@ function queueMenuIsOpen() {
 
 function cancelOrPause() {
   if (state.editingQueueItemId) {
-    cancelQueueEdit(state.editingQueueItemId);
-    renderQueue();
+    cancelQueueEditInDom(state.editingQueueItemId);
     return;
   }
 

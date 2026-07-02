@@ -152,6 +152,23 @@ export function toggleQueueItemExpandedInDom(id) {
   return setQueueItemExpandedInDom(id, !Boolean(state.expandedQueueItems[id]));
 }
 
+
+export function renderQueueItemById(id, { restoreEditor = false } = {}) {
+  const queue = state.snap?.queue || [];
+  const item = queue.find((queueItem) => queueItem.id === id);
+  const container = queueContainer();
+  const root = container && findRenderedQueueItem(container, id);
+
+  if (!item || !container || !root || !queueMatchesFilter(item)) return false;
+
+  const activeEditor = restoreEditor ? captureActiveEditor() : null;
+  root.outerHTML = renderQueueItem(item, queue.indexOf(item), state.snap?.app || {});
+
+  if (restoreEditor) restoreActiveEditor(container, activeEditor);
+
+  return true;
+}
+
 function processPendingScroll(container, queue) {
   if (state.pendingQueueScrollId) {
     const targetItem = queue.find((item) => item.id === state.pendingQueueScrollId);
