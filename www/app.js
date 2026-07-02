@@ -9,6 +9,7 @@
   var pendingQueueScrollId = null;
   var pendingQueueScrollKind = '';
   var pendingQueueScrollReady = false;
+  var pendingQueueScrollTimer = null;
   var queueFlashId = null;
   var didInitialQueueScroll = false;
   var expandedDiffOutput = Object.create(null);
@@ -23,6 +24,7 @@
   var composer = document.getElementById('composer');
   var outputEl = document.getElementById('output');
   var compactHeaderQuery = window.matchMedia ? window.matchMedia('(max-width: 1679px)') : null;
+  var QUEUE_MOVE_ANIMATION_MS = 180;
   function esc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
   function fmtTime(iso){ if(!iso) return ''; try { return new Date(iso).toLocaleString(); } catch(e){ return iso; } }
   function fmtClock(ts){ if(!ts) return '—'; try { return new Date(ts * 1000).toLocaleTimeString(); } catch(e){ return '—'; } }
@@ -441,6 +443,40 @@
     var panelRect = panel.getBoundingClientRect();
     return itemRect.top >= panelRect.top && itemRect.bottom <= panelRect.bottom;
   }
+  function queueMoveSettleDelay(){
+    return queueAnimationDisabled() ? 0 : QUEUE_MOVE_ANIMATION_MS + 40;
+  }
+  function clearQueueScrollRequest(){
+    pendingQueueScrollId = null;
+    pendingQueueScrollKind = '';
+    pendingQueueScrollReady = false;
+  }
+  function requestQueueScroll(id, kind, ready){
+    pendingQueueScrollId = id;
+    pendingQueueScrollKind = kind || '';
+    pendingQueueScrollReady = !!ready;
+  }
+  function flashQueueItem(target){
+    if(!target) return;
+    queueFlashId = target.dataset.queueId;
+    target.classList.add('queue-item-flash');
+    setTimeout(function(){
+      target.classList.remove('queue-item-flash');
+      if(queueFlashId === target.dataset.queueId) queueFlashId = null;
+    }, 900);
+  }
+  function scrollQueueItemAfterMove(id){
+    if(pendingQueueScrollTimer) clearTimeout(pendingQueueScrollTimer);
+    pendingQueueScrollTimer = setTimeout(function(){
+      pendingQueueScrollTimer = null;
+      var el = document.getElementById('queue');
+      if(!el) return;
+      var target = Array.prototype.find.call(el.querySelectorAll('[data-queue-id]'), function(node){ return node.dataset.queueId === id; });
+      if(!target) return;
+      if(!queueItemVisibleInPanel(target, el)) target.scrollIntoView({ behavior:'smooth', block:'center' });
+      flashQueueItem(target);
+    }, queueMoveSettleDelay());
+  }
   function clearQueueDropMarker(){
     queueDropBeforeId = undefined;
     var el = document.getElementById('queue');
@@ -527,16 +563,9 @@
         var targetItem = (snap.queue || []).find(function(x){ return x.id === pendingQueueScrollId; });
         var waitForSendPosition = pendingQueueScrollKind === 'send' && targetItem && targetItem.status === 'pending' && !pendingQueueScrollReady;
         if(!waitForSendPosition) {
-          pendingQueueScrollId = null;
-          pendingQueueScrollKind = '';
-          pendingQueueScrollReady = false;
-          if(!queueItemVisibleInPanel(target, el)) target.scrollIntoView({ behavior:'smooth', block:'center' });
-          queueFlashId = target.dataset.queueId;
-          target.classList.add('queue-item-flash');
-          setTimeout(function(){
-            target.classList.remove('queue-item-flash');
-            if(queueFlashId === target.dataset.queueId) queueFlashId = null;
-          }, 900);
+          var scrollId = pendingQueueScrollId;
+          clearQueueScrollRequest();
+          scrollQueueItemAfterMove(scrollId);
         }
       }
     } else if(!didInitialQueueScroll) {
@@ -628,7 +657,7 @@
     if(atBottom) outputEl.scrollTop = outputEl.scrollHeight;
   }
   function updateCounter(){ var text = composer.value; var lines = text ? text.split(/\r?\n/).length : 0; document.getElementById('counter').textContent = 'Lines: ' + lines + ' · Chars: ' + text.length; setButtonState('addBtn', !text.trim(), false); }
-  function addQueue(){ api('/api/queue/add', { text: composer.value }).then(function(r){ if(r.item && r.item.id) { pendingQueueScrollId = r.item.id; pendingQueueScrollKind = ''; pendingQueueScrollReady = true; } if(r.clearComposer) composer.value=''; if(r.composerText !== undefined) composer.value = r.composerText; if(r.message) alert(r.message); updateCounter(); getState(); }).catch(function(e){ alert(e.message); }); }
+  function addQueue(){ api('/api/queue/add', { text: composer.value }).then(function(r){ if(r.item && r.item.id) requestQueueScroll(r.item.id, '', true); if(r.clearComposer) composer.value=''; if(r.composerText !== undefined) composer.value = r.composerText; if(r.message) alert(r.message); updateCounter(); getState(); }).catch(function(e){ alert(e.message); }); }
   function sendComposerNow(){ api('/api/queue/send-composer', { text: composer.value }).then(function(r){ if(r.clearComposer) composer.value=''; if(r.composerText !== undefined) composer.value = r.composerText; if(r.message) alert(r.message); updateCounter(); getState(); }).catch(function(e){ alert(e.message); }); }
   document.addEventListener('click', function(ev){
     var rawTarget = ev.target && ev.target.nodeType === 3 ? ev.target.parentElement : ev.target;
@@ -706,14 +735,12 @@
       else if(act === 'cancelEdit') { delete editDrafts[id]; editingQueueItemId = null; renderQueue(); }
       else if(act === 'saveEdit') saveQueueEdit(id);
       else if(act === 'sendNow') {
-        pendingQueueScrollId = id;
-        pendingQueueScrollKind = 'send';
-        pendingQueueScrollReady = false;
+        activeQueueFilter = 'all';
+        requestQueueScroll(id, 'send', false);
         api('/api/queue/update', { id:id, action:act }).then(function(r){
-          if(r && r.item && r.item.id) pendingQueueScrollId = r.item.id;
-          pendingQueueScrollReady = true;
+          if(pendingQueueScrollId) requestQueueScroll(r && r.item && r.item.id ? r.item.id : id, 'send', true);
           getState();
-        }).catch(function(e){ pendingQueueScrollId = null; pendingQueueScrollKind = ''; pendingQueueScrollReady = false; alert(e.message); getState(); });
+        }).catch(function(e){ clearQueueScrollRequest(); alert(e.message); getState(); });
       }
       else api('/api/queue/update', { id:id, action:act });
     }
