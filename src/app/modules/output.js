@@ -11,6 +11,7 @@ const {
 module.exports = {
   appendOutput(text, type = 'text', appendToPrevious = false) {
     if (text === undefined || text === null || text === '') return;
+    if (type !== 'diff') this.closeCurrentDiffOutput();
     let entry;
     if (appendToPrevious && this.output.length) {
       const last = this.output[this.output.length - 1];
@@ -43,6 +44,7 @@ module.exports = {
   },
 
   appendCommandOutput(item) {
+    this.closeCurrentDiffOutput();
     const command = Array.isArray(item?.command) ? item.command.join(' ') : String(item?.command || '');
     const entry = {
       id: randomId(5),
@@ -73,6 +75,7 @@ module.exports = {
 
   appendCommandOutputText(item, text) {
     if (text === undefined || text === null || text === '') return false;
+    this.closeCurrentDiffOutput();
     const out = this.commandOutputEntry(item);
     if (!out || out.type !== 'tool' || out.tool?.kind !== 'command') return false;
 
@@ -84,6 +87,7 @@ module.exports = {
   },
 
   updateCommandOutput(item) {
+    this.closeCurrentDiffOutput();
     const out = this.commandOutputEntry(item);
     const exitCode = item.exitCode !== undefined && item.exitCode !== null ? item.exitCode : (item.exit_code !== undefined ? item.exit_code : null);
     const status = item.status || 'completed';
@@ -108,15 +112,53 @@ module.exports = {
   },
 
   finishActiveOutputBlocks() {
-    if (this.diffActivityTimer) {
-      clearTimeout(this.diffActivityTimer);
-      this.diffActivityTimer = null;
-    }
     for (const out of this.output) {
       if (out.tool) out.tool.active = false;
       if (out.diff) out.diff.active = false;
     }
     this.currentDiffOutputId = null;
+    this.currentDiffFileKey = null;
+    this.lastDiffOutputText = null;
+    if (this.diffSnapshotByFileKey) this.diffSnapshotByFileKey.clear();
+  },
+
+  closeCurrentDiffOutput() {
+    const outputId = this.currentDiffOutputId;
+    if (!outputId) return;
+
+    const out = this.output.find((entry) => entry.id === outputId && entry.type === 'diff');
+    if (out?.diff?.active) {
+      out.diff.active = false;
+      out.ts = nowIso();
+    }
+    this.currentDiffOutputId = null;
+    this.currentDiffFileKey = null;
+    this.lastDiffOutputText = null;
+  },
+
+  diffFiles(text) {
+    const files = [];
+    const seen = new Set();
+    for (const line of String(text || '').split(/\r?\n/)) {
+      const gitMatch = line.match(/^diff --git a\/(.+?) b\/(.+)$/);
+      const file = gitMatch
+        ? (gitMatch[2] || gitMatch[1])
+        : (line.startsWith('+++ b/')
+          ? line.slice(6)
+          : (line.startsWith('--- a/') ? line.slice(6) : null));
+      if (file && file !== '/dev/null' && !seen.has(file)) {
+        seen.add(file);
+        files.push(file);
+      }
+    }
+    return files;
+  },
+
+  diffFileKey(text) {
+    const files = this.diffFiles(text);
+    if (files.length === 1) return files[0];
+    if (files.length > 1) return `multi:${files.join('\n')}`;
+    return '';
   },
 
   diffStats(text) {
@@ -131,52 +173,87 @@ module.exports = {
   },
 
   diffCaption(text) {
-    const files = [];
-    for (const line of String(text || '').split(/\r?\n/)) {
-      const match = line.match(/^diff --git a\/(.+?) b\/(.+)$/);
-      if (match) files.push(match[2] || match[1]);
-    }
+    const files = this.diffFiles(text);
     if (files.length === 1) return files[0];
     if (files.length > 1) return `${files.length} files`;
-    const fileLine = String(text || '').split(/\r?\n/).find((line) => line.startsWith('+++ b/'));
-    return fileLine ? fileLine.slice(6) : '';
+    return '';
   },
 
-  scheduleDiffActivityClear(outputId, text) {
-    if (this.diffActivityTimer) clearTimeout(this.diffActivityTimer);
-    this.diffActivityTimer = setTimeout(() => {
-      this.diffActivityTimer = null;
-      if (this.currentDiffOutputId !== outputId || this.lastDiffOutputText !== text) return;
-      const out = this.output.find((entry) => entry.id === outputId && entry.type === 'diff');
-      if (!out?.diff?.active) return;
-      out.diff.active = false;
-      out.ts = nowIso();
-      this.broadcast('output', this.output);
-    }, 1400);
-    if (this.diffActivityTimer.unref) this.diffActivityTimer.unref();
+  diffSections(text) {
+    const raw = String(text || '');
+    const lines = raw.split(/\r?\n/);
+    const chunks = [];
+    let chunk = [];
+
+    for (const line of lines) {
+      if (/^diff --git /.test(line) && chunk.length) {
+        chunks.push(chunk.join('\n'));
+        chunk = [];
+      }
+      chunk.push(line);
+    }
+    if (chunk.length) chunks.push(chunk.join('\n'));
+
+    return chunks
+      .map((chunkText, index) => {
+        const limited = limitOutputText(chunkText);
+        const fileKey = this.diffFileKey(limited) || `section:${index}`;
+        return {
+          text: limited,
+          fileKey,
+          diff: {
+            added: 0,
+            removed: 0,
+            ...this.diffStats(limited),
+            caption: this.diffCaption(limited),
+            active: false,
+          },
+        };
+      })
+      .filter((section) => section.text !== '');
+  },
+
+  appendOrUpdateDiffSection(section) {
+    const current = this.currentDiffOutputId
+      ? this.output.find((entry) => entry.id === this.currentDiffOutputId && entry.type === 'diff')
+      : null;
+
+    if (current && this.currentDiffFileKey === section.fileKey) {
+      if (current.text === section.text || this.lastDiffOutputText === section.text) return false;
+      current.text = section.text;
+      current.ts = nowIso();
+      current.diff = { ...(current.diff || {}), ...section.diff };
+    } else {
+      this.closeCurrentDiffOutput();
+      const entry = { id: randomId(5), ts: nowIso(), type: 'diff', text: section.text, diff: section.diff };
+      this.output.push(entry);
+      this.currentDiffOutputId = entry.id;
+      this.currentDiffFileKey = section.fileKey;
+    }
+
+    this.lastDiffOutputText = section.text;
+    return true;
   },
 
   updateDiffOutput(text) {
     if (text === undefined || text === null || text === '') return;
-    const limited = limitOutputText(text);
-    if (this.lastDiffOutputText === limited) return;
-    this.lastDiffOutputText = limited;
-    const diff = { added: 0, removed: 0, ...this.diffStats(limited), caption: this.diffCaption(limited), active: true };
-    const current = this.currentDiffOutputId
-      ? this.output.find((entry) => entry.id === this.currentDiffOutputId && entry.type === 'diff')
-      : null;
-    if (current) {
-      if (current.text === limited) return;
-      current.text = limited;
-      current.ts = nowIso();
-      current.diff = { ...(current.diff || {}), ...diff };
-    } else {
-      const entry = { id: randomId(5), ts: nowIso(), type: 'diff', text: limited, diff };
-      this.output.push(entry);
-      this.currentDiffOutputId = entry.id;
+    if (!this.diffSnapshotByFileKey) this.diffSnapshotByFileKey = new Map();
+
+    let changed = false;
+    for (const section of this.diffSections(text)) {
+      if (this.diffSnapshotByFileKey.get(section.fileKey) === section.text) continue;
+      this.diffSnapshotByFileKey.set(section.fileKey, section.text);
+      if (this.appendOrUpdateDiffSection(section)) changed = true;
     }
+
+    if (!changed) return;
+
     this.trimOutput();
-    this.scheduleDiffActivityClear(this.currentDiffOutputId, limited);
+    if (!this.output.some((entry) => entry.id === this.currentDiffOutputId)) {
+      this.currentDiffOutputId = null;
+      this.currentDiffFileKey = null;
+      this.lastDiffOutputText = null;
+    }
     this.broadcast('output', this.output);
   },
 
@@ -200,10 +277,8 @@ module.exports = {
     this.output = [];
     this.lastDiffOutputText = null;
     this.currentDiffOutputId = null;
-    if (this.diffActivityTimer) {
-      clearTimeout(this.diffActivityTimer);
-      this.diffActivityTimer = null;
-    }
+    this.currentDiffFileKey = null;
+    if (this.diffSnapshotByFileKey) this.diffSnapshotByFileKey.clear();
     this.commandOutputByItemId.clear();
     this.broadcast('output', this.output);
     this.broadcastAll();
