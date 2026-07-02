@@ -25,6 +25,7 @@ function promptToggleAttrs(item, expanded, editing) {
     `data-id="${esc(item.id)}"`,
     'role="button"',
     'tabindex="0"',
+    `aria-expanded="${expanded ? 'true' : 'false'}"`,
     `title="Click to ${expanded ? 'collapse' : 'expand'} prompt"`,
   ].join(' ');
 }
@@ -47,7 +48,7 @@ function renderQueuePrompt(item, idAttr, expanded, editing) {
     return `<textarea class="queue-edit" data-edit-text="${idAttr}" spellcheck="false">${esc(queueDraftValue(item.id, item.text || ''))}</textarea>`;
   }
 
-  const text = expanded ? item.text || item.preview || '' : item.preview || item.text || '';
+  const text = promptTextForState(item, expanded);
 
   const attrs = promptToggleAttrs(item, expanded, editing);
 
@@ -108,8 +109,47 @@ function renderQueueItem(item, index, app) {
   `;
 }
 
-function findRenderedQueueItem(container, id) {
+function promptTextForState(item, expanded) {
+  return expanded ? item.text || item.preview || '' : item.preview || item.text || '';
+}
+
+export function findRenderedQueueItem(container, id) {
   return toArray(container.querySelectorAll('[data-queue-id]')).find((node) => node.dataset.queueId === id);
+}
+
+function updateQueuePromptToggleAttrs(root, expanded) {
+  toArray(root.querySelectorAll('[data-toggle-prompt]')).forEach((node) => {
+    node.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+    node.title = `Click to ${expanded ? 'collapse' : 'expand'} prompt`;
+  });
+}
+
+export function setQueueItemExpandedInDom(id, expanded) {
+  const item = (state.snap?.queue || []).find((queueItem) => queueItem.id === id);
+  if (!item) return false;
+
+  const container = queueContainer();
+  const root = container && findRenderedQueueItem(container, id);
+  if (!root || root.classList.contains('editing')) return false;
+
+  if (expanded) state.expandedQueueItems[id] = true;
+  else delete state.expandedQueueItems[id];
+
+  root.classList.toggle('expanded', expanded);
+  updateQueuePromptToggleAttrs(root, expanded);
+
+  const prompt = root.querySelector('.prompt-preview');
+  if (prompt) {
+    prompt.textContent = promptTextForState(item, expanded);
+    prompt.setAttribute('aria-label', item.text || item.preview || '');
+  }
+
+  return true;
+}
+
+export function toggleQueueItemExpandedInDom(id) {
+  if (!id) return false;
+  return setQueueItemExpandedInDom(id, !Boolean(state.expandedQueueItems[id]));
 }
 
 function processPendingScroll(container, queue) {

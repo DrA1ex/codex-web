@@ -5,6 +5,7 @@ import {
   cancelQueueEdit,
   renderQueue,
   saveQueueEdit,
+  toggleQueueItemExpandedInDom,
   startQueueEdit,
 } from '#features/queue';
 import { closeConfirm, confirmCurrentAction } from '#ui/confirm';
@@ -94,11 +95,7 @@ function handlePromptToggle(target, event) {
 
   if (shouldSuppressPromptToggle()) return true;
 
-  const item = queueItemById(toggle.dataset.id);
-  if (item) {
-    state.expandedQueueItems[toggle.dataset.id] = !state.expandedQueueItems[toggle.dataset.id];
-    renderQueue();
-  }
+  toggleQueueItemExpandedInDom(toggle.dataset.id);
 
   return true;
 }

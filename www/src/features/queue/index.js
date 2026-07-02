@@ -5,7 +5,7 @@ import { cancelQueueEdit, queueEditText, setQueueEditDraft, startQueueEdit } fro
 
 export { clearQueueScrollRequest, requestQueueScroll } from './scroll.js';
 export { finishQueueDrag, setQueueDropMarker } from './drag.js';
-export { renderQueue } from './render.js';
+export { renderQueue, toggleQueueItemExpandedInDom } from './render.js';
 export { queueMatchesFilter } from './status.js';
 export { cancelQueueEdit, setQueueEditDraft, startQueueEdit } from './editor.js';
 

@@ -1,7 +1,7 @@
 import { api } from '#core/api';
 import { state } from '#core/state';
 import { sendComposerNow } from '#features/composer';
-import { cancelQueueEdit, renderQueue, saveQueueEdit } from '#features/queue';
+import { cancelQueueEdit, renderQueue, saveQueueEdit, toggleQueueItemExpandedInDom } from '#features/queue';
 import { closeConfirm, confirmCurrentAction } from '#ui/confirm';
 import { closeScheduleModal } from '#ui/schedule';
 import { setQueueMenuOpen } from '#ui/header';
@@ -50,12 +50,7 @@ function handlePromptPreviewKey(event, target) {
   if (!target?.dataset?.togglePrompt || (event.key !== 'Enter' && event.key !== ' ')) return false;
 
   event.preventDefault();
-  const item = (state.snap?.queue || []).find((queueItem) => queueItem.id === target.dataset.id);
-
-  if (item) {
-    state.expandedQueueItems[target.dataset.id] = !state.expandedQueueItems[target.dataset.id];
-    renderQueue();
-  }
+  toggleQueueItemExpandedInDom(target.dataset.id);
 
   return true;
 }
