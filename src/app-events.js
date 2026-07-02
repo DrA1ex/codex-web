@@ -1,0 +1,195 @@
+'use strict';
+
+const { normalizeRateLimits } = require('./rate-limits');
+const {
+  isApprovalMethod,
+  isCompactionMethod,
+  extractDeltaText,
+  formatItemStarted,
+  outputTypeForItem,
+  formatItemCompleted,
+} = require('./output-format');
+const {
+  mapApprovalResponse,
+  humanApprovalResponse,
+} = require('./policies');
+const { nowIso, safeJson, truncate, asArray, maskSecrets } = require('./utils');
+
+module.exports = {
+  handleNotification(method, params) {
+    this.eventLog('debug', `notify ${method} ${safeJson(maskSecrets(params)).slice(0, 1000)}`);
+    if (method === 'account/rateLimits/updated') {
+      const previousStatus = this.rateLimits.status;
+      this.rateLimits = normalizeRateLimits(params);
+      this.debug.lastRateLimitPayload = params;
+      this.reportRateLimitStatus(previousStatus, 'notification');
+      this.broadcast('rateLimits', this.rateLimits);
+      this.broadcastAll();
+      return;
+    }
+    if (method === 'serverRequest/resolved') {
+      if (this.approval && (!params.requestId || params.requestId === this.approval.requestId)) {
+        this.approval = null;
+        this.clearApprovalTimeout();
+        this.broadcast('approval', null);
+        if (this.app.state === 'approval-required') this.resume();
+      }
+      return;
+    }
+    if (method === 'error') {
+      const message = params?.error?.message || params?.message || safeJson(params);
+      this.appendOutput(`[error] ${message}`, 'error');
+      return;
+    }
+    if (method === 'turn/started') {
+      const turn = params.turn || params;
+      this.currentTurnId = turn.id || turn.turnId || this.currentTurnId;
+      this.debug.lastTurnId = this.currentTurnId;
+      this.turnStarted = true;
+      const item = this.currentItem();
+      if (item) {
+        item.status = 'sent';
+        this.saveQueue().catch(() => {});
+      }
+      this.app.state = 'streaming';
+      this.appendOutput('[turn] started', 'turn');
+      this.broadcastAll();
+      return;
+    }
+    if (method === 'turn/completed' || method === 'turn/failed') {
+      const turn = params.turn || params;
+      const status = turn.status || (method === 'turn/failed' ? 'failed' : 'completed');
+      const errMessage = turn?.error?.message || params?.error?.message || null;
+      this.turnCompletionSeen = true;
+      this.turnCompletionStatus = status;
+      const item = this.currentItem();
+      if (item) {
+        item.finishedAt = nowIso();
+        item.status = status === 'completed' ? 'completed' : 'failed';
+        item.error = errMessage;
+        this.saveQueue().catch(() => {});
+      }
+      this.appendOutput(status === 'completed' ? '[turn] completed' : `[turn] ${status}${errMessage ? ': ' + errMessage : ''}`, status === 'completed' ? 'turn' : 'error');
+      this.tryReadSession().then(() => this.broadcastAll()).catch((err) => this.debugLog('refresh session title failed', err.message));
+      if (this.currentTurnResolve) this.currentTurnResolve();
+      if (status !== 'completed') this.pause('Auto-send paused after turn failure. Type /resume after reviewing the error.');
+      return;
+    }
+    if (method === 'item/started') {
+      const item = params.item || params;
+      const label = formatItemStarted(item);
+      if (label) {
+        const outputItem = this.appendOutput(label, outputTypeForItem(item));
+        if (item.type === 'commandExecution') this.trackCommandOutput(item, outputItem);
+      }
+      return;
+    }
+    if (method === 'item/completed') {
+      const item = params.item || params;
+      if (item.type === 'commandExecution') {
+        this.updateCommandOutput(item);
+        return;
+      }
+      const label = formatItemCompleted(item);
+      if (label) this.appendOutput(label, item?.status === 'failed' ? 'error' : 'item');
+      return;
+    }
+    if (method.includes('/delta') || method.includes('Delta')) {
+      const text = extractDeltaText(method, params);
+      const type = isCompactionMethod(method) ? 'context-delta' : (method.includes('commandExecution') || method.includes('tool') ? 'tool-delta' : (/reasoning/i.test(method) ? 'reasoning-delta' : 'delta'));
+      if (text) this.appendOutput(text, type, true);
+      return;
+    }
+    if (method === 'turn/plan/updated') {
+      const plan = asArray(params.plan).map((p) => `${p.status || '-'} ${p.step || ''}`).join('\n');
+      if (plan) this.appendOutput('[plan]\n' + plan, 'plan');
+      return;
+    }
+    if (method === 'turn/diff/updated' && params.diff) {
+      const diff = typeof params.diff === 'string' ? params.diff : (params.diff.unified || params.diff.text || safeJson(params.diff));
+      this.updateDiffOutput(diff || '[diff updated]');
+      return;
+    }
+    if (this.opts.debug) this.appendOutput(`[event] ${method} ${truncate(safeJson(params), 500)}`, 'event');
+  },
+
+  currentItem() {
+    if (!this.currentItemId) return null;
+    return this.queue.find((i) => i.id === this.currentItemId) || null;
+  },
+
+  async handleServerRequest(msg) {
+    const method = msg.method;
+    const params = msg.params || {};
+    this.eventLog('info', `server request ${method}`);
+    if (isApprovalMethod(method)) {
+      const configured = mapApprovalResponse(this.opts.approvalResponse);
+      if (configured !== 'manual') {
+        const result = configured;
+        this.appendOutput(`[approval] ${method}: ${humanApprovalResponse(configured)}`, 'system');
+        this.rpc.respond(msg.id, result);
+        return;
+      }
+      this.approval = {
+        rpcId: msg.id,
+        requestId: params.requestId || params.itemId || String(msg.id),
+        method,
+        params,
+        createdAt: nowIso(),
+        expiresAt: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
+      };
+      this.app.state = 'approval-required';
+      this.app.message = 'Approval required';
+      this.appendOutput('[approval] required. Use UI buttons or /approve, /approve-session, /decline, /cancel.', 'system');
+      this.scheduleApprovalTimeout(this.approval.requestId);
+      this.broadcast('approval', this.approval);
+      this.broadcastAll();
+      return;
+    }
+    if (method === 'currentTime/read') {
+      this.rpc.respond(msg.id, { currentTimeAt: Math.floor(Date.now() / 1000) });
+      return;
+    }
+    if (method === 'item/tool/requestUserInput' || method === 'mcpServer/elicitation/request') {
+      this.rpc.respond(msg.id, { action: 'decline', content: null });
+      return;
+    }
+    this.rpc.respond(msg.id, { code: -32601, message: `Unsupported server request: ${method}` }, true);
+  },
+
+  async respondApproval(decision) {
+    if (!this.approval) throw new Error('No pending approval request');
+    this.clearApprovalTimeout();
+    const mapped = mapApprovalResponse(decision);
+    const id = this.approval.rpcId;
+    this.rpc.respond(id, mapped);
+    this.appendOutput(`[approval] ${humanApprovalResponse(mapped)}`, 'system');
+    this.approval = null;
+    this.broadcast('approval', null);
+    if (this.app.state === 'approval-required') this.resume();
+  },
+
+  scheduleApprovalTimeout(requestId) {
+    this.clearApprovalTimeout();
+    this.approvalTimer = setTimeout(() => {
+      this.autoRejectApproval(requestId).catch((err) => this.setError(err.message));
+    }, 15 * 60 * 1000);
+    this.approvalTimer.unref();
+  },
+
+  clearApprovalTimeout() {
+    if (this.approvalTimer) clearTimeout(this.approvalTimer);
+    this.approvalTimer = null;
+  },
+
+  async autoRejectApproval(requestId) {
+    if (!this.approval || this.approval.requestId !== requestId) return;
+    const id = this.approval.rpcId;
+    this.rpc.respond(id, mapApprovalResponse('decline'));
+    this.appendOutput('[approval] auto-declined after 15 minutes', 'system');
+    this.approval = null;
+    this.clearApprovalTimeout();
+    this.broadcast('approval', null);
+    this.pause('Approval timed out and was auto-declined. Queue paused.');
+  }
+};
