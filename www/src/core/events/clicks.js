@@ -19,6 +19,7 @@ import {
   confirmRemoveQueueItem,
   interruptPrompt,
   post,
+  reportError,
   queueItemById,
   saveSchedule,
   scrollOutputToBottom,
@@ -67,9 +68,9 @@ const BUTTON_ACTIONS = {
   scheduleCancelQueueBtn: () => api('/api/queue/cancel-run')
     .then(() => {
       closeScheduleModal();
-      getState();
+      getState().catch(reportError);
     })
-    .catch((error) => alert(error.message)),
+    .catch(reportError),
   bottomBtn: scrollOutputToBottom,
   themeBtn: toggleTheme,
 };

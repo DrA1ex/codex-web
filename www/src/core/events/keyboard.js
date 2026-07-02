@@ -1,4 +1,4 @@
-import { api } from '#core/api';
+import { api, isNetworkError } from '#core/api';
 import { state } from '#core/state';
 import { sendComposerNow } from '#features/composer';
 import { cancelQueueEditInDom, saveQueueEdit, toggleQueueItemExpandedInDom } from '#features/queue';
@@ -6,6 +6,11 @@ import { closeConfirm, confirmCurrentAction } from '#ui/confirm';
 import { closeScheduleModal } from '#ui/schedule';
 import { setQueueMenuOpen } from '#ui/header';
 import { saveSchedule } from './actions.js';
+
+function reportError(error) {
+  if (isNetworkError(error)) return;
+  alert(error.message);
+}
 
 function queueMenuIsOpen() {
   const menu = document.getElementById('queueMenu');
@@ -19,7 +24,7 @@ function cancelOrPause() {
   }
 
   const path = state.snap?.app?.state === 'countdown' ? '/api/control/cancel-send' : '/api/control/pause';
-  api(path).catch((error) => alert(error.message));
+  api(path).catch(reportError);
 }
 
 function handleEscape(event) {

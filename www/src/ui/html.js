@@ -30,12 +30,13 @@ export function sessionMetaItem(app, value, title = value) {
   `;
 }
 
-export function envChip(label, value, ok) {
+export function envChip(label, value, ok, title, className = ok ? 'ok' : '') {
   const displayValue = value == null || value === '' ? '—' : String(value);
-  const aria = esc(`${label}: ${displayValue}`);
+  const displayTitle = title == null || title === '' ? displayValue : String(title);
+  const aria = esc(`${label}: ${displayTitle}`);
 
   return `
-    <span class="env-chip ${ok ? 'ok' : ''}" aria-label="${aria}" title="${aria}">
+    <span class="env-chip ${esc(className)}" aria-label="${aria}" title="${aria}">
       <i></i>${esc(label)}: <b>${esc(displayValue)}</b>
     </span>
   `;

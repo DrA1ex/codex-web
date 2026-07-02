@@ -1,5 +1,5 @@
 import { state } from '#core/state';
-import { api, getState } from '#core/api';
+import { api, getState, isNetworkError } from '#core/api';
 import { byId, toArray } from '#utils/dom';
 
 export function clearQueueDropMarker() {
@@ -46,7 +46,7 @@ export function finishQueueDrag() {
   if (id == null || beforeId === undefined || beforeId === id) return;
 
   api('/api/queue/reorder', { id, beforeId: beforeId || null }).catch((error) => {
-    alert(error.message);
-    getState();
+    if (!isNetworkError(error)) alert(error.message);
+    getState().catch(() => {});
   });
 }

@@ -1,5 +1,5 @@
 import { state } from '#core/state';
-import { api, getState } from '#core/api';
+import { api, getState, isNetworkError } from '#core/api';
 import { setButtonState } from '#ui/header';
 import { requestQueueScroll } from '#features/queue';
 
@@ -12,6 +12,7 @@ function applyComposerResponse(response) {
 }
 
 function handleComposerError(error) {
+  if (isNetworkError(error)) return;
   alert(error.message);
 }
 
@@ -35,7 +36,7 @@ export async function addQueue() {
   applyComposerResponse(response);
   if (response.message) alert(response.message);
   updateCounter();
-  getState();
+  getState().catch(handleComposerError);
 }
 
 export async function sendComposerNow() {
@@ -45,5 +46,5 @@ export async function sendComposerNow() {
   applyComposerResponse(response);
   if (response.message) alert(response.message);
   updateCounter();
-  getState();
+  getState().catch(handleComposerError);
 }

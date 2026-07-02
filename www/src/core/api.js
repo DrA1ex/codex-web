@@ -1,9 +1,76 @@
 import { state } from '#core/state';
 
 let stateUpdater = null;
+let networkStatusRenderer = null;
+
+const NETWORK_ERROR_HINTS = [
+  'failed to fetch',
+  'fetch failed',
+  'networkerror',
+  'load failed',
+  'connection',
+];
 
 export function setStateUpdater(fn) {
   stateUpdater = fn;
+}
+
+export function setNetworkStatusRenderer(fn) {
+  networkStatusRenderer = fn;
+}
+
+function renderNetworkStatus() {
+  if (typeof networkStatusRenderer === 'function') networkStatusRenderer();
+}
+
+function setClientNetworkStatus(status, message) {
+  const nextMessage = message || '';
+  if (state.clientNetwork.status === status && state.clientNetwork.message === nextMessage) return;
+
+  state.clientNetwork = {
+    status,
+    message: nextMessage,
+    updatedAt: Date.now(),
+  };
+
+  renderNetworkStatus();
+}
+
+function networkErrorMessage(error) {
+  const rawMessage = String(error?.message || 'Fetch failed');
+  const normalized = rawMessage.toLowerCase();
+
+  if (NETWORK_ERROR_HINTS.some((hint) => normalized.includes(hint))) {
+    return 'server unavailable';
+  }
+
+  return rawMessage;
+}
+
+function networkError(error) {
+  const wrapped = new Error(networkErrorMessage(error));
+  wrapped.isNetworkError = true;
+  wrapped.cause = error;
+  return wrapped;
+}
+
+export function isNetworkError(error) {
+  return Boolean(error?.isNetworkError);
+}
+
+export function markNetworkOnline(message = 'connected') {
+  setClientNetworkStatus('online', message);
+}
+
+export function markNetworkReconnecting(message = 'reconnecting') {
+  if (state.clientNetwork.status === 'offline') return;
+  setClientNetworkStatus('reconnecting', message);
+}
+
+export function markNetworkOffline(error) {
+  const wrapped = isNetworkError(error) ? error : networkError(error);
+  setClientNetworkStatus('offline', wrapped.message);
+  return wrapped;
 }
 
 function withToken(path) {
@@ -19,8 +86,21 @@ async function parseJsonResponse(response) {
   return payload;
 }
 
+async function fetchJson(path, options = {}) {
+  let response;
+
+  try {
+    response = await fetch(withToken(path), options);
+  } catch (error) {
+    throw markNetworkOffline(error);
+  }
+
+  markNetworkOnline();
+  return parseJsonResponse(response);
+}
+
 export async function api(path, body = {}) {
-  const response = await fetch(withToken(path), {
+  return fetchJson(path, {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
@@ -28,14 +108,11 @@ export async function api(path, body = {}) {
     },
     body: JSON.stringify(body),
   });
-
-  return parseJsonResponse(response);
 }
 
 export async function getState() {
-  const response = await fetch(withToken('/api/state'), {
+  const snapshot = await fetchJson('/api/state', {
     headers: { 'x-codex-limit-watch-token': state.token },
   });
-  const snapshot = await parseJsonResponse(response);
   return stateUpdater ? stateUpdater(snapshot) : snapshot;
 }

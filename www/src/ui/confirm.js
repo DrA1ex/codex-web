@@ -1,5 +1,5 @@
 import { state } from '#core/state';
-import { api } from '#core/api';
+import { api, isNetworkError } from '#core/api';
 import { esc } from '#utils/format';
 import { byId, setHidden } from '#utils/dom';
 
@@ -54,5 +54,7 @@ export function confirmCurrentAction() {
   const handler = CONFIRM_ACTIONS[current.action];
   if (!handler) return;
 
-  handler(current.data).catch((error) => alert(error.message));
+  handler(current.data).catch((error) => {
+    if (!isNetworkError(error)) alert(error.message);
+  });
 }

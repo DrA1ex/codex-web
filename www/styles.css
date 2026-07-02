@@ -216,11 +216,11 @@ button:disabled {
     color: var(--ok);
 }
 
-.badge.warn {
+.badge.warn, .env-chip.warn {
     color: var(--warn);
 }
 
-.badge.danger {
+.badge.danger, .env-chip.danger {
     color: var(--danger);
 }
 

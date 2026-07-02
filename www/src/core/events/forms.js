@@ -1,4 +1,4 @@
-import { api, getState } from '#core/api';
+import { api, getState, isNetworkError } from '#core/api';
 import { state } from '#core/state';
 import { updateCounter } from '#features/composer';
 import { setQueueEditDraft } from '#features/queue';
@@ -9,8 +9,8 @@ function isScheduleInput(target) {
 }
 
 function reportError(error) {
-  alert(error.message);
-  getState();
+  if (!isNetworkError(error)) alert(error.message);
+  getState().catch(() => {});
 }
 
 export function attachFormHandlers() {

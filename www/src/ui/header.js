@@ -4,6 +4,9 @@ import { byId, setText } from '#utils/dom';
 import { envChip, metaItem, queueTab, sessionMetaItem } from '#ui/html';
 
 const WARNING_STATES = new Set(['paused', 'scheduled', 'waiting-limits', 'approval-required']);
+const STATE_BADGE_LABELS = {
+  'waiting-limits': 'waiting',
+};
 const RUNNING_COUNT_KEYS = ['sending', 'sent'];
 const PENDING_TAB_COUNT_KEYS = ['pending', ...RUNNING_COUNT_KEYS];
 const TOTAL_COUNT_KEYS = ['pending', 'sending', 'sent', 'completed', 'failed', 'unknown'];
@@ -31,6 +34,34 @@ function setBadge(element, text, title, className) {
   element.textContent = text;
   element.title = title;
   element.className = `badge ${className}`;
+}
+
+function stateBadgeText(appState) {
+  return STATE_BADGE_LABELS[appState] || appState || 'unknown';
+}
+
+function networkStatusBadge(appNetwork) {
+  const clientNetwork = state.clientNetwork || {};
+
+  if (clientNetwork.status === 'offline') {
+    return { text: 'offline', className: 'danger', ok: false, title: clientNetwork.message || 'server unavailable' };
+  }
+
+  if (clientNetwork.status === 'reconnecting') {
+    return { text: 'reconnecting', className: 'warn', ok: false, title: clientNetwork.message || 'reconnecting to server' };
+  }
+
+  if (clientNetwork.status === 'connecting') {
+    return { text: 'connecting', className: 'warn', ok: false, title: clientNetwork.message || 'connecting to server' };
+  }
+
+  const serverNetwork = appNetwork == null || appNetwork === '' ? '—' : String(appNetwork);
+  return {
+    text: 'connected',
+    className: 'ok',
+    ok: true,
+    title: `connected; app network: ${serverNetwork}`,
+  };
 }
 
 function renderOptions(select, options, value, fallbackLabel) {
@@ -107,10 +138,11 @@ function renderControlState(app, counts = {}) {
 }
 
 function renderStateBadges(app, rateLimits) {
-  const stateClass = app.state === 'error' ? 'danger' : WARNING_STATES.has(app.state) ? 'warn' : 'ok';
+  const appState = app.state || 'unknown';
+  const stateClass = appState === 'error' ? 'danger' : WARNING_STATES.has(appState) ? 'warn' : 'ok';
   const limitsClass = rateLimits.status === 'available' ? 'ok' : rateLimits.status === 'limited' ? 'warn' : 'danger';
 
-  setBadge(byId('stateBadge'), app.state || 'unknown', app.state || 'unknown', stateClass);
+  setBadge(byId('stateBadge'), stateBadgeText(appState), appState, stateClass);
   setBadge(byId('limitBadge'), limitBadgeText(rateLimits.status), fullLimitBadgeText(rateLimits.status), limitsClass);
   setText(byId('mobileLimitsSummary'), limitBadgeText(rateLimits.status));
 }
@@ -145,10 +177,12 @@ function renderEnvMeta(app) {
   const env = byId('envMeta');
   if (!env) return;
 
+  const networkBadge = networkStatusBadge(app.network);
+
   env.innerHTML = [
     envChip('Sandbox', app.sandbox || '—', true),
     envChip('Approval', app.approvalPolicy || '—', true),
-    envChip('Network', String(app.network), Boolean(app.network)),
+    envChip('Network', networkBadge.text, networkBadge.ok, networkBadge.title, networkBadge.className),
   ].join('');
 }
 

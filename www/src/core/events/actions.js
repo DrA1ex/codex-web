@@ -1,4 +1,4 @@
-import { api, getState } from '#core/api';
+import { api, getState, isNetworkError } from '#core/api';
 import { state } from '#core/state';
 import { addQueue, updateCounter } from '#features/composer';
 import { clearQueueScrollRequest, renderQueue, requestQueueScroll } from '#features/queue';
@@ -7,6 +7,7 @@ import { closeScheduleModal, scheduleInputIso } from '#ui/schedule';
 import { setQueueMenuOpen } from '#ui/header';
 
 export function reportError(error) {
+  if (isNetworkError(error)) return;
   alert(error.message);
 }
 
@@ -32,7 +33,7 @@ export function saveSchedule() {
   api('/api/queue/schedule', { scheduledRunAt })
     .then(() => {
       closeScheduleModal();
-      getState();
+      getState().catch(reportError);
     })
     .catch(reportError);
 }
@@ -88,12 +89,12 @@ export function sendQueueItemNow(id) {
   api('/api/queue/update', { id, action: 'sendNow' })
     .then((response) => {
       if (state.pendingQueueScrollId) requestQueueScroll(response?.item?.id || id, 'send', true);
-      getState();
+      getState().catch(reportError);
     })
     .catch((error) => {
       clearQueueScrollRequest();
       reportError(error);
-      getState();
+      getState().catch(reportError);
     });
 }
 

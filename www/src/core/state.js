@@ -3,6 +3,7 @@ export const QUEUE_MOVE_ANIMATION_MS = 180;
 export const state = {
   token: '',
   snap: null,
+  clientNetwork: { status: 'connecting', message: 'connecting', updatedAt: 0 },
 
   expandedQueueItems: Object.create(null),
   editingQueueItemId: null,
