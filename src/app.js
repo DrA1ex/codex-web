@@ -47,7 +47,16 @@ const {
 const {
   makeQueueItem,
   normalizeQueueItem,
+  normalizeQueueOrder,
   countQueue,
+  movePendingToNext: movePendingToNextItem,
+  movePendingToFirst: movePendingToFirstItem,
+  undoLastPending,
+  clearPending: clearPendingItems,
+  clearCompleted: clearCompletedItems,
+  updateQueueItemData,
+  removeQueueItem: removeQueueItemData,
+  reorderPendingItem,
   parseExactCommand,
 } = require('./queue');
 const { normalizeRateLimits } = require('./rate-limits');
@@ -268,23 +277,12 @@ class CodexLimitWatchApp {
   }
 
   async saveQueue() {
-    this.normalizeQueueOrder();
+    this.queue = normalizeQueueOrder(this.queue);
     if (!this.queuePath) return;
     const tmp = this.queuePath + '.tmp';
     await fsp.writeFile(tmp, JSON.stringify(this.queue, null, 2));
     await fsp.rename(tmp, this.queuePath);
     this.broadcast('queue', this.queue);
-  }
-  normalizeQueueOrder() {
-    this.queue = this.queue
-      .map((item, index) => ({ item, index }))
-      .sort((a, b) => {
-        const priority = (item) => item.status === 'completed' ? 0 : (item.status === 'pending' ? 2 : 1);
-        const ap = priority(a.item);
-        const bp = priority(b.item);
-        return ap - bp || a.index - b.index;
-      })
-      .map((entry) => entry.item);
   }
   async loadState() {
     if (!this.statePath || !fs.existsSync(this.statePath)) return;
@@ -607,33 +605,21 @@ class CodexLimitWatchApp {
   }
 
   async movePendingToNext(item) {
-    if (!item || item.status !== 'pending') throw new Error('Only pending prompts can be sent');
-    const from = this.queue.indexOf(item);
-    if (from < 0) throw new Error('Queue item not found');
-    let target = 0;
-    const runningIndex = this.queue.findIndex((i) => i.id === this.currentItemId || i.status === 'sending' || i.status === 'sent');
-    if (runningIndex >= 0) target = runningIndex + 1;
-    this.queue.splice(from, 1);
-    if (from < target) target -= 1;
-    this.queue.splice(Math.max(0, target), 0, item);
+    const result = movePendingToNextItem(this.queue, item, this.currentItemId);
+    this.queue = result.queue;
     await this.saveQueue();
     this.appendOutput(`[queue] next #${item.id}`, 'system');
     this.broadcastAll();
     this.schedulePump(200);
-    return { ok: true, item };
+    return { ok: true, item: result.item };
   }
 
   async movePendingToFirst(item) {
-    if (!item || item.status !== 'pending') throw new Error('Only pending prompts can be sent');
-    const from = this.queue.indexOf(item);
-    if (from < 0) throw new Error('Queue item not found');
-    const target = 0;
-    if (target === from) return { ok: true, item };
-    this.queue.splice(from, 1);
-    this.queue.splice(target, 0, item);
+    const result = movePendingToFirstItem(this.queue, item);
+    this.queue = result.queue;
     await this.saveQueue();
     this.broadcastAll();
-    return { ok: true, item };
+    return { ok: true, item: result.item };
   }
 
   async pumpQueue() {
@@ -1268,99 +1254,50 @@ class CodexLimitWatchApp {
   }
 
   async undoLast() {
-    for (let i = this.queue.length - 1; i >= 0; i--) {
-      if (this.queue[i].status === 'pending') {
-        const [item] = this.queue.splice(i, 1);
-        await this.saveQueue();
-        this.appendOutput(`[queue] undo #${item.id}`, 'system');
-        this.broadcastAll();
-        return { ok: true, composerText: item.text };
-      }
-    }
-    return { ok: false, message: 'No pending prompt to undo' };
+    const result = undoLastPending(this.queue);
+    this.queue = result.queue;
+    if (!result.item) return { ok: false, message: 'No pending prompt to undo' };
+    await this.saveQueue();
+    this.appendOutput(`[queue] undo #${result.item.id}`, 'system');
+    this.broadcastAll();
+    return { ok: true, composerText: result.item.text };
   }
   async clearPending() {
-    const before = this.queue.length;
-    this.queue = this.queue.filter((i) => i.status !== 'pending');
+    const result = clearPendingItems(this.queue);
+    this.queue = result.queue;
     await this.saveQueue();
-    this.appendOutput(`[queue] cleared ${before - this.queue.length} pending prompt(s)`, 'system');
+    this.appendOutput(`[queue] cleared ${result.removed} pending prompt(s)`, 'system');
     this.broadcastAll();
   }
   async clearCompleted() {
-    const before = this.queue.length;
-    this.queue = this.queue.filter((i) => i.status !== 'completed');
+    const result = clearCompletedItems(this.queue);
+    this.queue = result.queue;
     await this.saveQueue();
-    this.appendOutput(`[queue] cleared ${before - this.queue.length} completed prompt(s)`, 'system');
+    this.appendOutput(`[queue] cleared ${result.removed} completed prompt(s)`, 'system');
     this.broadcastAll();
   }
   async updateQueueItem(body) {
-    const item = this.queue.find((i) => i.id === body.id);
-    if (!item) throw new Error('Queue item not found');
-    if (body.action === 'edit') {
-      if (!['pending', 'failed', 'unknown', 'cancelled'].includes(item.status)) throw new Error('Only pending/failed/unknown/cancelled items can be edited');
-      item.text = String(body.text || '');
-      item.status = 'pending';
-      item.error = null;
-      normalizeQueueItem(item);
-    } else if (body.action === 'duplicate') {
-      const dup = makeQueueItem(item.text);
-      const idx = this.queue.indexOf(item);
-      this.queue.splice(idx + 1, 0, dup);
-    } else if (body.action === 'sendNow') {
+    if (body.action === 'sendNow') {
+      const item = this.queue.find((i) => i.id === body.id);
+      if (!item) throw new Error('Queue item not found');
       return await this.sendItemNow(item);
-    } else if (body.action === 'markCompleted') {
-      item.status = 'completed';
-      item.finishedAt = nowIso();
-      item.error = null;
-    } else if (body.action === 'retry') {
-      item.status = 'pending';
-      item.startedAt = null;
-      item.finishedAt = null;
-      item.error = null;
-    } else if (body.status) {
-      item.status = String(body.status);
     }
-    normalizeQueueItem(item);
+    const result = updateQueueItemData(this.queue, body);
+    this.queue = result.queue;
     await this.saveQueue();
     this.broadcastAll();
     this.schedulePump(200);
-    return { ok: true, item };
+    return { ok: true, item: result.item };
   }
   async removeQueueItem(id) {
-    const idx = this.queue.findIndex((i) => i.id === id);
-    if (idx < 0) throw new Error('Queue item not found');
-    const item = this.queue[idx];
-    if (item.id === this.currentItemId) throw new Error('Cannot remove active prompt');
-    this.queue.splice(idx, 1);
+    const result = removeQueueItemData(this.queue, id, this.currentItemId);
+    this.queue = result.queue;
     await this.saveQueue();
     this.broadcastAll();
   }
   async reorderQueueItem(id, body = {}) {
-    const idx = this.queue.findIndex((i) => i.id === id);
-    if (idx < 0) throw new Error('Queue item not found');
-    const item = this.queue[idx];
-    if (item.status !== 'pending') throw new Error('Only pending prompts can be reordered');
-    const pending = this.queue.filter((i) => i.status === 'pending');
-    const fromPending = pending.findIndex((i) => i.id === id);
-    if (fromPending < 0) throw new Error('Queue item not found');
-    pending.splice(fromPending, 1);
-    let toPending = fromPending;
-    if (Object.prototype.hasOwnProperty.call(body, 'beforeId')) {
-      toPending = pending.length;
-      if (!body.beforeId) {
-        // Explicit null/empty beforeId means "move to the end of the pending segment".
-      } else {
-        const beforeItem = this.queue.find((i) => i.id === body.beforeId);
-        if (!beforeItem || beforeItem.status !== 'pending') throw new Error('Can reorder only around pending prompts');
-        const beforePending = pending.findIndex((i) => i.id === body.beforeId);
-        if (beforePending >= 0) toPending = beforePending;
-      }
-    } else if (body.direction) {
-      toPending = body.direction === 'up' ? Math.max(0, fromPending - 1) : Math.min(pending.length, fromPending + 1);
-    }
-    pending.splice(toPending, 0, item);
-    let pendingIndex = 0;
-    this.queue = this.queue.map((queueItem) => queueItem.status === 'pending' ? pending[pendingIndex++] : queueItem);
+    const result = reorderPendingItem(this.queue, id, body);
+    this.queue = result.queue;
     await this.saveQueue();
     this.broadcastAll();
   }

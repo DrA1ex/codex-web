@@ -10,7 +10,7 @@ const path = require('node:path');
 const { CodexLimitWatchApp } = require('../src/app');
 const { makeSandboxPolicy, mapApprovalResponse, humanApprovalResponse } = require('../src/policies');
 const { extractThreadList, normalizeSession } = require('../src/codex-sessions');
-const { makeQueueItem, normalizeQueueItem, countQueue, parseExactCommand } = require('../src/queue');
+const { makeQueueItem, normalizeQueueItem, normalizeQueueOrder, countQueue, parseExactCommand } = require('../src/queue');
 const { normalizeRateLimits } = require('../src/rate-limits');
 const {
   canAppendOutput,
@@ -45,7 +45,7 @@ function makeAppWithQueue(queue) {
     watchInterval: 60,
   });
   app.queue = queue;
-  app.saveQueue = async () => { app.normalizeQueueOrder(); };
+  app.saveQueue = async () => { app.queue = normalizeQueueOrder(app.queue); };
   app.saveState = async () => {};
   app.broadcastAll = () => {};
   app.broadcast = () => {};
