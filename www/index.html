@@ -62,6 +62,27 @@
   </div>
 </section>
 <script>window.CODEX_LIMIT_WATCH_TOKEN = "__TOKEN__";</script>
-<script src="/app.js?token=__TOKEN__"></script>
+<script type="importmap">
+{
+  "imports": {
+    "#core/api": "/src/core/api.js?token=__TOKEN__",
+    "#core/bootstrap": "/src/core/bootstrap.js?token=__TOKEN__",
+    "#core/events": "/src/core/events.js?token=__TOKEN__",
+    "#core/renderer": "/src/core/renderer.js?token=__TOKEN__",
+    "#core/state": "/src/core/state.js?token=__TOKEN__",
+    "#features/composer": "/src/features/composer/index.js?token=__TOKEN__",
+    "#features/output": "/src/features/output/index.js?token=__TOKEN__",
+    "#features/queue": "/src/features/queue/index.js?token=__TOKEN__",
+    "#ui/approval": "/src/ui/approval.js?token=__TOKEN__",
+    "#ui/confirm": "/src/ui/confirm.js?token=__TOKEN__",
+    "#ui/header": "/src/ui/header.js?token=__TOKEN__",
+    "#ui/html": "/src/ui/html.js?token=__TOKEN__",
+    "#ui/schedule": "/src/ui/schedule.js?token=__TOKEN__",
+    "#ui/sessions": "/src/ui/sessions.js?token=__TOKEN__",
+    "#utils/format": "/src/utils/format.js?token=__TOKEN__"
+  }
+}
+</script>
+<script type="module" src="/app.js?token=__TOKEN__"></script>
 </body>
 </html>

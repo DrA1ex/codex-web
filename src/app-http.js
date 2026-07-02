@@ -12,6 +12,48 @@ const {
   readJsonBody,
 } = require('./http-utils');
 
+const ROOT_STATIC_ASSETS = new Set(['app.js', 'styles.css']);
+const SRC_ASSET_PREFIX = 'src/';
+const SRC_ASSET_EXTENSIONS = new Set(['.js', '.mjs', '.css', '.svg', '.png', '.jpg', '.jpeg', '.gif', '.webp', '.ico', '.map']);
+
+function rawPathname(url) {
+  const value = String(url || '');
+  const index = value.search(/[?#]/);
+  return index === -1 ? value : value.slice(0, index);
+}
+
+function staticAssetName(pathname) {
+  let decoded;
+  try {
+    decoded = decodeURIComponent(pathname);
+  } catch (_) {
+    return null;
+  }
+
+  if (!decoded || decoded[0] !== '/' || decoded.includes('\0')) return null;
+
+  const normalized = path.posix.normalize(decoded);
+  if (normalized !== decoded) return null;
+
+  const name = normalized.slice(1);
+  if (ROOT_STATIC_ASSETS.has(name)) return name;
+  if (!name.startsWith(SRC_ASSET_PREFIX)) return null;
+  if (name.endsWith('/') || name.includes('//')) return null;
+
+  const parts = name.split('/');
+  if (parts.some((part) => part === '' || part === '.' || part === '..')) return null;
+
+  return SRC_ASSET_EXTENSIONS.has(path.extname(name)) ? name : null;
+}
+
+function staticContentType(name) {
+  const ext = path.extname(name);
+  if (ext === '.js' || ext === '.mjs') return STATIC_TYPES[ext] || 'text/javascript; charset=utf-8';
+  if (ext === '.css') return STATIC_TYPES[ext] || 'text/css; charset=utf-8';
+  if (ext === '.svg') return STATIC_TYPES[ext] || 'image/svg+xml';
+  return STATIC_TYPES[ext] || 'application/octet-stream';
+}
+
 function authErrorPage() {
   return `<!doctype html>
 <html lang="en">
@@ -67,7 +109,10 @@ module.exports = {
     try {
       const parsed = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
       if (req.method === 'GET' && parsed.pathname === '/') return this.serveIndex(req, res, parsed);
-      if (req.method === 'GET' && (parsed.pathname === '/styles.css' || parsed.pathname === '/app.js')) return this.serveStatic(req, res, parsed, parsed.pathname.slice(1));
+      if (req.method === 'GET') {
+        const assetName = staticAssetName(rawPathname(req.url));
+        if (assetName) return this.serveStatic(req, res, parsed, assetName);
+      }
       if (req.method === 'GET' && parsed.pathname === '/events') return this.serveEvents(req, res, parsed);
       if (parsed.pathname.startsWith('/api/')) {
         if (!this.validateToken(req, parsed)) return sendJson(res, 403, { error: 'Invalid token' });
@@ -93,7 +138,11 @@ module.exports = {
 
   serveStatic(req, res, parsed, name) {
     if (!this.validateToken(req, parsed)) return sendText(res, 403, 'Invalid token');
-    sendText(res, 200, readAsset(name), STATIC_TYPES[path.extname(name)] || 'application/octet-stream');
+    try {
+      sendText(res, 200, readAsset(name), staticContentType(name));
+    } catch (_) {
+      sendText(res, 404, 'not found');
+    }
   },
 
   serveEvents(req, res, parsed) {
