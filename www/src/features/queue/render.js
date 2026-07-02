@@ -113,10 +113,16 @@ function findRenderedQueueItem(container, id) {
 
 function processPendingScroll(container, queue) {
   if (state.pendingQueueScrollId) {
+    const targetItem = queue.find((item) => item.id === state.pendingQueueScrollId);
+
+    if (!targetItem || !queueMatchesFilter(targetItem)) {
+      clearQueueScrollRequest();
+      return;
+    }
+
     const target = findRenderedQueueItem(container, state.pendingQueueScrollId);
     if (!target) return;
 
-    const targetItem = queue.find((item) => item.id === state.pendingQueueScrollId);
     const waitForSendPosition =
       state.pendingQueueScrollKind === 'send' &&
       targetItem?.status === 'pending' &&

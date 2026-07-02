@@ -59,7 +59,9 @@ function renderDebug() {
 
 function renderSection(name, force) {
   const nextKey = sectionKey(name, state.snap);
-  if (!force && state.renderKeys[name] === nextKey) return;
+  const hasPendingQueueScroll = name === 'queue' && state.pendingQueueScrollId;
+
+  if (!force && !hasPendingQueueScroll && state.renderKeys[name] === nextKey) return;
 
   state.renderKeys[name] = nextKey;
   CACHED_SECTIONS[name]();

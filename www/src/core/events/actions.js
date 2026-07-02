@@ -83,7 +83,6 @@ export function sendQueueItemNow(id) {
     return;
   }
 
-  state.activeQueueFilter = 'all';
   requestQueueScroll(id, 'send', false);
 
   api('/api/queue/update', { id, action: 'sendNow' })
