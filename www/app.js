@@ -240,7 +240,7 @@
     var pending = counts.pending || 0;
     var running = (counts.sending || 0) + (counts.sent || 0);
     var canPause = hasSession && !!app.canPause;
-    var canResume = hasSession && state === 'paused';
+    var canResume = hasSession && !!app.canResume;
     setButtonState('undoBtn', false, pending === 0);
     setButtonState('clearBtn', false, pending === 0);
     setButtonState('clearCompletedBtn', false, (counts.completed || 0) === 0);

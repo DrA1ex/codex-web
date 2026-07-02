@@ -109,6 +109,11 @@ module.exports = {
   snapshot() {
     const counts = countQueue(this.queue);
     const nextPending = this.queue.find((i) => i.status === 'pending') || null;
+    const manualPromptActive = !!(this.currentManualSend && (this.currentItemId || this.currentTurnId));
+    const canPauseProcessing = !this.currentManualSend && this.isQueueProcessingActive() && !['paused', 'done', 'error', 'initializing', 'selecting-session', 'approval-required'].includes(this.app.state);
+    const canPauseManualContinuation = manualPromptActive && this.manualSendContinueQueue && this.app.state !== 'approval-required';
+    const canResumePaused = this.app.state === 'paused';
+    const canResumeManualContinuation = manualPromptActive && !!nextPending && !this.manualSendContinueQueue && this.app.state !== 'approval-required';
     return {
       app: {
         ...this.app,
@@ -116,7 +121,9 @@ module.exports = {
         nextPendingId: nextPending?.id || null,
         canInterrupt: !!(this.currentTurnId && this.app.sessionId),
         isManualSend: !!this.currentManualSend,
-        canPause: !!this.app.sessionId && !this.currentManualSend && this.isQueueProcessingActive() && !['paused', 'done', 'error', 'initializing', 'selecting-session', 'approval-required'].includes(this.app.state),
+        manualSendContinueQueue: !!this.manualSendContinueQueue,
+        canPause: !!this.app.sessionId && (canPauseProcessing || canPauseManualContinuation),
+        canResume: !!this.app.sessionId && (canResumePaused || canResumeManualContinuation),
         canChangeSession: this.canChangeSession(),
         canScheduleQueue: this.canScheduleQueue(),
       },

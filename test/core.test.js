@@ -351,6 +351,66 @@ test('manual send disables queue pause control while prompt is running', () => {
   assert.equal(snap.app.canInterrupt, false);
 });
 
+test('manual send can arm and disarm queue continuation while prompt is active', () => {
+  const active = item('active', 'sent');
+  const pending = item('pending');
+  const app = makeAppWithQueue([active, pending]);
+  app.app.state = 'streaming';
+  app.currentItemId = 'active';
+  app.currentManualSend = true;
+
+  let snap = app.snapshot();
+  assert.equal(snap.app.canResume, true);
+  assert.equal(snap.app.canPause, false);
+
+  app.resume();
+  snap = app.snapshot();
+  assert.equal(app.manualSendContinueQueue, true);
+  assert.equal(snap.app.canResume, false);
+  assert.equal(snap.app.canPause, true);
+
+  app.pause();
+  snap = app.snapshot();
+  assert.equal(app.manualSendContinueQueue, false);
+  assert.equal(snap.app.canPause, false);
+  assert.equal(snap.app.canResume, true);
+
+  app.resume();
+  snap = app.snapshot();
+  assert.equal(app.manualSendContinueQueue, true);
+  assert.equal(app.app.state, 'streaming');
+  assert.equal(snap.app.canPause, true);
+  assert.equal(snap.app.canResume, false);
+});
+
+test('manual send countdown does not expose queue resume before prompt starts', () => {
+  const app = makeAppWithQueue([item('pending')]);
+  app.app.state = 'countdown';
+  app.currentManualSend = true;
+
+  const snap = app.snapshot();
+
+  assert.equal(snap.app.canResume, false);
+  assert.equal(snap.app.canPause, false);
+});
+
+test('manual send continuation schedules pending queue after current prompt', async () => {
+  const active = item('active');
+  const pending = item('pending');
+  const app = makeAppWithQueue([active, pending]);
+  app.app.state = 'streaming';
+  app.manualSendContinueQueue = true;
+  app.rpc = { request: async () => ({ turn: { id: 'turn-active' } }) };
+  app.waitForTurnCompletion = async () => {};
+
+  await app.sendPrompt(active, { continueQueue: false });
+
+  assert.equal(app.manualSendContinueQueue, false);
+  assert.equal(app.currentManualSend, false);
+  assert.equal(app.app.state, 'watching');
+  assert.equal(app.lastScheduledDelay, 1500);
+});
+
 test('cancelPendingSend clears manual send reservation immediately', () => {
   const app = makeAppWithQueue([item('pending')]);
   app.app.state = 'countdown';

@@ -49,6 +49,7 @@ class CodexLimitWatchApp {
     this.currentItemId = null;
     this.currentTurnId = null;
     this.currentManualSend = false;
+    this.manualSendContinueQueue = false;
     this.turnStarted = false;
     this.turnCompletionSeen = false;
     this.turnCompletionStatus = null;

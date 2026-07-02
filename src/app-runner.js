@@ -153,6 +153,7 @@ module.exports = {
       }
       await this.runCountdownAndSend(item, { continueQueue: false });
     } finally {
+      this.manualSendContinueQueue = false;
       this.currentManualSend = false;
       this.broadcastAll();
     }
@@ -265,19 +266,21 @@ module.exports = {
       await this.saveQueue();
       this.appendOutput(`[error] ${err.message}`, 'error');
     } finally {
+      const shouldContinueQueue = continueQueue || this.manualSendContinueQueue;
       this.currentItemId = null;
       this.currentTurnId = null;
       this.currentManualSend = false;
+      this.manualSendContinueQueue = false;
       this.currentTurnResolve = null;
       this.currentTurnReject = null;
       this.turnStarted = false;
       await this.saveState();
       this.broadcastAll();
-      if (continueQueue && this.app.state !== 'paused' && this.app.state !== 'approval-required' && this.app.state !== 'error') {
+      if (shouldContinueQueue && this.app.state !== 'paused' && this.app.state !== 'approval-required' && this.app.state !== 'error') {
         this.app.state = 'watching';
         this.broadcastAll();
         this.schedulePump(1500);
-      } else if (!continueQueue && this.app.state !== 'paused' && this.app.state !== 'approval-required' && this.app.state !== 'error') {
+      } else if (!shouldContinueQueue && this.app.state !== 'paused' && this.app.state !== 'approval-required' && this.app.state !== 'error') {
         this.app.state = 'paused';
         this.app.message = 'Manual send completed. Auto-send paused.';
         this.broadcastAll();
@@ -294,6 +297,7 @@ module.exports = {
 
   pause(message = 'Auto-send paused. Type /resume or click Resume to continue.') {
     this.countdownCancel = true;
+    this.manualSendContinueQueue = false;
     this.app.scheduledRunAt = null;
     this.app.state = 'paused';
     this.app.message = message;
@@ -302,6 +306,7 @@ module.exports = {
   },
 
   cancelPendingSend() {
+    this.manualSendContinueQueue = false;
     this.currentManualSend = false;
     this.pause('Next prompt send cancelled. Click Resume to continue.');
   },
@@ -355,6 +360,15 @@ module.exports = {
     if (this.approval) {
       this.app.state = 'approval-required';
       this.app.message = 'Resolve approval request first';
+      this.broadcastAll();
+      return;
+    }
+    if (this.currentManualSend && (this.currentItemId || this.currentTurnId)) {
+      this.manualSendContinueQueue = true;
+      const item = this.queue.find((queueItem) => queueItem.id === this.currentItemId);
+      this.app.state = item?.status === 'sending' ? 'sending' : 'streaming';
+      this.app.message = 'Queue will resume after current prompt';
+      this.appendOutput('[queue] will resume after current prompt', 'system');
       this.broadcastAll();
       return;
     }
