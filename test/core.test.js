@@ -53,6 +53,21 @@ function makeAppWithQueue(queue) {
   return app;
 }
 
+function mockResponse() {
+  return {
+    status: null,
+    headers: null,
+    body: '',
+    writeHead(status, headers) {
+      this.status = status;
+      this.headers = headers;
+    },
+    end(body) {
+      this.body = body || '';
+    },
+  };
+}
+
 test('queue items are normalized and counted', () => {
   const item = makeQueueItem('first line\nsecond line');
   assert.equal(item.status, 'pending');
@@ -606,4 +621,39 @@ test('session list normalization extracts IDs, preview, cwd match, and updated t
   assert.equal(session.preview, 'Latest prompt text');
   assert.equal(session.title, 'Latest prompt text');
   assert.equal(session.updatedAt, '2026-01-02T03:04:05.000Z');
+});
+
+test('index requires a valid token and does not leak token on auth error', () => {
+  const app = makeAppWithQueue([]);
+  app.token = 'secret-token';
+  const res = mockResponse();
+
+  app.serveIndex({ headers: {} }, res, new URL('http://localhost/'));
+
+  assert.equal(res.status, 403);
+  assert.match(res.body, /Authorization error/);
+  assert.doesNotMatch(res.body, /secret-token/);
+});
+
+test('valid index includes tokenized static asset URLs', () => {
+  const app = makeAppWithQueue([]);
+  app.token = 'secret-token';
+  const res = mockResponse();
+
+  app.serveIndex({ headers: {} }, res, new URL('http://localhost/?token=secret-token'));
+
+  assert.equal(res.status, 200);
+  assert.match(res.body, /\/styles\.css\?token=secret-token/);
+  assert.match(res.body, /\/app\.js\?token=secret-token/);
+});
+
+test('static assets reject missing or invalid token', () => {
+  const app = makeAppWithQueue([]);
+  app.token = 'secret-token';
+  const res = mockResponse();
+
+  app.serveStatic({ headers: {} }, res, new URL('http://localhost/app.js?token=wrong'), 'app.js');
+
+  assert.equal(res.status, 403);
+  assert.equal(res.body, 'Invalid token');
 });
