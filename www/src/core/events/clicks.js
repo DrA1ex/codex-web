@@ -38,6 +38,7 @@ const CLICK_TARGET_SELECTOR = [
   '[data-approval]',
   '[data-queue-filter]',
   '[data-output-diff]',
+  '[data-output-tool]',
   '[data-toggle-prompt]',
 ].join(',');
 
@@ -120,6 +121,15 @@ function handleOutputDiffToggle(target) {
   return true;
 }
 
+function handleOutputToolToggle(target) {
+  const toggle = target.closest?.('[data-output-tool]');
+  if (!toggle || toggle.disabled) return false;
+
+  state.expandedToolOutput[toggle.dataset.outputTool] = !state.expandedToolOutput[toggle.dataset.outputTool];
+  renderOutput();
+  return true;
+}
+
 function handleMobileCollapse(target) {
   const button = target.closest?.('#headerCollapseBtn, #limitsCollapseBtn, #queueCollapseBtn');
   if (!button) return false;
@@ -195,6 +205,7 @@ export function attachClickHandlers() {
     handlePromptToggle(target, event) ||
       handleQueueFilter(target) ||
       handleOutputDiffToggle(target) ||
+      handleOutputToolToggle(target) ||
       handleMobileCollapse(target) ||
       handleButton(target) ||
       handleSessionAction(target) ||

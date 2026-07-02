@@ -42,13 +42,60 @@ module.exports = {
     this.commandOutputByItemId.set('__last__', outputItem.id);
   },
 
-  updateCommandOutput(item) {
+  appendCommandOutput(item) {
+    const command = Array.isArray(item?.command) ? item.command.join(' ') : String(item?.command || '');
+    const entry = {
+      id: randomId(5),
+      ts: nowIso(),
+      type: 'tool',
+      text: `[tool] command: ${command}`,
+      tool: {
+        kind: 'command',
+        command,
+        output: '',
+        status: 'running',
+        exitCode: null,
+        active: true,
+      },
+    };
+    this.output.push(entry);
+    this.trimOutput();
+    this.broadcast('output', this.output);
+    this.trackCommandOutput(item, entry);
+    return entry;
+  },
+
+  commandOutputEntry(item) {
     const id = this.commandItemId(item);
     const outputId = (id && this.commandOutputByItemId.get(String(id))) || this.commandOutputByItemId.get('__last__');
-    const out = outputId ? this.output.find((x) => x.id === outputId) : null;
+    return outputId ? this.output.find((x) => x.id === outputId) : null;
+  },
+
+  appendCommandOutputText(item, text) {
+    if (text === undefined || text === null || text === '') return false;
+    const out = this.commandOutputEntry(item);
+    if (!out || out.type !== 'tool' || out.tool?.kind !== 'command') return false;
+
+    out.tool.output = appendLimitedOutputText(out.tool.output || '', text);
+    out.tool.active = true;
+    out.ts = nowIso();
+    this.broadcast('output', this.output);
+    return true;
+  },
+
+  updateCommandOutput(item) {
+    const out = this.commandOutputEntry(item);
     const exitCode = item.exitCode !== undefined && item.exitCode !== null ? item.exitCode : (item.exit_code !== undefined ? item.exit_code : null);
     const status = item.status || 'completed';
     const line = exitCode === null ? `\nexit: ${status}` : `\nexit: ${exitCode}`;
+    if (out && out.tool?.kind === 'command') {
+      out.tool.status = status;
+      out.tool.exitCode = exitCode;
+      out.tool.active = false;
+      out.ts = nowIso();
+      this.broadcast('output', this.output);
+      return;
+    }
     if (out) {
       if (!/\nexit: /.test(String(out.text || ''))) {
         out.text = appendLimitedOutputText(out.text, line);
@@ -58,6 +105,13 @@ module.exports = {
       return;
     }
     this.appendOutput(`[tool] command\n${line.trim()}`, item?.status === 'failed' ? 'error' : 'tool');
+  },
+
+  finishActiveOutputBlocks() {
+    for (const out of this.output) {
+      if (out.tool) out.tool.active = false;
+      if (out.diff) out.diff.active = false;
+    }
   },
 
   updateDiffOutput(text) {
@@ -70,8 +124,9 @@ module.exports = {
       if (last.text === limited) return;
       last.text = limited;
       last.ts = nowIso();
+      last.diff = { ...(last.diff || {}), active: true };
     } else {
-      this.output.push({ id: randomId(5), ts: nowIso(), type: 'diff', text: limited });
+      this.output.push({ id: randomId(5), ts: nowIso(), type: 'diff', text: limited, diff: { active: true } });
     }
     this.trimOutput();
     this.broadcast('output', this.output);

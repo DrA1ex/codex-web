@@ -53,11 +53,13 @@ function renderDiffLine(line, meta) {
   const expanded = Boolean(state.expandedDiffOutput[line.id]);
   const lines = String(meta.body || '').split(/\r?\n/);
   const firstLine = lines.find((item) => item.trim()) || 'Diff updated';
+  const active = Boolean(line.diff?.active);
 
   return `
     <div class="out-line diff ${expanded ? 'expanded' : 'collapsed'}">
       <div class="out-diff-card">
         <button type="button" class="out-diff-toggle" data-output-diff="${diffId}">
+          <i class="out-activity-dot ${active ? '' : 'is-idle'}" aria-hidden="true"></i>
           <span>${expanded ? 'Collapse' : 'Expand'} diff</span>
           <b>${lines.length} lines</b>
           <em>${esc(firstLine)}</em>
@@ -68,11 +70,46 @@ function renderDiffLine(line, meta) {
   `;
 }
 
+function toolExitLabel(tool) {
+  if (tool.exitCode !== null && tool.exitCode !== undefined) return `exit ${tool.exitCode}`;
+  if (tool.status && tool.status !== 'running') return tool.status;
+  return 'running';
+}
+
+function renderCommandToolLine(line) {
+  const toolId = esc(line.id || '');
+  const tool = line.tool || {};
+  const output = String(tool.output || '');
+  const hasOutput = output.length > 0;
+  const expanded = hasOutput && Boolean(state.expandedToolOutput[line.id]);
+  const command = tool.command || 'command';
+  const active = Boolean(tool.active);
+  const headerInner = `
+    <i class="out-activity-dot ${active ? '' : 'is-idle'}" aria-hidden="true"></i>
+    <span>Command</span>
+    <code>${esc(command)}</code>
+    <b>${esc(toolExitLabel(tool))}</b>
+  `;
+  const header = hasOutput
+    ? `<button type="button" class="out-tool-toggle" data-output-tool="${toolId}">${headerInner}</button>`
+    : `<div class="out-tool-toggle is-static">${headerInner}</div>`;
+
+  return `
+    <div class="out-line tool ${expanded ? 'expanded' : 'collapsed'}">
+      <div class="out-tool-card">
+        ${header}
+        ${expanded ? `<pre class="out-body">${esc(output)}</pre>` : ''}
+      </div>
+    </div>
+  `;
+}
+
 function renderOutputLine(line) {
   const type = line.type || 'text';
   const meta = outputLabel(type, line.text);
 
   if (type === 'diff') return renderDiffLine(line, meta);
+  if (type === 'tool' && line.tool?.kind === 'command') return renderCommandToolLine(line);
 
   const body = BLOCK_OUTPUT_TYPES.has(type)
     ? `<pre class="out-body">${esc(meta.body)}</pre>`

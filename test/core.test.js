@@ -520,14 +520,20 @@ test('diff output skips identical repeated diffs and updates changed diff block'
 
 test('command output completion updates existing tool block once', () => {
   const app = makeAppWithQueue([]);
-  const out = app.appendOutput('[tool] command\nnpm test', 'tool');
-  app.trackCommandOutput({ id: 'cmd-1' }, out);
+  app.appendCommandOutput({ id: 'cmd-1', command: ['npm', 'test'] });
+
+  app.appendCommandOutputText({ id: 'cmd-1' }, 'one\n');
+  app.appendCommandOutputText({ id: 'cmd-1' }, 'two\n');
 
   app.updateCommandOutput({ id: 'cmd-1', status: 'completed', exitCode: 0 });
   app.updateCommandOutput({ id: 'cmd-1', status: 'completed', exitCode: 0 });
 
   assert.equal(app.output.length, 1);
-  assert.equal((app.output[0].text.match(/\nexit: 0/g) || []).length, 1);
+  assert.equal(app.output[0].type, 'tool');
+  assert.equal(app.output[0].tool.command, 'npm test');
+  assert.equal(app.output[0].tool.output, 'one\ntwo\n');
+  assert.equal(app.output[0].tool.exitCode, 0);
+  assert.equal(app.output[0].tool.active, false);
 });
 
 test('loadQueue recovers interrupted sending items as unknown', async () => {

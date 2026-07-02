@@ -1042,7 +1042,8 @@ textarea:focus {
     color: #75bdff;
 }
 
-.out-diff-card {
+.out-diff-card,
+.out-tool-card {
     min-width: 0;
     overflow: hidden;
     border: 1px solid var(--border-soft);
@@ -1050,11 +1051,11 @@ textarea:focus {
     background: rgba(17, 27, 39, .86);
 }
 
-.out-diff-toggle {
+.out-diff-toggle,
+.out-tool-toggle {
     width: 100%;
     min-width: 0;
     display: grid;
-    grid-template-columns: auto auto minmax(0, 1fr);
     align-items: center;
     gap: 10px;
     border: 0;
@@ -1066,36 +1067,92 @@ textarea:focus {
     text-align: left;
 }
 
-.out-diff-toggle:hover {
+.out-diff-toggle {
+    grid-template-columns: 8px auto auto minmax(0, 1fr);
+}
+
+.out-tool-toggle {
+    grid-template-columns: 8px auto minmax(0, 1fr) auto;
+}
+
+.out-tool-toggle.is-static {
+    cursor: default;
+}
+
+.out-diff-toggle:hover,
+.out-tool-toggle:hover {
     background: rgba(27, 42, 60, .52);
 }
 
-.out-diff-toggle span {
+.out-tool-toggle.is-static:hover {
+    background: transparent;
+}
+
+.out-diff-toggle span,
+.out-tool-toggle span {
     color: #75bdff;
     font-weight: 750;
 }
 
-.out-diff-toggle b {
+.out-diff-toggle b,
+.out-tool-toggle b {
     color: var(--muted);
     font-weight: 650;
     white-space: nowrap;
 }
 
-.out-diff-toggle em {
+.out-diff-toggle em,
+.out-tool-toggle code {
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+}
+
+.out-diff-toggle em {
     color: var(--muted);
     font-style: normal;
 }
 
-.out-line.diff .out-body {
+.out-tool-toggle code {
+    color: #d6e6f7;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 12px;
+}
+
+.out-activity-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 999px;
+    background: var(--accent);
+    box-shadow: 0 0 0 0 rgba(91, 168, 255, .55);
+    animation: outputPulse 1.25s ease-out infinite;
+}
+
+.out-activity-dot.is-idle {
+    visibility: hidden;
+    animation: none;
+}
+
+.out-line.diff .out-body,
+.out-line.tool .out-tool-card .out-body {
     color: #d6e6f7;
     background: rgba(3, 8, 14, .24);
     border-top: 1px solid var(--border-soft);
     padding: 10px 12px;
     overflow: auto;
+}
+
+@keyframes outputPulse {
+    0% {
+        box-shadow: 0 0 0 0 rgba(91, 168, 255, .55);
+    }
+    70% {
+        box-shadow: 0 0 0 7px rgba(91, 168, 255, 0);
+    }
+    100% {
+        box-shadow: 0 0 0 0 rgba(91, 168, 255, 0);
+    }
 }
 
 .out-line.event .out-body, .out-line.item .out-body {

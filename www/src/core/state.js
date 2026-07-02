@@ -19,6 +19,7 @@ export const state = {
   didInitialQueueScroll: false,
 
   expandedDiffOutput: Object.create(null),
+  expandedToolOutput: Object.create(null),
   activeQueueFilter: 'all',
   renderKeys: Object.create(null),
 

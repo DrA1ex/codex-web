@@ -69,6 +69,7 @@ module.exports = {
         item.error = errMessage;
         this.saveQueue().catch(() => {});
       }
+      this.finishActiveOutputBlocks();
       this.appendOutput(status === 'completed' ? '[turn] completed' : `[turn] ${status}${errMessage ? ': ' + errMessage : ''}`, status === 'completed' ? 'turn' : 'error');
       this.tryReadSession().then(() => this.broadcastAll()).catch((err) => this.debugLog('refresh session title failed', err.message));
       if (this.currentTurnResolve) this.currentTurnResolve();
@@ -77,10 +78,13 @@ module.exports = {
     }
     if (method === 'item/started') {
       const item = params.item || params;
+      if (item.type === 'commandExecution') {
+        this.appendCommandOutput(item);
+        return;
+      }
       const label = formatItemStarted(item);
       if (label) {
         const outputItem = this.appendOutput(label, outputTypeForItem(item));
-        if (item.type === 'commandExecution') this.trackCommandOutput(item, outputItem);
       }
       return;
     }
@@ -96,6 +100,7 @@ module.exports = {
     }
     if (method.includes('/delta') || method.includes('Delta')) {
       const text = extractDeltaText(method, params);
+      if (text && method.includes('commandExecution') && this.appendCommandOutputText(params.item || params, text)) return;
       const type = isCompactionMethod(method) ? 'context-delta' : (method.includes('commandExecution') || method.includes('tool') ? 'tool-delta' : (/reasoning/i.test(method) ? 'reasoning-delta' : 'delta'));
       if (text) this.appendOutput(text, type, true);
       return;
