@@ -485,6 +485,29 @@ button:disabled {
     backdrop-filter: blur(12px);
 }
 
+.status-notice {
+    position: fixed;
+    top: 14px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 29;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: clamp(260px, 24vw, 420px);
+    max-width: calc(100vw - 28px);
+    margin: 0;
+    border: 1px solid rgba(83, 220, 137, .38);
+    border-radius: 10px;
+    background: rgba(14, 37, 25, .96);
+    color: #9ee8b7;
+    padding: 12px 14px;
+    font-size: 14px;
+    font-weight: 750;
+    box-shadow: 0 18px 60px rgba(0, 0, 0, .34);
+    backdrop-filter: blur(12px);
+}
+
 .countdown-notice button {
     flex: 0 0 auto;
     min-height: 38px;
@@ -494,6 +517,10 @@ button:disabled {
 
 :root[data-theme="light"] .countdown-notice {
     background: rgba(255, 248, 221, .98);
+}
+
+:root[data-theme="light"] .status-notice {
+    background: rgba(231, 255, 239, .98);
 }
 
 .main {
@@ -1626,7 +1653,8 @@ pre {
         grid-template-columns: 64px minmax(64px, 1fr) 40px minmax(44px, auto);
     }
 
-    .countdown-notice {
+    .countdown-notice,
+    .status-notice {
         top: 10px;
         width: calc(100vw - 20px);
     }

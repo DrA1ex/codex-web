@@ -22,6 +22,9 @@ export const state = {
   expandedToolOutput: Object.create(null),
   activeQueueFilter: 'all',
   renderKeys: Object.create(null),
+  lastNoticeKey: '',
+  noticeTimer: null,
+  previousNoticeSnapshot: null,
 
   confirmAction: null,
   scheduleOpen: false,

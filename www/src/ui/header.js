@@ -135,6 +135,65 @@ function renderControlState(app, counts = {}) {
 
   const countdownNotice = byId('countdownNotice');
   if (countdownNotice) countdownNotice.classList.toggle('hidden', app.state !== 'countdown');
+
+  renderStatusNotice(app, counts);
+}
+
+function hideStatusNotice() {
+  const notice = byId('statusNotice');
+  if (state.noticeTimer) {
+    clearTimeout(state.noticeTimer);
+    state.noticeTimer = null;
+  }
+  if (notice) notice.classList.add('hidden');
+}
+
+function showStatusNotice(text, key) {
+  const notice = byId('statusNotice');
+  if (!notice || !text || state.lastNoticeKey === key) return;
+
+  state.lastNoticeKey = key;
+  notice.textContent = text;
+  notice.classList.remove('hidden');
+
+  if (state.noticeTimer) clearTimeout(state.noticeTimer);
+  state.noticeTimer = setTimeout(() => {
+    notice.classList.add('hidden');
+    state.noticeTimer = null;
+  }, 4500);
+}
+
+function renderStatusNotice(app, counts = {}) {
+  const snapshot = {
+    appState: app.state || '',
+    pending: counts.pending || 0,
+    sending: counts.sending || 0,
+    sent: counts.sent || 0,
+    completed: counts.completed || 0,
+    failed: counts.failed || 0,
+    unknown: counts.unknown || 0,
+  };
+  const previous = state.previousNoticeSnapshot;
+  state.previousNoticeSnapshot = snapshot;
+
+  if (snapshot.appState === 'countdown') {
+    hideStatusNotice();
+    return;
+  }
+
+  if (!previous) return;
+
+  if (snapshot.appState === 'done' && previous.appState !== 'done') {
+    showStatusNotice('Queue is done!', `done:${snapshot.completed}:${snapshot.failed}:${snapshot.unknown}`);
+    return;
+  }
+
+  const hadRunningPrompt = previous.sending + previous.sent > 0 || ['sending', 'streaming'].includes(previous.appState);
+  const noRunningPrompt = snapshot.sending + snapshot.sent === 0;
+  const hasPendingQueue = snapshot.pending > 0;
+  if (snapshot.appState === 'paused' && hasPendingQueue && noRunningPrompt && hadRunningPrompt) {
+    showStatusNotice('Prompt is finished', `prompt:${snapshot.completed}:${snapshot.failed}:${snapshot.unknown}:${snapshot.pending}`);
+  }
 }
 
 function renderStateBadges(app, rateLimits) {
