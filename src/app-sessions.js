@@ -16,6 +16,10 @@ module.exports = {
     if (this.app.sessionId && this.app.state !== 'selecting-session') {
       this.sessionPickerReturnState = this.app.state;
     }
+    if (this.pumpTimer) {
+      clearTimeout(this.pumpTimer);
+      this.pumpTimer = null;
+    }
     this.app.state = 'selecting-session';
     this.app.message = 'Loading sessions…';
     this.app.sessionError = null;
