@@ -1,8 +1,8 @@
 'use strict';
 
 const path = require('node:path');
-const { VERSION } = require('./config');
-const { homeExpand, normalizeProjectDir, toBool } = require('./utils');
+const { VERSION } = require('../shared/config');
+const { homeExpand, normalizeProjectDir, toBool } = require('../shared/utils');
 
 function parseArgs(argv) {
   const opts = {

@@ -1,6 +1,40 @@
 'use strict';
 
-const { nowIso } = require('./utils');
+const { nowIso } = require('../shared/utils');
+
+function emptyRateLimitState(message, now = nowIso()) {
+  return {
+    status: 'unknown',
+    message,
+    buckets: [],
+    resetAt: null,
+    resetCredits: null,
+    raw: null,
+    updatedAt: null,
+    lastSuccessfulUpdatedAt: null,
+    refreshFailedAt: now,
+    refreshError: message,
+    refreshing: true,
+    stale: false,
+  };
+}
+
+function markRateLimitRefreshFailed(previous, err) {
+  const now = nowIso();
+  const message = err && err.message ? err.message : String(err || 'failed to fetch rate limits');
+  const hasLastKnownLimits = Array.isArray(previous?.buckets) && previous.buckets.length > 0;
+
+  if (!hasLastKnownLimits) return emptyRateLimitState(message, now);
+
+  return {
+    ...previous,
+    refreshFailedAt: now,
+    refreshError: message,
+    refreshing: true,
+    stale: true,
+    lastSuccessfulUpdatedAt: previous.lastSuccessfulUpdatedAt || previous.updatedAt || null,
+  };
+}
 
 function normalizeRateLimits(result) {
   const root = result || {};
@@ -53,7 +87,24 @@ function normalizeRateLimits(result) {
     const resets = limitedBuckets.map((b) => b.resetsAt).filter(Boolean);
     resetAt = resets.length ? Math.min(...resets) : null;
   }
-  return { status, message, buckets, resetAt, resetCredits: root.rateLimitResetCredits || null, raw: root, updatedAt: nowIso() };
+  const updatedAt = nowIso();
+  return {
+    status,
+    message,
+    buckets,
+    resetAt,
+    resetCredits: root.rateLimitResetCredits || null,
+    raw: root,
+    updatedAt,
+    lastSuccessfulUpdatedAt: updatedAt,
+    refreshFailedAt: null,
+    refreshError: null,
+    refreshing: false,
+    stale: false,
+  };
 }
 
-module.exports = { normalizeRateLimits };
+module.exports = {
+  normalizeRateLimits,
+  markRateLimitRefreshFailed,
+};

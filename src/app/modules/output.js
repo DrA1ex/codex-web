@@ -1,12 +1,12 @@
 'use strict';
 
-const { MAX_OUTPUT_LINES, MAX_OUTPUT_TOTAL_CHARS } = require('./config');
-const { nowIso, randomId } = require('./utils');
+const { MAX_OUTPUT_LINES, MAX_OUTPUT_TOTAL_CHARS } = require('../../shared/config');
+const { nowIso, randomId } = require('../../shared/utils');
 const {
   canAppendOutput,
   limitOutputText,
   appendLimitedOutputText,
-} = require('./output-format');
+} = require('../../codex/output-format');
 
 module.exports = {
   appendOutput(text, type = 'text', appendToPrevious = false) {

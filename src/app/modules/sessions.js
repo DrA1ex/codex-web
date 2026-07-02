@@ -1,24 +1,24 @@
 'use strict';
 
-const { mapApprovalPolicy, mapSandbox } = require('./policies');
+const { mapApprovalPolicy, mapSandbox } = require('../../codex/policies');
 const {
   extractThreadList,
   normalizeSession,
   fallbackThreadTitle,
-} = require('./codex-sessions');
-const { shortId } = require('./utils');
+} = require('../../codex/sessions');
+const { shortId } = require('../../shared/utils');
 
 module.exports = {
   async loadSessions() {
     if (this.app.sessionId && this.app.state !== 'selecting-session' && !this.canChangeSession()) {
       throw new Error('Pause the queue and wait for the current task to finish before changing sessions.');
     }
+
+    this.clearPumpTimer();
+    this.countdownCancel = true;
+
     if (this.app.sessionId && this.app.state !== 'selecting-session') {
       this.sessionPickerReturnState = this.app.state;
-    }
-    if (this.pumpTimer) {
-      clearTimeout(this.pumpTimer);
-      this.pumpTimer = null;
     }
     this.app.state = 'selecting-session';
     this.app.message = 'Loading sessions…';
@@ -65,6 +65,10 @@ module.exports = {
     if (!startup && this.app.sessionId && this.app.state !== 'selecting-session' && this.app.sessionId !== sessionId && !this.canChangeSession()) {
       throw new Error('Pause the queue and wait for the current task to finish before changing sessions.');
     }
+
+    this.clearPumpTimer();
+    this.countdownCancel = true;
+
     this.app.state = 'initializing';
     this.app.message = `Resuming session ${shortId(sessionId)}…`;
     this.broadcastAll();
@@ -110,6 +114,10 @@ module.exports = {
     if (this.app.sessionId && this.app.state !== 'selecting-session' && !this.canChangeSession()) {
       throw new Error('Pause the queue and wait for the current task to finish before changing sessions.');
     }
+
+    this.clearPumpTimer();
+    this.countdownCancel = true;
+
     this.app.state = 'initializing';
     this.app.message = 'Creating new session...';
     this.broadcastAll();
@@ -182,6 +190,7 @@ module.exports = {
     this.app.sessionTitle = 'not selected';
     this.app.session = null;
     this.app.state = 'selecting-session';
+    this.clearPumpTimer();
     this.app.message = 'Session unavailable';
     this.app.sessionError = {
       sessionId,

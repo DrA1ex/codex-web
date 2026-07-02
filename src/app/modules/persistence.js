@@ -4,18 +4,18 @@ const fs = require('node:fs');
 const fsp = require('node:fs/promises');
 const path = require('node:path');
 
-const { VERSION, EFFORT_OPTIONS } = require('./config');
+const { VERSION, EFFORT_OPTIONS } = require('../../shared/config');
 const {
   nowIso,
   sha256,
   ensureDirSync,
   stripTrailingSep,
   isPidAlive,
-} = require('./utils');
+} = require('../../shared/utils');
 const {
   normalizeQueueItem,
   normalizeQueueOrder,
-} = require('./queue');
+} = require('../../queue');
 
 module.exports = {
   async setupPairState(sessionId) {

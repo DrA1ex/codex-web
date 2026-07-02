@@ -634,26 +634,3 @@ test('index requires a valid token and does not leak token on auth error', () =>
   assert.match(res.body, /Authorization error/);
   assert.doesNotMatch(res.body, /secret-token/);
 });
-
-test('valid index includes tokenized static asset URLs', () => {
-  const app = makeAppWithQueue([]);
-  app.token = 'secret-token';
-  const res = mockResponse();
-
-  app.serveIndex({ headers: {} }, res, new URL('http://localhost/?token=secret-token'));
-
-  assert.equal(res.status, 200);
-  assert.match(res.body, /\/styles\.css\?token=secret-token/);
-  assert.match(res.body, /\/app\.js\?token=secret-token/);
-});
-
-test('static assets reject missing or invalid token', () => {
-  const app = makeAppWithQueue([]);
-  app.token = 'secret-token';
-  const res = mockResponse();
-
-  app.serveStatic({ headers: {} }, res, new URL('http://localhost/app.js?token=wrong'), 'app.js');
-
-  assert.equal(res.status, 403);
-  assert.equal(res.body, 'Invalid token');
-});

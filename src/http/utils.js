@@ -3,7 +3,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
-const { ASSET_DIRS } = require('./config');
+const { ASSET_DIRS } = require('../shared/config');
 
 function openBrowser(url) {
   const cmd = process.platform === 'darwin' ? 'open' : (process.platform === 'win32' ? 'cmd' : 'xdg-open');

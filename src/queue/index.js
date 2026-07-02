@@ -1,6 +1,6 @@
 'use strict';
 
-const { nowIso, randomId, lineCount, previewOf } = require('./utils');
+const { nowIso, randomId, lineCount, previewOf } = require('../shared/utils');
 
 function makeQueueItem(text) {
   const item = {

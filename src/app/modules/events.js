@@ -1,6 +1,6 @@
 'use strict';
 
-const { normalizeRateLimits } = require('./rate-limits');
+const { normalizeRateLimits } = require('../../codex/rate-limits');
 const {
   isApprovalMethod,
   isCompactionMethod,
@@ -8,12 +8,12 @@ const {
   formatItemStarted,
   outputTypeForItem,
   formatItemCompleted,
-} = require('./output-format');
+} = require('../../codex/output-format');
 const {
   mapApprovalResponse,
   humanApprovalResponse,
-} = require('./policies');
-const { nowIso, safeJson, truncate, asArray, maskSecrets } = require('./utils');
+} = require('../../codex/policies');
+const { nowIso, safeJson, truncate, asArray, maskSecrets } = require('../../shared/utils');
 
 module.exports = {
   handleNotification(method, params) {

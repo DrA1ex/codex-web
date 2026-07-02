@@ -3,8 +3,8 @@
 const fs = require('node:fs');
 const readline = require('node:readline');
 const { spawn } = require('node:child_process');
-const { VERSION } = require('./config');
-const { sleep, nowIso, safeJson, maskSecrets } = require('./utils');
+const { VERSION } = require('../shared/config');
+const { sleep, nowIso, safeJson, maskSecrets } = require('../shared/utils');
 
 class JsonRpcClient {
   constructor(app) {

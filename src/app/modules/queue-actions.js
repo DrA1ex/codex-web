@@ -9,7 +9,7 @@ const {
   removeQueueItem: removeQueueItemData,
   reorderPendingItem,
   parseExactCommand,
-} = require('./queue');
+} = require('../../queue');
 
 module.exports = {
   async addPrompt(text) {
@@ -50,6 +50,7 @@ module.exports = {
   },
 
   async resetQueueSchedule() {
+    this.clearPumpTimer();
     this.app.scheduledRunAt = null;
     if (this.app.state === 'scheduled') this.app.state = 'paused';
     this.app.message = 'Queue schedule reset';
@@ -60,6 +61,7 @@ module.exports = {
   },
 
   async cancelQueueRun() {
+    this.clearPumpTimer();
     this.countdownCancel = true;
     this.app.scheduledRunAt = null;
     this.app.state = 'paused';

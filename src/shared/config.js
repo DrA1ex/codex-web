@@ -27,10 +27,11 @@ const EFFORT_OPTIONS = [
 const ENTRY_FILE_CANDIDATES = [
   require.main?.filename,
   process.argv[1] && process.argv[1] !== '-' ? path.resolve(process.argv[1]) : null,
-  path.join(__dirname, '..', 'index.js'),
+  path.join(__dirname, '..', '..', 'codex-web'),
+  path.join(__dirname, '..', '..', 'index.js'),
 ].filter(Boolean);
-const ENTRY_FILE = ENTRY_FILE_CANDIDATES.find((file) => fs.existsSync(file)) || path.join(__dirname, '..', 'index.js');
-const SCRIPT_DIR = path.dirname(fs.realpathSync(ENTRY_FILE));
+const ENTRY_FILE = ENTRY_FILE_CANDIDATES.find((file) => fs.existsSync(file));
+const SCRIPT_DIR = ENTRY_FILE ? path.dirname(fs.realpathSync(ENTRY_FILE)) : path.resolve(__dirname, '..', '..');
 const LAUNCH_DIR = process.argv[1] && process.argv[1] !== '-' ? path.dirname(path.resolve(process.argv[1])) : SCRIPT_DIR;
 const ASSET_DIRS = [
   path.join(SCRIPT_DIR, 'www'),

@@ -1,7 +1,7 @@
 'use strict';
 
 const path = require('node:path');
-const { pathRelation, asArray, truncate, shortId } = require('./utils');
+const { pathRelation, asArray, truncate, shortId } = require('../shared/utils');
 
 function extractThreadList(result) {
   return result?.data || result?.threads || result?.items || (Array.isArray(result) ? result : []);

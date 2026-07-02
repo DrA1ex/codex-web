@@ -3,8 +3,8 @@
 const {
   MAX_OUTPUT_ENTRY_CHARS,
   OUTPUT_TRUNCATED_MARKER,
-} = require('./config');
-const { asArray } = require('./utils');
+} = require('../shared/config');
+const { asArray } = require('../shared/utils');
 
 function isApprovalMethod(method) {
   return /requestApproval$/.test(method) || method.includes('/requestApproval') || method.includes('/permissions/requestApproval') || method.includes('/commandExecution/requestApproval') || method.includes('/fileChange/requestApproval');
