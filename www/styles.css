@@ -1460,6 +1460,41 @@ textarea:focus {
     line-height: 1.45;
 }
 
+.shutdown-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 80;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 18px;
+    background: rgba(3, 6, 10, .76);
+    backdrop-filter: blur(8px);
+}
+
+.shutdown-modal {
+    width: min(460px, 100%);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--panel);
+    box-shadow: 0 24px 80px rgba(0, 0, 0, .46);
+    padding: 18px;
+    text-align: center;
+}
+
+.shutdown-modal h2 {
+    margin: 0 0 8px;
+    color: var(--text);
+    font-size: 18px;
+    line-height: 1.25;
+}
+
+.shutdown-modal p {
+    margin: 0;
+    color: var(--muted);
+    line-height: 1.45;
+}
+
 .modal-head {
     display: flex;
     align-items: center;

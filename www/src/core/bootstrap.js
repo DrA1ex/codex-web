@@ -51,13 +51,22 @@ function attachEventStream() {
     renderOutput();
   });
 
-  stream.addEventListener('done', () => stream.close());
+  stream.addEventListener('done', () => {
+    showShutdownOverlay();
+    stream.close();
+  });
   stream.onerror = () => {
     markNetworkReconnecting();
     setTimeout(refreshStateSilently, STATE_RETRY_MS);
   };
 
   return stream;
+}
+
+function showShutdownOverlay() {
+  const overlay = document.getElementById('shutdownOverlay');
+  if (overlay) overlay.classList.remove('hidden');
+  markNetworkOffline(new Error('codex web exited'));
 }
 
 function refreshLiveLabels() {
