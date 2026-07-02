@@ -401,6 +401,14 @@ button:disabled {
     white-space: nowrap;
 }
 
+.limit-card-head .mobile-collapse-btn {
+    margin-left: auto;
+    flex: 0 0 auto;
+    width: 32px;
+    height: 32px;
+    padding: 0;
+}
+
 .limit-row {
     grid-column: 1;
     display: grid;
@@ -1636,13 +1644,46 @@ pre {
         gap: 6px;
     }
 
-    body.mobile-limits-collapsed .limit-stats .limit-row,
+    body.mobile-limits-collapsed .limit-card + .limit-card {
+        display: none;
+    }
+
+    body.mobile-limits-collapsed .limit-stats .limit-row + .limit-row,
     body.mobile-limits-collapsed .limit-stats .limit-card.muted p {
         display: none;
     }
 
     body.mobile-limits-collapsed .limit-card {
+        grid-template-columns: minmax(0, 1fr) auto;
+        column-gap: 8px;
+        row-gap: 0;
+        align-items: center;
         padding: 8px 10px;
+    }
+
+    body.mobile-limits-collapsed .limit-card-head {
+        display: contents;
+    }
+
+    body.mobile-limits-collapsed .limit-card-head span,
+    body.mobile-limits-collapsed .limit-card-head b,
+    body.mobile-limits-collapsed .limit-refresh-status {
+        display: none;
+    }
+
+    body.mobile-limits-collapsed #limitsCollapseBtn {
+        grid-column: 2;
+        grid-row: 1;
+        display: inline-grid;
+        place-items: center;
+        margin-left: 0;
+    }
+
+    body.mobile-limits-collapsed .limit-row {
+        grid-column: 1;
+        grid-row: 1;
+        grid-template-columns: 40px minmax(70px, 1fr) 40px;
+        min-height: 32px;
     }
 
     body.mobile-queue-collapsed .queue-panel {
