@@ -92,6 +92,11 @@ export function attachEventHandlers(){
       else if(act === 'cancelEdit') { delete state.editDrafts[id]; state.editingQueueItemId = null; renderQueue(); }
       else if(act === 'saveEdit') saveQueueEdit(id);
       else if(act === 'sendNow') {
+        var app = (state.snap && state.snap.app) || {};
+        if(app.state === 'countdown' || app.isManualSend) {
+          renderQueue();
+          return;
+        }
         state.activeQueueFilter = 'all';
         requestQueueScroll(id, 'send', false);
         api('/api/queue/update', { id:id, action:act }).then(function(r){

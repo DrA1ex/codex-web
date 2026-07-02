@@ -16,7 +16,13 @@ export function sectionKey(name, s){
   if(name === 'header') return stableKey({ app:app, rateLimits:s && s.rateLimits });
   if(name === 'sessions') return stableKey({ state:app.state, sessionId:app.sessionId, sessionError:app.sessionError, sessions:s && s.sessions });
   if(name === 'approval') return stableKey(s && s.approval);
-  if(name === 'queue') return stableKey({ queue:s && s.queue, counts:app.queueCounts, nextPendingId:app.nextPendingId, canInterrupt:app.canInterrupt });
+  if(name === 'queue') return stableKey({
+    queue:s && s.queue,
+    counts:app.queueCounts,
+    nextPendingId:app.nextPendingId,
+    canInterrupt:app.canInterrupt,
+    sendLocked: app.state === 'countdown' || app.isManualSend
+  });
   if(name === 'output') return stableKey(s && s.output);
   if(name === 'debug') return stableKey(s && s.debug);
   return '';
