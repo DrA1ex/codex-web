@@ -20,6 +20,7 @@ const POST_ROUTES = new Map([
   ['/api/session/cancel-change', (app) => app.cancelSessionChange()],
   ['/api/config/model', (app, body) => app.setModel(body.model)],
   ['/api/config/effort', (app, body) => app.setEffort(body.effort)],
+  ['/api/config/models/reload', (app) => app.refreshModelCatalog()],
   ['/api/config/theme', (app, body) => app.setTheme(body.theme)],
   ['/api/queue/add', (app, body) => app.addPrompt(body.text || '')],
   ['/api/queue/send-composer', (app, body) => app.sendComposerNow(body.text || '')],

@@ -81,12 +81,11 @@ function validateOptions(opts) {
   if (!approvals.has(opts.approvalPolicy)) throw new Error(`Unsupported --approval-policy: ${opts.approvalPolicy}`);
   const responses = new Set(['manual', 'accept', 'accept-for-session', 'decline', 'cancel']);
   if (!responses.has(opts.approvalResponse)) throw new Error(`Unsupported --approval-response: ${opts.approvalResponse}`);
-  const efforts = new Set(['', 'low', 'medium', 'high', 'xhigh']);
-  if (!efforts.has(opts.effort)) throw new Error(`Unsupported --effort: ${opts.effort}`);
+  if (opts.effort && /\s/.test(opts.effort)) throw new Error(`Unsupported --effort: ${opts.effort}`);
 }
 
 function printHelp() {
-  console.log(`codex-web ${VERSION}\n\nUsage:\n  codex-web [session_id] [options]\n\nOptions:\n  --host 127.0.0.1\n  --port 0\n  --no-open\n  --state-dir ~/.local/state/codex-web\n  --codex-bin codex\n  --project-dir <dir>\n  --all-sessions\n  --session-picker-limit 50\n  --watch-interval 30\n  --countdown 5\n  --model gpt-5.5\n  --effort low|medium|high|xhigh\n  --sandbox read-only|workspace-write|danger-full-access\n  --approval-policy on-request|never|untrusted|on-failure\n  --approval-response manual|accept|accept-for-session|decline|cancel\n  --network true|false\n  --add-dir <dir>\n  --log-jsonrpc\n  --debug\n`);
+  console.log(`codex-web ${VERSION}\n\nUsage:\n  codex-web [session_id] [options]\n\nOptions:\n  --host 127.0.0.1\n  --port 0\n  --no-open\n  --state-dir ~/.local/state/codex-web\n  --codex-bin codex\n  --project-dir <dir>\n  --all-sessions\n  --session-picker-limit 50\n  --watch-interval 30\n  --countdown 5\n  --model <model-id>\n  --effort <effort-id>\n  --sandbox read-only|workspace-write|danger-full-access\n  --approval-policy on-request|never|untrusted|on-failure\n  --approval-response manual|accept|accept-for-session|decline|cancel\n  --network true|false\n  --add-dir <dir>\n  --log-jsonrpc\n  --debug\n`);
 }
 
 module.exports = { parseArgs, validateOptions, printHelp };

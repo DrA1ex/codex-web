@@ -1,6 +1,5 @@
 'use strict';
 
-const { DEFAULT_MODEL, MODEL_OPTIONS, EFFORT_OPTIONS } = require('../shared/config');
 const { nowIso, sleep } = require('../shared/utils');
 const { mapApprovalPolicy, makeSandboxPolicy } = require('../codex/policies');
 const {
@@ -243,45 +242,4 @@ module.exports = {
     });
   },
 
-  async setModel(model) {
-    const value = String(model || '').trim();
-
-    if (value && !MODEL_OPTIONS.some((option) => option.value === value)) {
-      throw new Error(`Unsupported model selection: ${value}`);
-    }
-
-    this.opts.model = value;
-    this.app.model = value;
-    await this.saveState();
-    this.appendOutput(`[config] model ${value || DEFAULT_MODEL + ' (default)'}`, 'system');
-    this.broadcastAll();
-
-    return { ok: true, model: value };
-  },
-
-  async setEffort(effort) {
-    const value = String(effort || '').trim();
-
-    if (!EFFORT_OPTIONS.some((option) => option.value === value)) {
-      throw new Error(`Unsupported effort selection: ${value}`);
-    }
-
-    this.opts.effort = value;
-    this.app.effort = value;
-    await this.saveState();
-    this.appendOutput(`[config] effort ${value || 'default'}`, 'system');
-    this.broadcastAll();
-
-    return { ok: true, effort: value };
-  },
-
-  async setTheme(theme) {
-    const value = theme === 'light' ? 'light' : 'dark';
-
-    this.app.theme = value;
-    await this.saveSettings();
-    this.broadcastAll();
-
-    return { ok: true, theme: value };
-  },
 };

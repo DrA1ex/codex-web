@@ -11,6 +11,7 @@ const {
   friendlyStartError,
 } = require('../shared/utils');
 const { openBrowser } = require('../http/utils');
+const { makeFallbackCatalog } = require('../codex/models');
 const {
   createAppState,
   createInitialRateLimits,
@@ -20,6 +21,7 @@ const {
 const persistenceMethods = require('./modules/persistence');
 const sessionMethods = require('./modules/sessions');
 const rateLimitMethods = require('./modules/rate-limits');
+const modelConfigMethods = require('./modules/model-config');
 const runnerMethods = require('./runner');
 const eventMethods = require('./modules/events');
 const outputMethods = require('./modules/output');
@@ -64,6 +66,7 @@ class CodexLimitWatchApp {
     this.sessions = [];
     this.sessionPickerReturnState = null;
 
+    this.modelCatalog = makeFallbackCatalog();
     this.app = createAppState(opts);
     this.queue = [];
     this.output = [];
@@ -97,6 +100,7 @@ class CodexLimitWatchApp {
 
     this.debug.appServerStatus = 'started';
     await this.rpc.initialize();
+    await this.refreshModelCatalog();
 
     if (this.opts.sessionId) {
       await this.selectSession(this.opts.sessionId, true);
@@ -136,6 +140,7 @@ Object.assign(
   persistenceMethods,
   sessionMethods,
   rateLimitMethods,
+  modelConfigMethods,
   runnerMethods,
   eventMethods,
   outputMethods,

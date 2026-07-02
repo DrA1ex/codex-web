@@ -1,9 +1,12 @@
 'use strict';
 
-const { DEFAULT_MODEL, MODEL_OPTIONS, EFFORT_OPTIONS } = require('../shared/config');
+const { DEFAULT_MODEL } = require('../shared/config');
+const { makeFallbackCatalog } = require('../codex/models');
 const { nowIso, shortId } = require('../shared/utils');
 
 function createAppState(opts) {
+  const modelCatalog = makeFallbackCatalog();
+
   return {
     state: 'initializing',
     message: '',
@@ -14,9 +17,14 @@ function createAppState(opts) {
     sessionTitle: opts.sessionId ? shortId(opts.sessionId) : 'not selected',
     model: opts.model || '',
     defaultModel: DEFAULT_MODEL,
-    modelOptions: MODEL_OPTIONS,
+    modelOptions: modelCatalog.modelOptions,
     effort: opts.effort || '',
-    effortOptions: EFFORT_OPTIONS,
+    effortOptions: modelCatalog.effortOptions,
+    modelCatalog: {
+      source: modelCatalog.source,
+      updatedAt: modelCatalog.updatedAt,
+      error: modelCatalog.error,
+    },
     sandbox: opts.sandbox,
     approvalPolicy: opts.approvalPolicy,
     approvalResponse: opts.approvalResponse,

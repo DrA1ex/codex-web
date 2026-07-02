@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const fsp = require('node:fs/promises');
 const path = require('node:path');
 
-const { VERSION, EFFORT_OPTIONS } = require('../../shared/config');
+const { VERSION } = require('../../shared/config');
 const {
   nowIso,
   sha256,
@@ -35,6 +35,7 @@ module.exports = {
     this.debug.queuePath = this.queuePath;
     await this.acquireLock();
     await this.loadState();
+    if (this.syncModelConfigState) await this.syncModelConfigState();
     await this.loadQueue();
     await this.saveState();
   },
@@ -110,11 +111,8 @@ module.exports = {
         this.app.model = this.opts.model;
       }
       if (!this.opts.effortProvided && Object.prototype.hasOwnProperty.call(data, 'effort')) {
-        const effort = String(data.effort || '').trim();
-        if (EFFORT_OPTIONS.some((m) => m.value === effort)) {
-          this.opts.effort = effort;
-          this.app.effort = effort;
-        }
+        this.opts.effort = String(data.effort || '').trim();
+        this.app.effort = this.opts.effort;
       }
       if (data.scheduledRunAt) {
         const ts = Date.parse(data.scheduledRunAt);
