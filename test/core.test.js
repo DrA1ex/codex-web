@@ -512,14 +512,14 @@ test('diff output skips identical repeated diffs and updates changed diff block'
   app.updateDiffOutput('diff --git a/file b/file\n--- a/file\n+++ b/file\n-old\n+one');
   assert.equal(app.output.length, 1);
   assert.equal(app.output[0].type, 'diff');
-  assert.deepEqual(app.output[0].diff, { added: 1, removed: 1, active: true });
+  assert.deepEqual(app.output[0].diff, { added: 1, removed: 1, caption: 'file', active: true });
 
   app.appendOutput('[turn] started', 'turn');
   app.updateDiffOutput('diff --git a/file b/file\n--- a/file\n+++ b/file\n-old\n-two\n+three\n+four');
   assert.equal(app.output.length, 2);
   assert.equal(app.output[0].type, 'diff');
   assert.match(app.output[0].text, /\+four/);
-  assert.deepEqual(app.output[0].diff, { added: 2, removed: 2, active: true });
+  assert.deepEqual(app.output[0].diff, { added: 2, removed: 2, caption: 'file', active: true });
 
   app.finishActiveOutputBlocks();
   assert.equal(app.output[0].diff.active, false);

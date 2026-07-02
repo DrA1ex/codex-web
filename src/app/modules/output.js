@@ -108,6 +108,10 @@ module.exports = {
   },
 
   finishActiveOutputBlocks() {
+    if (this.diffActivityTimer) {
+      clearTimeout(this.diffActivityTimer);
+      this.diffActivityTimer = null;
+    }
     for (const out of this.output) {
       if (out.tool) out.tool.active = false;
       if (out.diff) out.diff.active = false;
@@ -126,12 +130,38 @@ module.exports = {
     return { added, removed };
   },
 
+  diffCaption(text) {
+    const files = [];
+    for (const line of String(text || '').split(/\r?\n/)) {
+      const match = line.match(/^diff --git a\/(.+?) b\/(.+)$/);
+      if (match) files.push(match[2] || match[1]);
+    }
+    if (files.length === 1) return files[0];
+    if (files.length > 1) return `${files.length} files`;
+    const fileLine = String(text || '').split(/\r?\n/).find((line) => line.startsWith('+++ b/'));
+    return fileLine ? fileLine.slice(6) : '';
+  },
+
+  scheduleDiffActivityClear(outputId, text) {
+    if (this.diffActivityTimer) clearTimeout(this.diffActivityTimer);
+    this.diffActivityTimer = setTimeout(() => {
+      this.diffActivityTimer = null;
+      if (this.currentDiffOutputId !== outputId || this.lastDiffOutputText !== text) return;
+      const out = this.output.find((entry) => entry.id === outputId && entry.type === 'diff');
+      if (!out?.diff?.active) return;
+      out.diff.active = false;
+      out.ts = nowIso();
+      this.broadcast('output', this.output);
+    }, 1400);
+    if (this.diffActivityTimer.unref) this.diffActivityTimer.unref();
+  },
+
   updateDiffOutput(text) {
     if (text === undefined || text === null || text === '') return;
     const limited = limitOutputText(text);
     if (this.lastDiffOutputText === limited) return;
     this.lastDiffOutputText = limited;
-    const diff = { added: 0, removed: 0, ...this.diffStats(limited), active: true };
+    const diff = { added: 0, removed: 0, ...this.diffStats(limited), caption: this.diffCaption(limited), active: true };
     const current = this.currentDiffOutputId
       ? this.output.find((entry) => entry.id === this.currentDiffOutputId && entry.type === 'diff')
       : null;
@@ -146,6 +176,7 @@ module.exports = {
       this.currentDiffOutputId = entry.id;
     }
     this.trimOutput();
+    this.scheduleDiffActivityClear(this.currentDiffOutputId, limited);
     this.broadcast('output', this.output);
   },
 
@@ -169,6 +200,10 @@ module.exports = {
     this.output = [];
     this.lastDiffOutputText = null;
     this.currentDiffOutputId = null;
+    if (this.diffActivityTimer) {
+      clearTimeout(this.diffActivityTimer);
+      this.diffActivityTimer = null;
+    }
     this.commandOutputByItemId.clear();
     this.broadcast('output', this.output);
     this.broadcastAll();

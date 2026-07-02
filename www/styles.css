@@ -1095,7 +1095,7 @@ textarea:focus {
 }
 
 .out-diff-toggle {
-    grid-template-columns: 8px minmax(0, 1fr) auto auto;
+    grid-template-columns: 8px auto minmax(0, 1fr) auto auto;
 }
 
 .out-tool-toggle {
@@ -1119,6 +1119,15 @@ textarea:focus {
 .out-tool-toggle span {
     color: #75bdff;
     font-weight: 750;
+}
+
+.out-diff-toggle em {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--muted);
+    font-style: normal;
 }
 
 .out-tool-toggle b {

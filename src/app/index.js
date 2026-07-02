@@ -72,6 +72,7 @@ class CodexLimitWatchApp {
     this.output = [];
     this.lastDiffOutputText = null;
     this.currentDiffOutputId = null;
+    this.diffActivityTimer = null;
     this.commandOutputByItemId = new Map();
     this.rateLimits = createInitialRateLimits();
     this.approval = null;

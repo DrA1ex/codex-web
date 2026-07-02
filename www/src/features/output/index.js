@@ -54,6 +54,7 @@ function renderDiffLine(line, meta) {
   const active = Boolean(line.diff?.active);
   const added = Number(line.diff?.added || 0);
   const removed = Number(line.diff?.removed || 0);
+  const caption = line.diff?.caption || '';
 
   return `
     <div class="out-line diff ${expanded ? 'expanded' : 'collapsed'}">
@@ -61,6 +62,7 @@ function renderDiffLine(line, meta) {
         <button type="button" class="out-diff-toggle" data-output-diff="${diffId}">
           <i class="out-activity-dot ${active ? '' : 'is-idle'}" aria-hidden="true"></i>
           <span>Diff</span>
+          <em>${esc(caption)}</em>
           <b class="out-diff-stat add">+${added}</b>
           <b class="out-diff-stat del">-${removed}</b>
         </button>
