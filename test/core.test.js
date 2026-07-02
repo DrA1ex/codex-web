@@ -337,6 +337,22 @@ test('sendItemNow queues next item during running manual send without resuming q
   assert.equal(app.currentManualSend, true);
 });
 
+test('countdown tick emits only output event after initial state update', async () => {
+  const pending = item('pending');
+  const app = makeAppWithQueue([pending]);
+  const events = [];
+  let stateBroadcasts = 0;
+  app.opts.countdown = 1;
+  app.broadcast = (event) => { events.push(event); };
+  app.broadcastAll = () => { stateBroadcasts += 1; };
+  app.sendPrompt = async () => {};
+
+  await app.runCountdownAndSend(pending);
+
+  assert.equal(stateBroadcasts, 1);
+  assert.deepEqual(events, ['output']);
+});
+
 test('sendItemNow reserves manual send before async rate-limit polling', async () => {
   const first = item('first');
   const second = item('second');

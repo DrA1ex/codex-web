@@ -164,7 +164,6 @@ module.exports = {
       if (this.app.state === 'paused' || this.countdownCancel) return;
 
       this.appendOutput(`Sending prompt #${idx} in ${secondsLeft}…`, 'system');
-      this.broadcastAll();
       await sleep(1000);
     }
 
