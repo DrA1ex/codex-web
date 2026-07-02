@@ -341,7 +341,10 @@ test('updateQueueItem handles edit, duplicate, retry, and completed transitions'
   failed.finishedAt = '2026-01-01T00:01:00.000Z';
   const app = makeAppWithQueue([failed]);
 
-  await app.updateQueueItem({ id: 'failed', action: 'edit', text: 'new\ntext' });
+  const editResult = await app.updateQueueItem({ id: 'failed', action: 'edit', text: 'new\ntext' });
+  assert.equal(editResult.ok, true);
+  assert.equal(editResult.item.id, 'failed');
+  assert.equal(editResult.item.text, 'new\ntext');
   assert.equal(app.queue[0].status, 'pending');
   assert.equal(app.queue[0].error, null);
   assert.equal(app.queue[0].lineCount, 2);

@@ -4,6 +4,7 @@
   var expandedQueueItems = Object.create(null);
   var editingQueueItemId = null;
   var editDrafts = Object.create(null);
+  var savingQueueEdits = Object.create(null);
   var pendingEditFocusId = null;
   var pendingQueueScrollId = null;
   var didInitialQueueScroll = false;
@@ -493,7 +494,7 @@
       }
       if(item.error) html += '<div class="prompt-error">' + esc(item.error) + '</div>';
       if(editing) {
-        html += '<div class="actions queue-actions"><button data-act="saveEdit" data-id="' + idAttr + '" class="primary">Save</button><button data-act="cancelEdit" data-id="' + idAttr + '">Cancel</button></div>';
+        html += '<div class="actions queue-actions"><button data-act="saveEdit" data-id="' + idAttr + '" class="primary"' + (savingQueueEdits[item.id] ? ' disabled' : '') + '>' + (savingQueueEdits[item.id] ? 'Saving...' : 'Save') + '</button><button data-act="cancelEdit" data-id="' + idAttr + '"' + (savingQueueEdits[item.id] ? ' disabled' : '') + '>Cancel</button></div>';
       } else if(!completed && !running) {
         html += '<div class="actions queue-actions"><button data-act="edit" data-id="' + idAttr + '">Edit</button><button data-act="duplicate" data-id="' + idAttr + '">Duplicate</button><button data-act="sendNow" data-id="' + idAttr + '">Send</button><button data-act="remove" data-id="' + idAttr + '" class="danger">Remove</button>';
         if(item.status === 'unknown' || item.status === 'failed') html += '<button data-act="markCompleted" data-id="' + idAttr + '">Done</button><button data-act="retry" data-id="' + idAttr + '">Retry</button>';
@@ -544,6 +545,38 @@
         }
       }
     }
+  }
+  function queueEditText(id, fallback){
+    var editor = document.querySelector('[data-edit-text="' + id + '"]');
+    if(editor) {
+      editDrafts[id] = editor.value;
+      return editor.value;
+    }
+    if(Object.prototype.hasOwnProperty.call(editDrafts, id)) return editDrafts[id];
+    return fallback || '';
+  }
+  function saveQueueEdit(id){
+    if(!id || savingQueueEdits[id]) return;
+    var item = (snap.queue || []).find(function(x){ return x.id === id; });
+    var text = queueEditText(id, item ? item.text || '' : '');
+    savingQueueEdits[id] = true;
+    renderQueue();
+    api('/api/queue/update', { id:id, action:'edit', text:text }).then(function(r){
+      if(r && r.item && snap && Array.isArray(snap.queue)) {
+        var idx = snap.queue.findIndex(function(x){ return x.id === id; });
+        if(idx >= 0) snap.queue[idx] = r.item;
+      }
+      delete editDrafts[id];
+      delete savingQueueEdits[id];
+      if(editingQueueItemId === id) editingQueueItemId = null;
+      renderQueue();
+      getState();
+    }).catch(function(e){
+      delete savingQueueEdits[id];
+      editDrafts[id] = text;
+      renderQueue();
+      alert(e.message);
+    });
   }
   function outputLabel(type, text){
     var labels = { error:'Error', stderr:'Stderr', system:'System', turn:'Turn', send:'Send', prompt:'Prompt', tool:'Tool', 'tool-delta':'Tool', reasoning:'Reasoning', 'reasoning-delta':'Reasoning', plan:'Plan', diff:'Diff', item:'Item', event:'Event', delta:'Assistant', 'context-delta':'Context' };
@@ -652,10 +685,7 @@
       if(act === 'remove') openConfirm('remove', 'Remove prompt?', 'This prompt will be removed from the queue.', 'Yes, remove', true, { id:id });
       else if(act === 'edit') { editingQueueItemId = id; editDrafts[id] = item ? item.text || '' : ''; pendingEditFocusId = id; expandedQueueItems[id] = true; renderQueue(); }
       else if(act === 'cancelEdit') { delete editDrafts[id]; editingQueueItemId = null; renderQueue(); }
-      else if(act === 'saveEdit') {
-        var editor = document.querySelector('[data-edit-text="' + id + '"]');
-        api('/api/queue/update', { id:id, action:'edit', text:editor ? editor.value : '' }).then(function(){ delete editDrafts[id]; editingQueueItemId = null; getState(); }).catch(function(e){ alert(e.message); });
-      }
+      else if(act === 'saveEdit') saveQueueEdit(id);
       else api('/api/queue/update', { id:id, action:act });
     }
   });
@@ -743,7 +773,7 @@
     }
     if(t && t.dataset && t.dataset.editText && (ev.metaKey || ev.ctrlKey) && ev.key === 'Enter') {
       ev.preventDefault();
-      api('/api/queue/update', { id:t.dataset.editText, action:'edit', text:t.value }).then(function(){ delete editDrafts[t.dataset.editText]; editingQueueItemId = null; getState(); }).catch(function(e){ alert(e.message); });
+      saveQueueEdit(t.dataset.editText);
       return;
     }
     if(t && t.dataset && t.dataset.togglePrompt && (ev.key === 'Enter' || ev.key === ' ')) {

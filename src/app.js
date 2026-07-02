@@ -1270,6 +1270,7 @@ class CodexLimitWatchApp {
     await this.saveQueue();
     this.broadcastAll();
     this.schedulePump(200);
+    return { ok: true, item };
   }
   async removeQueueItem(id) {
     const idx = this.queue.findIndex((i) => i.id === id);
@@ -1382,7 +1383,7 @@ class CodexLimitWatchApp {
     if (route === '/api/queue/schedule') return sendJson(res, 200, await this.setQueueSchedule(body.scheduledRunAt));
     if (route === '/api/queue/schedule-reset') return sendJson(res, 200, await this.resetQueueSchedule());
     if (route === '/api/queue/cancel-run') return sendJson(res, 200, await this.cancelQueueRun());
-    if (route === '/api/queue/update') { await this.updateQueueItem(body); return sendJson(res, 200, { ok: true }); }
+    if (route === '/api/queue/update') return sendJson(res, 200, await this.updateQueueItem(body));
     if (route === '/api/queue/remove') { await this.removeQueueItem(String(body.id)); return sendJson(res, 200, { ok: true }); }
     if (route === '/api/queue/reorder') { await this.reorderQueueItem(String(body.id), body); return sendJson(res, 200, { ok: true }); }
     if (route === '/api/queue/clear') { await this.clearPending(); return sendJson(res, 200, { ok: true }); }
