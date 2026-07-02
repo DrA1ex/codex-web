@@ -137,7 +137,6 @@ module.exports = {
   },
 
   serveStatic(req, res, parsed, name) {
-    if (!this.validateToken(req, parsed)) return sendText(res, 403, 'Invalid token');
     try {
       sendText(res, 200, readAsset(name), staticContentType(name));
     } catch (_) {

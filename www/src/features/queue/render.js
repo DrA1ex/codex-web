@@ -1,0 +1,170 @@
+import { state } from '#core/state';
+import { esc, fmtTime } from '#utils/format';
+import { toArray } from '#utils/dom';
+import { captureActiveEditor, queueContainer, queueDraftValue, restoreActiveEditor } from './editor.js';
+import { animateQueueItems, clearQueueScrollRequest, queueItemRects, scrollQueueItemAfterMove } from './scroll.js';
+import { isPendingQueueItem, isRunningStatus, queueMatchesFilter } from './status.js';
+
+function queueItemClassName({ active, running, completed, draggable, expanded, editing }) {
+  return [
+    'queue-item',
+    active && 'active',
+    running && 'running',
+    completed && 'completed',
+    draggable && 'draggable',
+    expanded && 'expanded',
+    editing && 'editing',
+  ].filter(Boolean).join(' ');
+}
+
+function promptToggleAttrs(item, expanded, editing) {
+  if (editing) return '';
+
+  return [
+    'data-toggle-prompt="1"',
+    `data-id="${esc(item.id)}"`,
+    'role="button"',
+    'tabindex="0"',
+    `title="Click to ${expanded ? 'collapse' : 'expand'} prompt"`,
+  ].join(' ');
+}
+
+function renderQueueHeader(item, index, draggable, completed) {
+  const finishedOrCreatedAt = completed && item.finishedAt ? item.finishedAt : item.createdAt;
+  const dragHandle = draggable ? '<span class="queue-drag-handle" title="Drag to reorder">↕</span>' : '';
+
+  return `
+    <div class="queue-top">
+      <span>${dragHandle}#${index + 1} <span class="status ${esc(item.status)}">${esc(item.status)}</span> · ${item.lineCount || 0} lines</span>
+      <span>${esc(fmtTime(finishedOrCreatedAt))}</span>
+    </div>
+  `;
+}
+
+function renderQueuePrompt(item, idAttr, expanded, editing) {
+  if (editing) {
+    return `<textarea class="queue-edit" data-edit-text="${idAttr}" spellcheck="false">${esc(queueDraftValue(item.id, item.text || ''))}</textarea>`;
+  }
+
+  const text = expanded ? item.text || item.preview || '' : item.preview || item.text || '';
+
+  const attrs = promptToggleAttrs(item, expanded, editing);
+
+  return `<div class="prompt-preview" aria-label="${esc(item.text || item.preview || '')}" ${attrs}>${esc(text || '')}</div>`;
+}
+
+function renderEditActions(item, idAttr) {
+  const saving = Boolean(state.savingQueueEdits[item.id]);
+  const disabled = saving ? ' disabled' : '';
+
+  return `
+    <div class="actions queue-actions">
+      <button data-act="saveEdit" data-id="${idAttr}" class="primary"${disabled}>${saving ? 'Saving...' : 'Save'}</button>
+      <button data-act="cancelEdit" data-id="${idAttr}"${disabled}>Cancel</button>
+    </div>
+  `;
+}
+
+function renderQueueActions(item, idAttr, app) {
+  const sendDisabled = app.state === 'countdown' || app.isManualSend;
+  const recoveryActions = item.status === 'unknown' || item.status === 'failed'
+    ? `<button data-act="markCompleted" data-id="${idAttr}">Done</button><button data-act="retry" data-id="${idAttr}">Retry</button>`
+    : '';
+
+  return `
+    <div class="actions queue-actions">
+      <button data-act="edit" data-id="${idAttr}">Edit</button>
+      <button data-act="duplicate" data-id="${idAttr}">Duplicate</button>
+      <button data-act="sendNow" data-id="${idAttr}"${sendDisabled ? ' disabled title="A prompt is already scheduled to send"' : ''}>Send</button>
+      <button data-act="remove" data-id="${idAttr}" class="danger">Remove</button>
+      ${recoveryActions}
+    </div>
+  `;
+}
+
+function renderQueueItem(item, index, app) {
+  const running = isRunningStatus(item.status);
+  const completed = item.status === 'completed';
+  const editing = state.editingQueueItemId === item.id && !completed && !running;
+  const expanded = Boolean(state.expandedQueueItems[item.id]) || editing;
+  const draggable = isPendingQueueItem(item) && !editing;
+  const idAttr = esc(item.id);
+
+  return `
+    <div class="${queueItemClassName({
+      active: running,
+      running,
+      completed,
+      draggable,
+      expanded,
+      editing,
+    })}" data-queue-id="${idAttr}" data-queue-status="${esc(item.status)}"${draggable ? ' draggable="true"' : ''}>
+      ${renderQueueHeader(item, index, draggable, completed)}
+      ${renderQueuePrompt(item, idAttr, expanded, editing)}
+      ${item.error ? `<div class="prompt-error">${esc(item.error)}</div>` : ''}
+      ${editing ? renderEditActions(item, idAttr) : (!completed && !running ? renderQueueActions(item, idAttr, app) : '')}
+    </div>
+  `;
+}
+
+function findRenderedQueueItem(container, id) {
+  return toArray(container.querySelectorAll('[data-queue-id]')).find((node) => node.dataset.queueId === id);
+}
+
+function processPendingScroll(container, queue) {
+  if (state.pendingQueueScrollId) {
+    const target = findRenderedQueueItem(container, state.pendingQueueScrollId);
+    if (!target) return;
+
+    const targetItem = queue.find((item) => item.id === state.pendingQueueScrollId);
+    const waitForSendPosition =
+      state.pendingQueueScrollKind === 'send' &&
+      targetItem?.status === 'pending' &&
+      !state.pendingQueueScrollReady;
+
+    if (waitForSendPosition) return;
+
+    const scrollId = state.pendingQueueScrollId;
+    clearQueueScrollRequest();
+    scrollQueueItemAfterMove(scrollId);
+    return;
+  }
+
+  if (state.didInitialQueueScroll) return;
+
+  state.didInitialQueueScroll = true;
+  const firstOpenItem = queue.find((item) => item.status !== 'completed');
+  const firstTarget = firstOpenItem && findRenderedQueueItem(container, firstOpenItem.id);
+  if (firstTarget) firstTarget.scrollIntoView({ block: 'center' });
+}
+
+export function renderQueue() {
+  const snapshot = state.snap || {};
+  const queue = snapshot.queue || [];
+  const container = queueContainer();
+  const app = snapshot.app || {};
+
+  if (!container) return;
+
+  if (!queue.length) {
+    container.innerHTML = '<div class="empty">Queue is empty.</div>';
+    return;
+  }
+
+  const filteredQueue = queue.filter(queueMatchesFilter);
+  if (!filteredQueue.length) {
+    container.innerHTML = '<div class="empty">No items match this filter.</div>';
+    return;
+  }
+
+  const oldRects = queueItemRects(container);
+  const activeEditor = captureActiveEditor();
+
+  container.innerHTML = filteredQueue
+    .map((item) => renderQueueItem(item, queue.indexOf(item), app))
+    .join('');
+
+  animateQueueItems(container, oldRects);
+  processPendingScroll(container, queue);
+  restoreActiveEditor(container, activeEditor);
+}

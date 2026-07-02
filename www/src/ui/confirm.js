@@ -1,35 +1,58 @@
 import { state } from '#core/state';
 import { api } from '#core/api';
 import { esc } from '#utils/format';
+import { byId, setHidden } from '#utils/dom';
 
-export function openConfirm(action, title, message, yesText, danger, data){
-  state.confirmAction = { action:action, title:title, message:message, yesText:yesText, danger:!!danger, data:data || {} };
+const CONFIRM_ACTIONS = {
+  interrupt: () => api('/api/control/interrupt').then((result) => {
+    if (result.message) alert(result.message);
+  }),
+  stop: () => api('/api/control/stop'),
+  remove: ({ id }) => api('/api/queue/remove', { id }),
+};
+
+export function openConfirm(action, title, message, yesText, danger, data = {}) {
+  state.confirmAction = { action, title, message, yesText, danger: Boolean(danger), data };
   renderConfirm();
 }
 
-export function closeConfirm(){
+export function closeConfirm() {
   state.confirmAction = null;
   renderConfirm();
 }
 
-export function renderConfirm(){
-  var box = document.getElementById('confirmBox');
-  if(!box) return;
-  if(!state.confirmAction) {
-    box.classList.add('hidden');
+export function renderConfirm() {
+  const box = byId('confirmBox');
+  if (!box) return;
+
+  if (!state.confirmAction) {
+    setHidden(box, true);
     box.innerHTML = '';
     return;
   }
-  var confirmAction = state.confirmAction;
-  box.classList.remove('hidden');
-  box.innerHTML = '<div class="confirm-modal" role="dialog" aria-modal="true" aria-labelledby="confirmTitle"><div class="confirm-head"><b id="confirmTitle">' + esc(confirmAction.title) + '</b></div><p>' + esc(confirmAction.message) + '</p><div class="actions"><button id="confirmYesBtn" class="' + (confirmAction.danger ? 'danger' : 'primary') + '">' + esc(confirmAction.yesText || 'Yes') + '</button><button id="confirmCancelBtn">Cancel</button></div></div>';
+
+  const current = state.confirmAction;
+  setHidden(box, false);
+  box.innerHTML = `
+    <div class="confirm-modal" role="dialog" aria-modal="true" aria-labelledby="confirmTitle">
+      <div class="confirm-head"><b id="confirmTitle">${esc(current.title)}</b></div>
+      <p>${esc(current.message)}</p>
+      <div class="actions">
+        <button id="confirmYesBtn" class="${current.danger ? 'danger' : 'primary'}">${esc(current.yesText || 'Yes')}</button>
+        <button id="confirmCancelBtn">Cancel</button>
+      </div>
+    </div>
+  `;
 }
 
-export function confirmCurrentAction(){
-  var action = state.confirmAction && state.confirmAction.action;
-  var data = state.confirmAction && state.confirmAction.data || {};
+export function confirmCurrentAction() {
+  const current = state.confirmAction;
+  if (!current) return;
+
   closeConfirm();
-  if(action === 'interrupt') api('/api/control/interrupt').then(function(r){ if(r.message) alert(r.message); }).catch(function(e){ alert(e.message); });
-  else if(action === 'stop') api('/api/control/stop').catch(function(e){ alert(e.message); });
-  else if(action === 'remove') api('/api/queue/remove', { id:data.id }).catch(function(e){ alert(e.message); });
+
+  const handler = CONFIRM_ACTIONS[current.action];
+  if (!handler) return;
+
+  handler(current.data).catch((error) => alert(error.message));
 }

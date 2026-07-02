@@ -1,59 +1,85 @@
 import { state } from '#core/state';
+import { renderQueue } from '#features/queue';
+import { renderOutput } from '#features/output';
 import { renderApproval } from '#ui/approval';
 import { renderConfirm } from '#ui/confirm';
 import { renderHeader } from '#ui/header';
 import { renderScheduleModal } from '#ui/schedule';
 import { renderSessions } from '#ui/sessions';
-import { renderQueue } from '#features/queue';
-import { renderOutput } from '#features/output';
 
-function stableKey(value){
-  try { return JSON.stringify(value == null ? null : value); } catch(e) { return String(Date.now()); }
-}
+const CACHED_SECTIONS = {
+  header: renderHeader,
+  sessions: renderSessions,
+  approval: renderApproval,
+  queue: renderQueue,
+  output: renderOutput,
+  debug: renderDebug,
+};
 
-export function sectionKey(name, s){
-  var app = (s && s.app) || {};
-  if(name === 'header') return stableKey({ app:app, rateLimits:s && s.rateLimits });
-  if(name === 'sessions') return stableKey({ state:app.state, sessionId:app.sessionId, sessionError:app.sessionError, sessions:s && s.sessions });
-  if(name === 'approval') return stableKey(s && s.approval);
-  if(name === 'queue') return stableKey({
-    queue:s && s.queue,
-    counts:app.queueCounts,
-    nextPendingId:app.nextPendingId,
-    canInterrupt:app.canInterrupt,
-    sendLocked: app.state === 'countdown' || app.isManualSend
-  });
-  if(name === 'output') return stableKey(s && s.output);
-  if(name === 'debug') return stableKey(s && s.debug);
-  return '';
-}
-
-function renderSection(name, fn, force){
-  var key = sectionKey(name, state.snap);
-  if(force || state.renderKeys[name] !== key) {
-    state.renderKeys[name] = key;
-    fn();
+function stableKey(value) {
+  try {
+    return JSON.stringify(value == null ? null : value);
+  } catch {
+    return String(Date.now());
   }
 }
 
-export function update(s){
-  var first = !state.snap;
-  state.snap = s;
-  render(first);
+export function sectionKey(name, snapshot) {
+  const app = snapshot?.app || {};
+
+  if (name === 'header') return stableKey({ app, rateLimits: snapshot?.rateLimits });
+  if (name === 'sessions') {
+    return stableKey({
+      state: app.state,
+      sessionId: app.sessionId,
+      sessionError: app.sessionError,
+      sessions: snapshot?.sessions,
+    });
+  }
+  if (name === 'approval') return stableKey(snapshot?.approval);
+  if (name === 'queue') {
+    return stableKey({
+      queue: snapshot?.queue,
+      counts: app.queueCounts,
+      nextPendingId: app.nextPendingId,
+      canInterrupt: app.canInterrupt,
+      sendLocked: app.state === 'countdown' || app.isManualSend,
+    });
+  }
+  if (name === 'output') return stableKey(snapshot?.output);
+  if (name === 'debug') return stableKey(snapshot?.debug);
+
+  return '';
 }
 
-export function render(){
-  if(!state.snap) return;
-  var force = arguments.length ? !!arguments[0] : false;
-  renderSection('header', renderHeader, force);
-  renderSection('sessions', renderSessions, force);
-  renderSection('approval', renderApproval, force);
+function renderDebug() {
+  const debug = document.getElementById('debug');
+  if (debug) debug.textContent = JSON.stringify(state.snap?.debug || {}, null, 2);
+}
+
+function renderSection(name, force) {
+  const nextKey = sectionKey(name, state.snap);
+  if (!force && state.renderKeys[name] === nextKey) return;
+
+  state.renderKeys[name] = nextKey;
+  CACHED_SECTIONS[name]();
+}
+
+export function update(snapshot) {
+  const isFirstRender = !state.snap;
+  state.snap = snapshot;
+  render(isFirstRender);
+}
+
+export function render(force = false) {
+  if (!state.snap) return;
+
+  renderSection('header', force);
+  renderSection('sessions', force);
+  renderSection('approval', force);
   renderConfirm();
   renderScheduleModal();
-  renderSection('queue', renderQueue, force);
-  renderSection('output', renderOutput, force);
-  renderSection('debug', function(){
-    var debug = document.getElementById('debug');
-    if(debug) debug.textContent = JSON.stringify(state.snap.debug || {}, null, 2);
-  }, force);
+  renderSection('queue', force);
+  renderSection('output', force);
+  renderSection('debug', force);
 }
