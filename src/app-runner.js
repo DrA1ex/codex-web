@@ -123,33 +123,34 @@ module.exports = {
   async sendItemNow(item) {
     if (this.shuttingDown) return;
     if (!this.app.sessionId) throw new Error('No Codex session selected');
+    if (this.currentManualSend || this.app.state === 'countdown') throw new Error('A prompt is already scheduled to send');
     if (this.isQueueProcessingActive()) {
       return await this.movePendingToNext(item);
     }
     if (this.currentItemId || this.currentTurnId) throw new Error('A prompt is already running');
     if (!item || item.status !== 'pending') throw new Error('Only pending prompts can be sent');
-    await this.movePendingToFirst(item);
-    this.app.state = 'watching';
-    this.app.message = 'Manual send requested';
-    this.broadcastAll();
-    if (this.rateLimits.status === 'unknown') {
-      await this.pollRateLimits();
-    }
-    if (this.rateLimits.status === 'limited') {
-      this.app.state = 'waiting-limits';
-      const resetAt = this.rateLimits.resetAt ? new Date(this.rateLimits.resetAt * 1000) : null;
-      this.app.message = resetAt ? `Waiting for limit reset at ${resetAt.toLocaleTimeString()}` : 'Waiting for rate limits';
-      this.broadcastAll();
-      return { ok: true, item };
-    }
-    if (this.rateLimits.status === 'unknown') {
-      this.app.state = 'waiting-limits';
-      this.app.message = 'Limits unknown; retrying before manual send';
-      this.broadcastAll();
-      return { ok: true, item };
-    }
     this.currentManualSend = true;
     try {
+      await this.movePendingToFirst(item);
+      this.app.state = 'watching';
+      this.app.message = 'Manual send requested';
+      this.broadcastAll();
+      if (this.rateLimits.status === 'unknown') {
+        await this.pollRateLimits();
+      }
+      if (this.rateLimits.status === 'limited') {
+        this.app.state = 'waiting-limits';
+        const resetAt = this.rateLimits.resetAt ? new Date(this.rateLimits.resetAt * 1000) : null;
+        this.app.message = resetAt ? `Waiting for limit reset at ${resetAt.toLocaleTimeString()}` : 'Waiting for rate limits';
+        this.broadcastAll();
+        return { ok: true, item };
+      }
+      if (this.rateLimits.status === 'unknown') {
+        this.app.state = 'waiting-limits';
+        this.app.message = 'Limits unknown; retrying before manual send';
+        this.broadcastAll();
+        return { ok: true, item };
+      }
       await this.runCountdownAndSend(item, { continueQueue: false });
     } finally {
       this.currentManualSend = false;

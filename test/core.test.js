@@ -305,6 +305,39 @@ test('sendItemNow rejects extra sends while countdown is active', async () => {
   assert.equal(app.lastScheduledDelay, undefined);
 });
 
+test('sendItemNow reserves manual send before async rate-limit polling', async () => {
+  const first = item('first');
+  const second = item('second');
+  const app = makeAppWithQueue([first, second]);
+  app.rateLimits = { status: 'unknown', buckets: [], resetAt: null };
+  let releasePoll;
+  app.pollRateLimits = async () => {
+    await new Promise((resolve) => {
+      releasePoll = () => {
+        app.rateLimits = { status: 'available', buckets: [], resetAt: null };
+        resolve();
+      };
+    });
+  };
+  const sent = [];
+  app.runCountdownAndSend = async (queueItem, options) => {
+    sent.push({ queueItem, options });
+  };
+
+  const firstSend = app.sendItemNow(first);
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.equal(app.currentManualSend, true);
+  await assert.rejects(() => app.sendItemNow(second), /already scheduled to send/);
+  assert.deepEqual(app.queue.map((i) => i.id), ['first', 'second']);
+
+  releasePoll();
+  await firstSend;
+
+  assert.equal(app.currentManualSend, false);
+  assert.deepEqual(sent.map((entry) => entry.queueItem.id), ['first']);
+});
+
 test('manual send disables queue pause control while prompt is running', () => {
   const app = makeAppWithQueue([item('active', 'sending')]);
   app.app.state = 'sending';

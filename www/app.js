@@ -540,7 +540,7 @@
       if(editing) {
         html += '<div class="actions queue-actions"><button data-act="saveEdit" data-id="' + idAttr + '" class="primary"' + (savingQueueEdits[item.id] ? ' disabled' : '') + '>' + (savingQueueEdits[item.id] ? 'Saving...' : 'Save') + '</button><button data-act="cancelEdit" data-id="' + idAttr + '"' + (savingQueueEdits[item.id] ? ' disabled' : '') + '>Cancel</button></div>';
       } else if(!completed && !running) {
-        var sendDisabled = app.state === 'countdown';
+        var sendDisabled = app.state === 'countdown' || app.isManualSend;
         html += '<div class="actions queue-actions"><button data-act="edit" data-id="' + idAttr + '">Edit</button><button data-act="duplicate" data-id="' + idAttr + '">Duplicate</button><button data-act="sendNow" data-id="' + idAttr + '"' + (sendDisabled ? ' disabled title="A prompt is already scheduled to send"' : '') + '>Send</button><button data-act="remove" data-id="' + idAttr + '" class="danger">Remove</button>';
         if(item.status === 'unknown' || item.status === 'failed') html += '<button data-act="markCompleted" data-id="' + idAttr + '">Done</button><button data-act="retry" data-id="' + idAttr + '">Retry</button>';
         html += '</div>';
