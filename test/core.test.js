@@ -121,6 +121,52 @@ test('rate limits normalize available, limited, and unknown responses', () => {
   assert.equal(unknown.status, 'unknown');
 });
 
+test('rate-limit polling writes terminal diagnostics for unknown and recovery', async () => {
+  const app = makeAppWithQueue([]);
+  const warnings = [];
+  const logs = [];
+  const originalWarn = console.warn;
+  const originalLog = console.log;
+  console.warn = (message) => { warnings.push(String(message)); };
+  console.log = (message) => { logs.push(String(message)); };
+  try {
+    app.rpc = { exited: false, request: async () => ({}) };
+    await app.pollRateLimits();
+    assert.equal(app.rateLimits.status, 'unknown');
+    assert.match(warnings.at(-1), /\[limits\].*poll unknown: no rate-limit buckets returned/);
+
+    app.rpc = { exited: false, request: async () => ({ rateLimits: { limitId: 'codex', primary: { usedPercent: 10 } } }) };
+    await app.pollRateLimits();
+    assert.equal(app.rateLimits.status, 'available');
+    assert.match(logs.at(-1), /\[limits\].*poll recovered: available/);
+  } finally {
+    console.warn = originalWarn;
+    console.log = originalLog;
+  }
+});
+
+test('rate-limit polling logs RPC errors with code and masked data', async () => {
+  const app = makeAppWithQueue([]);
+  const warnings = [];
+  const originalWarn = console.warn;
+  console.warn = (message) => { warnings.push(String(message)); };
+  try {
+    const err = new Error('temporary outage');
+    err.code = 'E_LIMITS';
+    err.data = { apiKey: 'secret', reason: 'no response' };
+    app.rpc = { exited: false, request: async () => { throw err; } };
+
+    await app.pollRateLimits();
+
+    assert.equal(app.rateLimits.status, 'unknown');
+    assert.match(warnings.at(-1), /poll failed: temporary outage code=E_LIMITS/);
+    assert.match(warnings.at(-1), /apiKey.*masked/);
+    assert.doesNotMatch(warnings.at(-1), /secret/);
+  } finally {
+    console.warn = originalWarn;
+  }
+});
+
 test('output formatting classifies stream items and deltas', () => {
   assert.equal(canAppendOutput('delta', 'delta'), true);
   assert.equal(canAppendOutput('tool', 'tool'), false);
