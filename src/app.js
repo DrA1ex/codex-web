@@ -268,11 +268,22 @@ class CodexLimitWatchApp {
   }
 
   async saveQueue() {
+    this.normalizeQueueOrder();
     if (!this.queuePath) return;
     const tmp = this.queuePath + '.tmp';
     await fsp.writeFile(tmp, JSON.stringify(this.queue, null, 2));
     await fsp.rename(tmp, this.queuePath);
     this.broadcast('queue', this.queue);
+  }
+  normalizeQueueOrder() {
+    this.queue = this.queue
+      .map((item, index) => ({ item, index }))
+      .sort((a, b) => {
+        const ap = a.item.status === 'pending' ? 0 : 1;
+        const bp = b.item.status === 'pending' ? 0 : 1;
+        return ap - bp || a.index - b.index;
+      })
+      .map((entry) => entry.item);
   }
   async loadState() {
     if (!this.statePath || !fs.existsSync(this.statePath)) return;

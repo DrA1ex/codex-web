@@ -45,7 +45,7 @@ function makeAppWithQueue(queue) {
     watchInterval: 60,
   });
   app.queue = queue;
-  app.saveQueue = async () => {};
+  app.saveQueue = async () => { app.normalizeQueueOrder(); };
   app.saveState = async () => {};
   app.broadcastAll = () => {};
   app.broadcast = () => {};
@@ -188,8 +188,8 @@ test('reorderQueueItem reorders only pending slots and preserves non-pending pos
 
   await app.reorderQueueItem('third', { beforeId: 'first' });
 
-  assert.deepEqual(app.queue.map((i) => i.id), ['running', 'third', 'done', 'first', 'second']);
-  assert.deepEqual(app.queue.map((i) => i.status), ['sent', 'pending', 'completed', 'pending', 'pending']);
+  assert.deepEqual(app.queue.map((i) => i.id), ['third', 'first', 'second', 'running', 'done']);
+  assert.deepEqual(app.queue.map((i) => i.status), ['pending', 'pending', 'pending', 'sent', 'completed']);
 });
 
 test('reorderQueueItem rejects moving non-pending items or targeting non-pending items', async () => {
@@ -204,7 +204,7 @@ test('reorderQueueItem supports explicit move to end of pending segment', async 
 
   await app.reorderQueueItem('a', { beforeId: null });
 
-  assert.deepEqual(app.queue.map((i) => i.id), ['b', 'done', 'c', 'a']);
+  assert.deepEqual(app.queue.map((i) => i.id), ['b', 'c', 'a', 'done']);
 });
 
 test('sendComposerNow creates a queue item and sends immediately only when idle', async () => {
@@ -258,7 +258,7 @@ test('sendComposerNow queues and clears composer when limits are not available',
   assert.equal(app.lastScheduledDelay, 200);
 });
 
-test('sendItemNow places item after active prompt when queue is already processing', async () => {
+test('sendItemNow keeps pending item above active prompt when queue is already processing', async () => {
   const active = item('active', 'sent');
   const first = item('first');
   const second = item('second');
@@ -267,7 +267,7 @@ test('sendItemNow places item after active prompt when queue is already processi
 
   await app.sendItemNow(second);
 
-  assert.deepEqual(app.queue.map((i) => i.id), ['first', 'active', 'second']);
+  assert.deepEqual(app.queue.map((i) => i.id), ['first', 'second', 'active']);
   assert.equal(app.lastScheduledDelay, 200);
   assert.match(app.output.at(-1).text, /\[queue\] next #second/);
 });
@@ -287,7 +287,7 @@ test('sendItemNow promotes idle item to first pending slot before manual send', 
   const result = await app.sendItemNow(second);
 
   assert.equal(result.ok, true);
-  assert.deepEqual(app.queue.map((i) => i.id), ['second', 'first', 'done', 'third']);
+  assert.deepEqual(app.queue.map((i) => i.id), ['second', 'first', 'third', 'done']);
   assert.equal(sent.length, 1);
   assert.equal(sent[0].queueItem.id, 'second');
   assert.deepEqual(sent[0].options, { continueQueue: false });
@@ -375,11 +375,11 @@ test('loadQueue recovers interrupted sending items as unknown', async () => {
 
   await app.loadQueue();
 
-  assert.deepEqual(app.queue.map((i) => i.status), ['unknown', 'unknown', 'pending']);
-  assert.match(app.queue[0].error, /Previous run exited/);
+  assert.deepEqual(app.queue.map((i) => i.status), ['pending', 'unknown', 'unknown']);
   assert.match(app.queue[1].error, /Previous run exited/);
+  assert.match(app.queue[2].error, /Previous run exited/);
   const persisted = JSON.parse(await fsp.readFile(queuePath, 'utf8'));
-  assert.deepEqual(persisted.map((i) => i.status), ['unknown', 'unknown', 'pending']);
+  assert.deepEqual(persisted.map((i) => i.status), ['pending', 'unknown', 'unknown']);
 });
 
 test('loadQueue backs up corrupted queue file and starts empty', async () => {
@@ -405,7 +405,7 @@ test('undo and clear operations affect only expected queue items', async () => {
   const undo = await app.undoLast();
   assert.equal(undo.ok, true);
   assert.equal(undo.composerText, 'Prompt second');
-  assert.deepEqual(app.queue.map((i) => i.id), ['done', 'first']);
+  assert.deepEqual(app.queue.map((i) => i.id), ['first', 'done']);
 
   await app.clearPending();
   assert.deepEqual(app.queue.map((i) => i.id), ['done']);
@@ -435,18 +435,20 @@ test('updateQueueItem handles edit, duplicate, retry, and completed transitions'
   assert.notEqual(app.queue[1].id, 'failed');
 
   await app.updateQueueItem({ id: 'failed', action: 'markCompleted' });
-  assert.equal(app.queue[0].status, 'completed');
-  assert.equal(typeof app.queue[0].finishedAt, 'string');
+  const completed = app.queue.find((i) => i.id === 'failed');
+  assert.equal(completed.status, 'completed');
+  assert.equal(typeof completed.finishedAt, 'string');
 
-  app.queue[0].status = 'failed';
-  app.queue[0].error = 'again';
-  app.queue[0].startedAt = '2026-01-01T00:00:00.000Z';
-  app.queue[0].finishedAt = '2026-01-01T00:01:00.000Z';
+  completed.status = 'failed';
+  completed.error = 'again';
+  completed.startedAt = '2026-01-01T00:00:00.000Z';
+  completed.finishedAt = '2026-01-01T00:01:00.000Z';
   await app.updateQueueItem({ id: 'failed', action: 'retry' });
-  assert.equal(app.queue[0].status, 'pending');
-  assert.equal(app.queue[0].error, null);
-  assert.equal(app.queue[0].startedAt, null);
-  assert.equal(app.queue[0].finishedAt, null);
+  const retried = app.queue.find((i) => i.id === 'failed');
+  assert.equal(retried.status, 'pending');
+  assert.equal(retried.error, null);
+  assert.equal(retried.startedAt, null);
+  assert.equal(retried.finishedAt, null);
 });
 
 test('sandbox and approval policy payload mapping preserves app-server values', () => {
