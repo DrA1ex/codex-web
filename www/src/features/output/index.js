@@ -51,18 +51,18 @@ function outputLabel(type, text) {
 function renderDiffLine(line, meta) {
   const diffId = esc(line.id || '');
   const expanded = Boolean(state.expandedDiffOutput[line.id]);
-  const lines = String(meta.body || '').split(/\r?\n/);
-  const firstLine = lines.find((item) => item.trim()) || 'Diff updated';
   const active = Boolean(line.diff?.active);
+  const added = Number(line.diff?.added || 0);
+  const removed = Number(line.diff?.removed || 0);
 
   return `
     <div class="out-line diff ${expanded ? 'expanded' : 'collapsed'}">
       <div class="out-diff-card">
         <button type="button" class="out-diff-toggle" data-output-diff="${diffId}">
           <i class="out-activity-dot ${active ? '' : 'is-idle'}" aria-hidden="true"></i>
-          <span>${expanded ? 'Collapse' : 'Expand'} diff</span>
-          <b>${lines.length} lines</b>
-          <em>${esc(firstLine)}</em>
+          <span>Diff</span>
+          <b class="out-diff-stat add">+${added}</b>
+          <b class="out-diff-stat del">-${removed}</b>
         </button>
         ${expanded ? `<pre class="out-body">${esc(meta.body)}</pre>` : ''}
       </div>

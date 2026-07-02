@@ -112,6 +112,18 @@ module.exports = {
       if (out.tool) out.tool.active = false;
       if (out.diff) out.diff.active = false;
     }
+    this.currentDiffOutputId = null;
+  },
+
+  diffStats(text) {
+    let added = 0;
+    let removed = 0;
+    for (const line of String(text || '').split(/\r?\n/)) {
+      if (line.startsWith('+++') || line.startsWith('---')) continue;
+      if (line.startsWith('+')) added += 1;
+      else if (line.startsWith('-')) removed += 1;
+    }
+    return { added, removed };
   },
 
   updateDiffOutput(text) {
@@ -119,14 +131,19 @@ module.exports = {
     const limited = limitOutputText(text);
     if (this.lastDiffOutputText === limited) return;
     this.lastDiffOutputText = limited;
-    const last = this.output[this.output.length - 1];
-    if (last && last.type === 'diff') {
-      if (last.text === limited) return;
-      last.text = limited;
-      last.ts = nowIso();
-      last.diff = { ...(last.diff || {}), active: true };
+    const diff = { added: 0, removed: 0, ...this.diffStats(limited), active: true };
+    const current = this.currentDiffOutputId
+      ? this.output.find((entry) => entry.id === this.currentDiffOutputId && entry.type === 'diff')
+      : null;
+    if (current) {
+      if (current.text === limited) return;
+      current.text = limited;
+      current.ts = nowIso();
+      current.diff = { ...(current.diff || {}), ...diff };
     } else {
-      this.output.push({ id: randomId(5), ts: nowIso(), type: 'diff', text: limited, diff: { active: true } });
+      const entry = { id: randomId(5), ts: nowIso(), type: 'diff', text: limited, diff };
+      this.output.push(entry);
+      this.currentDiffOutputId = entry.id;
     }
     this.trimOutput();
     this.broadcast('output', this.output);
@@ -151,6 +168,7 @@ module.exports = {
   clearOutput() {
     this.output = [];
     this.lastDiffOutputText = null;
+    this.currentDiffOutputId = null;
     this.commandOutputByItemId.clear();
     this.broadcast('output', this.output);
     this.broadcastAll();

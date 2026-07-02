@@ -1095,7 +1095,7 @@ textarea:focus {
 }
 
 .out-diff-toggle {
-    grid-template-columns: 8px auto auto minmax(0, 1fr);
+    grid-template-columns: 8px minmax(0, 1fr) auto auto;
 }
 
 .out-tool-toggle {
@@ -1121,14 +1121,12 @@ textarea:focus {
     font-weight: 750;
 }
 
-.out-diff-toggle b,
 .out-tool-toggle b {
     color: var(--muted);
     font-weight: 650;
     white-space: nowrap;
 }
 
-.out-diff-toggle em,
 .out-tool-toggle code {
     min-width: 0;
     overflow: hidden;
@@ -1136,9 +1134,26 @@ textarea:focus {
     white-space: nowrap;
 }
 
-.out-diff-toggle em {
-    color: var(--muted);
-    font-style: normal;
+.out-diff-stat {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 38px;
+    height: 22px;
+    border-radius: 999px;
+    padding: 0 8px;
+    font-size: 12px;
+    font-weight: 750;
+}
+
+.out-diff-stat.add {
+    color: #8ff0a4;
+    background: rgba(45, 212, 96, .12);
+}
+
+.out-diff-stat.del {
+    color: #ff9c9c;
+    background: rgba(255, 92, 92, .12);
 }
 
 .out-tool-toggle code {
