@@ -274,16 +274,48 @@ function renderProjectMeta(app, nextRun) {
   ].join('');
 }
 
-function renderLimitWindow(windowInfo) {
+function limitWindowRemaining(windowInfo) {
   const used = pct(windowInfo.usedPercent);
-  const remaining = pct(windowInfo.remainingPercent) ?? (used == null ? null : Math.max(0, 100 - used));
+  return pct(windowInfo.remainingPercent) ?? (used == null ? null : Math.max(0, 100 - used));
+}
+
+function isFiveHourWindow(windowInfo) {
+  return Number(windowInfo?.windowDurationMins) === 300;
+}
+
+function isWeeklyWindow(windowInfo) {
+  return Number(windowInfo?.windowDurationMins) === 10_080;
+}
+
+function collapsedLimitWindowIndex(windows) {
+  const fiveHourIndex = windows.findIndex(isFiveHourWindow);
+  const weeklyIndex = windows.findIndex(isWeeklyWindow);
+  const fiveHourRemaining = fiveHourIndex >= 0 ? limitWindowRemaining(windows[fiveHourIndex]) : null;
+  const weeklyRemaining = weeklyIndex >= 0 ? limitWindowRemaining(windows[weeklyIndex]) : null;
+
+  if (
+    fiveHourIndex >= 0
+    && weeklyIndex >= 0
+    && fiveHourRemaining != null
+    && weeklyRemaining != null
+    && fiveHourRemaining >= 99
+    && weeklyRemaining <= 0
+  ) {
+    return weeklyIndex;
+  }
+
+  return fiveHourIndex >= 0 ? fiveHourIndex : 0;
+}
+
+function renderLimitWindow(windowInfo, options = {}) {
+  const remaining = limitWindowRemaining(windowInfo);
   const barClass = remaining == null ? 'unknown' : remaining > 60 ? 'ok' : remaining >= 25 ? 'warn' : 'danger';
   const label = windowLabel(windowInfo);
   const resetText = fmtRelative(windowInfo.resetsAt);
   const title = `${label}: ${remaining == null ? 'remaining unknown' : `${Math.round(remaining)}% left`}; reset ${fmtClock(windowInfo.resetsAt)} · in ${resetText}`;
 
   return `
-    <div class="limit-row" title="${esc(title)}">
+    <div class="limit-row ${options.collapsedPrimary ? 'mobile-limit-collapsed-primary' : ''}" title="${esc(title)}">
       <span class="limit-row-label">${esc(label)}</span>
       <div class="limit-bar ${barClass}"><span style="width:${remaining == null ? 0 : remaining}%"></span></div>
       <b>${remaining == null ? '—' : `${Math.round(remaining)}%`}</b>
@@ -326,6 +358,8 @@ function limitsCollapseButton() {
 }
 
 function renderLimitCard(bucket, showRefreshStatus = false, showCollapseButton = false) {
+  const windows = windowsForBucket(bucket);
+  const collapsedIndex = collapsedLimitWindowIndex(windows);
   return `
     <div class="limit-card">
       <div class="limit-card-head"><span>Limits</span>
@@ -333,7 +367,7 @@ function renderLimitCard(bucket, showRefreshStatus = false, showCollapseButton =
         ${rateLimitsRefreshStatus(showRefreshStatus)}
         ${showCollapseButton ? limitsCollapseButton() : ''}
       </div>
-      ${windowsForBucket(bucket).map(renderLimitWindow).join('')}
+      ${windows.map((windowInfo, index) => renderLimitWindow(windowInfo, { collapsedPrimary: index === collapsedIndex })).join('')}
     </div>
   `;
 }
