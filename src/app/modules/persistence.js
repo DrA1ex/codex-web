@@ -17,6 +17,81 @@ const {
   normalizeQueueOrder,
 } = require('../../queue');
 
+function queueBackupPath(queuePath) {
+  return `${queuePath}.bak`;
+}
+
+async function syncDir(dir) {
+  let handle;
+  try {
+    handle = await fsp.open(dir, 'r');
+    await handle.sync();
+  } catch (_) {
+    // Some filesystems/platforms do not allow fsync on directories.
+  } finally {
+    if (handle) await handle.close().catch(() => {});
+  }
+}
+
+async function writeFileDurably(filePath, content) {
+  const dir = path.dirname(filePath);
+  ensureDirSync(dir);
+  const tmp = `${filePath}.tmp.${process.pid}.${Date.now()}`;
+  let handle;
+  try {
+    handle = await fsp.open(tmp, 'w', 0o600);
+    await handle.writeFile(content);
+    await handle.sync();
+    await handle.close();
+    handle = null;
+    await fsp.rename(tmp, filePath);
+    await syncDir(dir);
+  } catch (err) {
+    if (handle) await handle.close().catch(() => {});
+    await fsp.unlink(tmp).catch(() => {});
+    throw err;
+  }
+}
+
+async function copyFileDurably(sourcePath, targetPath) {
+  const tmp = `${targetPath}.tmp.${process.pid}.${Date.now()}`;
+  try {
+    await fsp.copyFile(sourcePath, tmp);
+    let handle;
+    try {
+      handle = await fsp.open(tmp, 'r');
+      await handle.sync();
+    } finally {
+      if (handle) await handle.close().catch(() => {});
+    }
+    await fsp.rename(tmp, targetPath);
+    await syncDir(path.dirname(targetPath));
+  } catch (err) {
+    await fsp.unlink(tmp).catch(() => {});
+    throw err;
+  }
+}
+
+async function readQueueFile(queuePath) {
+  const data = JSON.parse(await fsp.readFile(queuePath, 'utf8'));
+  if (Array.isArray(data)) return data;
+  if (Array.isArray(data.items)) return data.items;
+  throw new Error('queue file does not contain an item array');
+}
+
+function recoverInterruptedQueueItems(queue) {
+  for (const item of queue) {
+    if (item.status === 'next') {
+      item.status = 'pending';
+    } else if (item.status === 'sending' || item.status === 'sent') {
+      item.status = 'unknown';
+      item.error = 'Previous run exited while this prompt may already have been accepted by Codex.';
+    }
+    normalizeQueueItem(item);
+  }
+  return queue;
+}
+
 module.exports = {
   async setupPairState(sessionId) {
     const key = sha256(`${stripTrailingSep(this.opts.projectDir)}\n${sessionId}`).slice(0, 32);
@@ -67,40 +142,61 @@ module.exports = {
 
   async loadQueue() {
     if (!this.queuePath) return;
-    if (!fs.existsSync(this.queuePath)) {
+    const backupPath = queueBackupPath(this.queuePath);
+    const mainExists = fs.existsSync(this.queuePath);
+    if (!mainExists && !fs.existsSync(backupPath)) {
       this.queue = [];
       await this.saveQueue();
       return;
     }
+    let restoreNotice = null;
     try {
-      const data = JSON.parse(await fsp.readFile(this.queuePath, 'utf8'));
-      this.queue = Array.isArray(data) ? data : (Array.isArray(data.items) ? data.items : []);
-      for (const item of this.queue) {
-        if (item.status === 'next') {
-          item.status = 'pending';
-        } else if (item.status === 'sending' || item.status === 'sent') {
-          item.status = 'unknown';
-          item.error = 'Previous run exited while this prompt may already have been accepted by Codex.';
-        }
-        normalizeQueueItem(item);
+      if (mainExists) {
+        this.queue = await readQueueFile(this.queuePath);
+      } else {
+        this.queue = await readQueueFile(backupPath);
+        restoreNotice = {
+          output: `[warning] queue file was missing; restored from backup: ${backupPath}`,
+          event: `queue file missing; restored from backup=${backupPath}`,
+        };
       }
-      await this.saveQueue();
     } catch (err) {
+      try {
+        this.queue = await readQueueFile(backupPath);
+      } catch (backupErr) {
+        const backupMessage = fs.existsSync(backupPath) ? ` Backup restore also failed: ${backupErr.message}` : ' No backup was available.';
+        const backup = `${this.queuePath}.corrupt.${Date.now()}.bak`;
+        try { if (fs.existsSync(this.queuePath)) fs.renameSync(this.queuePath, backup); } catch (_) {}
+        this.queue = [];
+        await this.saveQueue();
+        this.appendOutput(`[error] queue file was corrupted. Backup: ${backup}.${backupMessage}`, 'error');
+        this.eventLog('error', `queue file corrupted; backup=${backup}; ${err.message}; restore=${backupErr.message}`);
+        return;
+      }
       const backup = `${this.queuePath}.corrupt.${Date.now()}.bak`;
-      try { fs.renameSync(this.queuePath, backup); } catch (_) {}
-      this.queue = [];
-      await this.saveQueue();
-      this.appendOutput(`[error] queue file was corrupted. Backup: ${backup}`, 'error');
-      this.eventLog('error', `queue file corrupted; backup=${backup}; ${err.message}`);
+      try { if (fs.existsSync(this.queuePath)) fs.renameSync(this.queuePath, backup); } catch (_) {}
+      restoreNotice = {
+        output: `[warning] queue file was corrupted; restored from backup: ${backupPath}. Corrupt copy: ${backup}`,
+        event: `queue file corrupted; restored from backup=${backupPath}; corrupt=${backup}; ${err.message}`,
+      };
+    }
+    recoverInterruptedQueueItems(this.queue);
+    await this.saveQueue();
+    if (restoreNotice) {
+      this.appendOutput(restoreNotice.output, 'system');
+      this.eventLog('warn', restoreNotice.event);
     }
   },
 
   async saveQueue() {
     this.queue = normalizeQueueOrder(this.queue);
     if (!this.queuePath) return;
-    const tmp = this.queuePath + '.tmp';
-    await fsp.writeFile(tmp, JSON.stringify(this.queue, null, 2));
-    await fsp.rename(tmp, this.queuePath);
+    await writeFileDurably(this.queuePath, JSON.stringify(this.queue, null, 2));
+    try {
+      await copyFileDurably(this.queuePath, queueBackupPath(this.queuePath));
+    } catch (err) {
+      this.eventLog('error', `queue backup refresh failed; backup=${queueBackupPath(this.queuePath)}; ${err.message}`);
+    }
     this.broadcast('queue', this.queue);
   },
 

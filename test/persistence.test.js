@@ -85,6 +85,41 @@ test('loadQueue backs up corrupted queue file and starts empty', async () => {
   assert.equal(app.output.at(-1).type, 'error');
 });
 
+test('saveQueue writes a restorable queue backup', async () => {
+  const dir = await tempDir();
+  const queuePath = path.join(dir, 'queue.json');
+  const app = makeAppWithQueue([item('pending', 'pending'), item('done', 'completed')]);
+  app.queuePath = queuePath;
+  app.saveQueue = CodexLimitWatchApp.prototype.saveQueue.bind(app);
+
+  await app.saveQueue();
+
+  assert.deepEqual(JSON.parse(await fsp.readFile(queuePath, 'utf8')).map((i) => i.id), ['done', 'pending']);
+  assert.deepEqual(JSON.parse(await fsp.readFile(`${queuePath}.bak`, 'utf8')).map((i) => i.id), ['done', 'pending']);
+});
+
+test('loadQueue restores a valid backup when primary queue is corrupted', async () => {
+  const dir = await tempDir();
+  const queuePath = path.join(dir, 'queue.json');
+  await fsp.writeFile(queuePath, '{not json');
+  await fsp.writeFile(`${queuePath}.bak`, JSON.stringify([
+    { id: 'backup-next', text: 'from backup', status: 'next' },
+    { id: 'backup-done', text: 'done backup', status: 'completed' },
+  ]));
+  const app = makeAppWithQueue([]);
+  app.queuePath = queuePath;
+  app.eventsLogPath = path.join(dir, 'events.log');
+  app.saveQueue = CodexLimitWatchApp.prototype.saveQueue.bind(app);
+
+  await app.loadQueue();
+
+  assert.deepEqual(app.queue.map((i) => i.id), ['backup-done', 'backup-next']);
+  assert.deepEqual(app.queue.map((i) => i.status), ['completed', 'pending']);
+  assert.equal(JSON.parse(await fsp.readFile(queuePath, 'utf8')).length, 2);
+  assert.equal(fs.readdirSync(dir).some((name) => /^queue\.json\.corrupt\..+\.bak$/.test(name)), true);
+  assert.match(app.output.at(-1).text, /restored from backup/);
+});
+
 test('loadState respects command-line model/effort overrides and restores schedule', async () => {
   const dir = await tempDir();
   const statePath = path.join(dir, 'state.json');
