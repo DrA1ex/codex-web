@@ -75,7 +75,7 @@
     --shadow-approval: 0 18px 60px color-mix(in srgb, var(--mix-shadow) var(--shadow-approval-alpha), transparent);
 
     /* Shared surfaces */
-    --header-bg: var(--control-bg)
+    --header-bg: var(--control-bg);
     --control-bg: color-mix(in srgb, var(--panel) 72%, transparent);
     --surface-meta: color-mix(in srgb, var(--panel) var(--surface-meta-alpha), transparent);
     --surface-meta-mobile: color-mix(in srgb, var(--panel) var(--surface-meta-mobile-alpha), transparent);
@@ -215,6 +215,7 @@
         color-mix(in srgb, var(--bg) 90%, var(--accent-2)) 100%);
     --button-inset-shadow: none;
     --button-primary-text: color-mix(in srgb, var(--accent) 62%, var(--palette-black));
+    --code: color-mix(in srgb, var(--bg) 82%, transparent);
 }
 
 * {
