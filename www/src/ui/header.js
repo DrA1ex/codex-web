@@ -18,7 +18,7 @@ function isCompactHeader() {
 function fullLimitBadgeText(status) {
   if (status === 'limited') return 'limits waiting';
   if (status === 'available') return 'limits available';
-  return 'limits unknown';
+  return 'unknown';
 }
 
 function limitBadgeText(status) {
@@ -259,7 +259,7 @@ function renderProjectMeta(app, nextRun) {
 
   meta.innerHTML = [
     metaItem('Project', app.projectDir),
-    sessionMetaItem(app, sessionTitle, sessionTitle),
+    sessionMetaItem(app, sessionTitle, sessionTitle, app.projectDir),
     metaItem('Session ID', sessionId),
     metaItem(nextRun.label, nextRun.value),
   ].join('');

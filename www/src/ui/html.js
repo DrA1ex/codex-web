@@ -12,11 +12,15 @@ export function metaItem(label, value, title = value) {
   `;
 }
 
-export function sessionMetaItem(app, value, title = value) {
+export function sessionMetaItem(app, value, title = value, projectDir = '') {
   const displayValue = value == null || value === '' ? '—' : String(value);
   const displayTitle = title == null || title === '' ? displayValue : String(title);
+  const displayProjectDir = projectDir == null || projectDir === '' ? '' : String(projectDir);
   const changeButton = app.canChangeSession
     ? '<button id="changeSessionBtn" class="meta-action" title="Change session">Change</button>'
+    : '';
+  const projectPath = displayProjectDir
+    ? `<small class="session-project-path">${esc(displayProjectDir)}</small>`
     : '';
 
   return `
@@ -26,6 +30,7 @@ export function sessionMetaItem(app, value, title = value) {
         <b>${esc(displayValue)}</b>
         ${changeButton}
       </div>
+      ${projectPath}
     </div>
   `;
 }
@@ -37,7 +42,7 @@ export function envChip(label, value, ok, title, className = ok ? 'ok' : '') {
 
   return `
     <span class="env-chip ${esc(className)}" aria-label="${aria}" title="${aria}">
-      <i></i>${esc(label)}: <b>${esc(displayValue)}</b>
+      <i></i><span class="env-chip-label">${esc(label)}</span><b>${esc(displayValue)}</b>
     </span>
   `;
 }
