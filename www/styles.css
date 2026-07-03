@@ -855,6 +855,14 @@ button:disabled {
     background: var(--focus-bg);
 }
 
+.menu-wrap.open > button,
+.menu-wrap > button.open,
+.menu-wrap > button[aria-expanded="true"] {
+    border-color: var(--button-border-hover);
+    background: var(--button-bg-hover);
+    box-shadow: inset 0 0 0 1px var(--mobile-active-ring);
+}
+
 .queue-tabs {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -931,6 +939,15 @@ button:disabled {
 .queue-item.dragging {
     cursor: grabbing;
     opacity: .58;
+}
+
+.queue-item.drag-arming {
+    border-color: var(--mobile-control-border);
+    box-shadow: inset 0 0 0 1px var(--mobile-active-ring);
+}
+
+body.queue-touch-dragging {
+    user-select: none;
 }
 
 .queue-item.drop-before,
@@ -1014,6 +1031,7 @@ button:disabled {
     margin-right: 4px;
     color: var(--muted);
     cursor: grab;
+    touch-action: none;
     user-select: none;
 }
 
@@ -2263,6 +2281,20 @@ pre {
         display: flex;
     }
 
+    .queue-menu.mobile-menu-floating {
+        position: fixed;
+        z-index: 1000;
+        max-width: calc(100vw - 20px);
+        border-radius: 12px;
+        padding: 7px;
+    }
+
+    .queue-menu.mobile-menu-floating button {
+        min-height: 42px;
+        padding: 9px 11px;
+        border-radius: 9px;
+    }
+
     .output-head-actions .desktop-panel-action {
         display: none;
     }
@@ -2335,6 +2367,11 @@ pre {
     .queue-item.completed .prompt-preview {
         font-size: 14px;
         line-height: 1.35;
+    }
+
+    body:not(.mobile-queue-collapsed) .queue-panel,
+    body:not(.mobile-output-collapsed) .output-panel {
+        min-height: 200px;
     }
 
     body.mobile-queue-collapsed .queue-panel {

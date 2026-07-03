@@ -5,7 +5,7 @@ import { cancelQueueEditInDom, saveQueueEdit, toggleQueueItemExpandedInDom } fro
 import { closeConfirm, confirmCurrentAction } from '#ui/confirm';
 import { closeLimitResetModal, confirmLimitReset } from '#ui/limit-reset';
 import { closeScheduleModal } from '#ui/schedule';
-import { setQueueMenuOpen } from '#ui/header';
+import { setOutputMenuOpen, setQueueMenuOpen } from '#ui/header';
 import { saveSchedule } from './actions.js';
 
 function reportError(error) {
@@ -14,8 +14,10 @@ function reportError(error) {
 }
 
 function queueMenuIsOpen() {
-  const menu = document.getElementById('queueMenu');
-  return menu && !menu.classList.contains('hidden');
+  return ['queueMenu', 'outputMenu'].some((id) => {
+    const menu = document.getElementById(id);
+    return menu && !menu.classList.contains('hidden');
+  });
 }
 
 function cancelOrPause() {
@@ -50,6 +52,7 @@ function handleEscape(event) {
   if (queueMenuIsOpen()) {
     event.preventDefault();
     setQueueMenuOpen(false);
+    setOutputMenuOpen(false);
     return;
   }
 

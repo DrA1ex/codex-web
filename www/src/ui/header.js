@@ -110,20 +110,69 @@ export function setButtonState(id, disabled, hidden) {
   button.classList.toggle('hidden', Boolean(hidden));
 }
 
-export function setQueueMenuOpen(open) {
-  const menu = byId('queueMenu');
-  const button = byId('queueMenuBtn');
+function isMobilePanelMenu() {
+  return typeof window !== 'undefined'
+    && Boolean(window.matchMedia?.('(orientation: portrait) and (max-width: 860px)').matches);
+}
 
-  if (menu) menu.classList.toggle('hidden', !open);
-  if (button) button.setAttribute('aria-expanded', open ? 'true' : 'false');
+function clearPanelMenuPosition(menu) {
+  if (!menu) return;
+  menu.classList.remove('mobile-menu-floating');
+  menu.style.top = '';
+  menu.style.left = '';
+  menu.style.right = '';
+  menu.style.minWidth = '';
+}
+
+function positionPanelMenu(menu, button) {
+  if (!menu || !button || !isMobilePanelMenu()) {
+    clearPanelMenuPosition(menu);
+    return;
+  }
+
+  const rect = button.getBoundingClientRect();
+  const gutter = 10;
+  const minWidth = Math.min(220, window.innerWidth - gutter * 2);
+  const left = Math.max(gutter, Math.min(window.innerWidth - minWidth - gutter, rect.right - minWidth));
+
+  menu.classList.add('mobile-menu-floating');
+  menu.style.left = `${Math.round(left)}px`;
+  menu.style.right = 'auto';
+  menu.style.minWidth = `${Math.round(minWidth)}px`;
+
+  const belowTop = rect.bottom + 6;
+  const menuHeight = menu.offsetHeight || 0;
+  const top = belowTop + menuHeight > window.innerHeight - gutter
+    ? Math.max(gutter, rect.top - menuHeight - 6)
+    : belowTop;
+  menu.style.top = `${Math.round(top)}px`;
+}
+
+function setPanelMenuOpen(menuId, buttonId, open) {
+  const menu = byId(menuId);
+  const button = byId(buttonId);
+  const wrap = button?.closest?.('.menu-wrap');
+
+  if (menu) {
+    menu.classList.toggle('hidden', !open);
+    if (open) positionPanelMenu(menu, button);
+    else clearPanelMenuPosition(menu);
+  }
+
+  if (button) {
+    button.setAttribute('aria-expanded', open ? 'true' : 'false');
+    button.classList.toggle('open', Boolean(open));
+  }
+
+  if (wrap) wrap.classList.toggle('open', Boolean(open));
+}
+
+export function setQueueMenuOpen(open) {
+  setPanelMenuOpen('queueMenu', 'queueMenuBtn', open);
 }
 
 export function setOutputMenuOpen(open) {
-  const menu = byId('outputMenu');
-  const button = byId('outputMenuBtn');
-
-  if (menu) menu.classList.toggle('hidden', !open);
-  if (button) button.setAttribute('aria-expanded', open ? 'true' : 'false');
+  setPanelMenuOpen('outputMenu', 'outputMenuBtn', open);
 }
 
 function renderControlState(app, counts = {}) {

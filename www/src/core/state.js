@@ -42,6 +42,7 @@ export const state = {
 
   queueDragId: null,
   queueDropBeforeId: undefined,
+  queueTouchDragId: null,
 
   composer: null,
   outputEl: null,
