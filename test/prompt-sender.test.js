@@ -218,6 +218,39 @@ test('sendPrompt marks successful prompts, waits for completion, and schedules q
   assert.equal(app.currentTurnId, null);
 });
 
+test('sendPrompt passes selected model and effort to turn/start and prints them', async () => {
+  const active = item('active');
+  const requests = [];
+  const app = makeAppWithQueue([active], { model: 'gpt-test', effort: 'high' });
+  app.rpc = {
+    request: async (method, params) => {
+      requests.push({ method, params });
+      return { turn: { id: 'turn-active' } };
+    },
+  };
+  app.waitForTurnCompletion = async () => {};
+
+  await app.sendPrompt(active, { continueQueue: false });
+
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0].method, 'turn/start');
+  assert.equal(requests[0].params.model, 'gpt-test');
+  assert.equal(requests[0].params.effort, 'high');
+  assert.match(app.output.find((entry) => entry.type === 'send').text, /model: gpt-test · effort: high/);
+});
+
+test('sendPrompt output shows default model and effort when no override is selected', async () => {
+  const active = item('active');
+  const app = makeAppWithQueue([active]);
+  app.app.defaultModel = 'gpt-default';
+  app.rpc = { request: async () => ({ turn: { id: 'turn-active' } }) };
+  app.waitForTurnCompletion = async () => {};
+
+  await app.sendPrompt(active, { continueQueue: false });
+
+  assert.match(app.output.find((entry) => entry.type === 'send').text, /model: gpt-default \(default\) · effort: default/);
+});
+
 test('sendPrompt pauses manual send after completion without queue continuation', async () => {
   const active = item('active');
   const app = makeAppWithQueue([active]);

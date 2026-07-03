@@ -153,10 +153,12 @@ test('selectSession unavailable state clears session and queue through failSessi
 });
 
 test('createSession starts a thread and validates missing session ids', async () => {
-  const app = makeAppWithQueue([]);
+  const app = makeAppWithQueue([], { model: 'gpt-test', effort: 'medium' });
   app.app.state = 'selecting-session';
+  const requests = [];
   app.rpc = {
-    request: async (method) => {
+    request: async (method, params) => {
+      requests.push({ method, params });
       if (method === 'thread/start') return { thread: { threadId: 'new-thread', title: 'New thread' } };
       if (method === 'thread/read') return { thread: { threadId: 'new-thread', title: 'Read new thread' } };
       return {};
@@ -169,6 +171,9 @@ test('createSession starts a thread and validates missing session ids', async ()
   assert.equal(app.app.sessionId, 'new-thread');
   assert.equal(app.app.sessionTitle, 'Read new thread');
   assert.equal(app.app.state, 'watching');
+  assert.equal(requests[0].method, 'thread/start');
+  assert.equal(requests[0].params.model, 'gpt-test');
+  assert.equal(requests[0].params.effort, 'medium');
 
   const missing = makeAppWithQueue([]);
   missing.app.state = 'selecting-session';

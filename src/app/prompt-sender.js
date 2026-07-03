@@ -42,6 +42,20 @@ function createTurnStartParams(ctx, item) {
   return params;
 }
 
+function promptModelLabel(ctx) {
+  const selected = ctx.opts.model || ctx.app.model || '';
+  if (selected) return selected;
+  return ctx.app.defaultModel ? `${ctx.app.defaultModel} (default)` : 'default';
+}
+
+function promptEffortLabel(ctx) {
+  return ctx.opts.effort || ctx.app.effort || 'default';
+}
+
+function promptSendLabel(ctx, item) {
+  return `[send] #${item.id} · ${item.lineCount} lines · model: ${promptModelLabel(ctx)} · effort: ${promptEffortLabel(ctx)}`;
+}
+
 function finishFailedPrompt(ctx, item, err) {
   item.finishedAt = nowIso();
   item.status = 'failed';
@@ -211,7 +225,7 @@ module.exports = {
 
     await this.saveQueue();
     this.app.state = 'sending';
-    this.appendOutput(`[send] #${item.id} · ${item.lineCount} lines`, 'send');
+    this.appendOutput(promptSendLabel(this, item), 'send');
     this.appendOutput(`[prompt]\n${item.text}`, 'prompt');
     this.broadcastAll();
 
