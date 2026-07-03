@@ -20,7 +20,9 @@ function normalizePromptText(text) {
 
 function shouldOnlyQueuePrompt(ctx) {
   return !!(
-    ctx.currentItemId
+    ctx.app.state !== 'watching'
+    || ctx.app.scheduledRunAt
+    || ctx.currentItemId
     || ctx.currentTurnId
     || ctx.isQueueProcessingActive()
     || ctx.queue.some((item) => isPendingLikeStatus(item.status))

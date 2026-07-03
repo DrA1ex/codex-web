@@ -146,6 +146,27 @@ test('manual send countdown does not expose queue resume before prompt starts', 
   assert.equal(snap.app.canPause, false);
 });
 
+test('empty active queue can be paused and resumed explicitly', () => {
+  const app = makeAppWithQueue([]);
+  app.app.state = 'watching';
+
+  let snap = app.snapshot();
+  assert.equal(snap.app.canPause, true);
+  assert.equal(snap.app.canResume, false);
+
+  app.pause();
+  snap = app.snapshot();
+  assert.equal(app.app.state, 'paused');
+  assert.equal(snap.app.canPause, false);
+  assert.equal(snap.app.canResume, true);
+
+  app.resume();
+  snap = app.snapshot();
+  assert.equal(app.app.state, 'watching');
+  assert.equal(snap.app.canPause, true);
+  assert.equal(snap.app.canResume, false);
+});
+
 test('resume respects approvals and schedules queue pump when unpaused', () => {
   const approval = makeAppWithQueue([]);
   approval.approval = { rpcId: 1 };

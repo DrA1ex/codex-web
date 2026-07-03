@@ -8,6 +8,7 @@ const { item, makeAppWithQueue } = require('./helpers');
 test('sendComposerNow creates a queue item and sends immediately only when idle', async () => {
   const app = makeAppWithQueue([]);
   app.rateLimits = { status: 'available', buckets: [], resetAt: null };
+  app.app.state = 'watching';
   const sent = [];
   app.sendPrompt = async (queueItem, options) => {
     sent.push({ queueItem, options });
@@ -22,6 +23,21 @@ test('sendComposerNow creates a queue item and sends immediately only when idle'
   assert.equal(sent.length, 1);
   assert.equal(sent[0].queueItem.id, result.item.id);
   assert.deepEqual(sent[0].options, { continueQueue: false });
+});
+
+test('sendComposerNow queues without immediate send when queue is paused', async () => {
+  const app = makeAppWithQueue([]);
+  app.rateLimits = { status: 'available', buckets: [], resetAt: null };
+  app.app.state = 'paused';
+  app.sendPrompt = async () => { throw new Error('should not send while paused'); };
+
+  const result = await app.sendComposerNow('hold in queue');
+
+  assert.equal(result.ok, true);
+  assert.equal(result.clearComposer, true);
+  assert.deepEqual(app.queue.map((i) => i.text), ['hold in queue']);
+  assert.equal(app.lastScheduledDelay, 200);
+  assert.equal(app.app.state, 'paused');
 });
 
 test('sendComposerNow queues instead of erroring when busy or pending exists', async () => {

@@ -119,7 +119,7 @@ module.exports = {
     const hasScheduledQueue = !!this.app.scheduledRunAt;
     const hasAutoQueueWork = hasPendingQueue || hasScheduledQueue;
     const canPauseProcessing = !this.currentManualSend
-      && (this.isQueueProcessingActive() || hasAutoQueueWork)
+      && (this.app.state === 'watching' || this.isQueueProcessingActive() || hasAutoQueueWork)
       && !NON_PAUSABLE_STATES.has(this.app.state);
     const canPauseManualContinuation = manualPromptActive
       && this.manualSendContinueQueue
