@@ -10,7 +10,7 @@ import {
 } from '#features/queue';
 import { closeConfirm, confirmCurrentAction } from '#ui/confirm';
 import { closeScheduleModal, openScheduleModal } from '#ui/schedule';
-import { renderHeader, setMobileCollapsed } from '#ui/header';
+import { hideStatusNotice, renderHeader, setMobileCollapsed } from '#ui/header';
 import {
   addQueue,
   clearCompletedQueue,
@@ -40,6 +40,7 @@ const CLICK_TARGET_SELECTOR = [
   '[data-output-diff]',
   '[data-output-tool]',
   '[data-toggle-prompt]',
+  '#statusNotice',
 ].join(',');
 
 const SIMPLE_POST_ACTIONS = {
@@ -145,6 +146,12 @@ function handleMobileCollapse(target) {
   return true;
 }
 
+function handleStatusNotice(target) {
+  if (!target.closest?.('#statusNotice')) return false;
+  hideStatusNotice();
+  return true;
+}
+
 function handleButton(target) {
   const action = BUTTON_ACTIONS[target.id];
   if (action) {
@@ -206,6 +213,7 @@ export function attachClickHandlers() {
       handleQueueFilter(target) ||
       handleOutputDiffToggle(target) ||
       handleOutputToolToggle(target) ||
+      handleStatusNotice(target) ||
       handleMobileCollapse(target) ||
       handleButton(target) ||
       handleSessionAction(target) ||

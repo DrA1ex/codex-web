@@ -24,6 +24,7 @@ export const state = {
   renderKeys: Object.create(null),
   lastNoticeKey: '',
   noticeTimer: null,
+  noticeArmed: false,
   previousNoticeSnapshot: null,
 
   confirmAction: null,

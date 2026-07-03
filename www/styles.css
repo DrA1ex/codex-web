@@ -491,21 +491,37 @@ button:disabled {
     left: 50%;
     transform: translateX(-50%);
     z-index: 29;
-    display: flex;
+    display: grid;
+    grid-template-columns: 8px minmax(0, 1fr);
     align-items: center;
-    justify-content: center;
-    width: clamp(260px, 24vw, 420px);
+    gap: 11px;
+    width: clamp(280px, 26vw, 440px);
     max-width: calc(100vw - 28px);
     margin: 0;
-    border: 1px solid rgba(83, 220, 137, .38);
-    border-radius: 10px;
-    background: rgba(14, 37, 25, .96);
-    color: #9ee8b7;
+    border: 1px solid rgba(96, 180, 130, .34);
+    border-radius: 8px;
+    background: rgba(15, 23, 35, .96);
+    color: var(--text);
     padding: 12px 14px;
     font-size: 14px;
     font-weight: 750;
-    box-shadow: 0 18px 60px rgba(0, 0, 0, .34);
+    box-shadow: 0 18px 60px rgba(0, 0, 0, .38), inset 0 1px 0 rgba(255, 255, 255, .045);
     backdrop-filter: blur(12px);
+    cursor: pointer;
+}
+
+.status-notice::before {
+    content: "";
+    width: 8px;
+    height: 8px;
+    border-radius: 999px;
+    background: var(--ok);
+    box-shadow: 0 0 0 4px rgba(83, 220, 137, .12);
+}
+
+.status-notice:hover {
+    border-color: rgba(96, 180, 130, .5);
+    background: rgba(20, 31, 45, .98);
 }
 
 .countdown-notice button {
@@ -520,7 +536,7 @@ button:disabled {
 }
 
 :root[data-theme="light"] .status-notice {
-    background: rgba(231, 255, 239, .98);
+    background: rgba(255, 255, 255, .98);
 }
 
 .main {

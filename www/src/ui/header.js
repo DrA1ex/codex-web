@@ -139,7 +139,7 @@ function renderControlState(app, counts = {}) {
   renderStatusNotice(app, counts);
 }
 
-function hideStatusNotice() {
+export function hideStatusNotice() {
   const notice = byId('statusNotice');
   if (state.noticeTimer) {
     clearTimeout(state.noticeTimer);
@@ -176,15 +176,20 @@ function renderStatusNotice(app, counts = {}) {
   const previous = state.previousNoticeSnapshot;
   state.previousNoticeSnapshot = snapshot;
 
+  if (snapshot.sending + snapshot.sent > 0 || ['countdown', 'sending', 'streaming'].includes(snapshot.appState)) {
+    state.noticeArmed = true;
+  }
+
   if (snapshot.appState === 'countdown') {
     hideStatusNotice();
     return;
   }
 
-  if (!previous) return;
+  if (!previous || !state.noticeArmed) return;
 
   if (snapshot.appState === 'done' && previous.appState !== 'done') {
     showStatusNotice('Queue is done!', `done:${snapshot.completed}:${snapshot.failed}:${snapshot.unknown}`);
+    state.noticeArmed = false;
     return;
   }
 
@@ -193,6 +198,7 @@ function renderStatusNotice(app, counts = {}) {
   const hasPendingQueue = snapshot.pending > 0;
   if (snapshot.appState === 'paused' && hasPendingQueue && noRunningPrompt && hadRunningPrompt) {
     showStatusNotice('Prompt is finished', `prompt:${snapshot.completed}:${snapshot.failed}:${snapshot.unknown}:${snapshot.pending}`);
+    state.noticeArmed = false;
   }
 }
 
