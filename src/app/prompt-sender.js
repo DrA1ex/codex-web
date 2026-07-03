@@ -225,6 +225,7 @@ module.exports = {
     this.turnCompletionSeen = false;
     this.turnCompletionStatus = null;
 
+    await this.beginQueueItemUsage(item);
     await this.saveQueue();
     this.app.state = 'sending';
     this.appendOutput(promptSendLabel(this, item), 'send');
@@ -237,6 +238,7 @@ module.exports = {
 
       this.currentTurnId = turn.id || this.currentTurnId;
       this.debug.lastTurnId = this.currentTurnId;
+      await this.recordQueueItemTurn(item, this.currentTurnId);
 
       if (!this.turnCompletionSeen) {
         item.status = 'sent';
@@ -251,6 +253,7 @@ module.exports = {
     } finally {
       const continueAfterPrompt = shouldContinueAfterPrompt(this, continueQueue);
 
+      await this.completeQueueItemUsage(item);
       this.currentItemId = null;
       this.currentTurnId = null;
       this.currentManualSend = false;

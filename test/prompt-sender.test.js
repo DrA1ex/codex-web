@@ -248,10 +248,10 @@ test('sendPrompt passes selected model and effort to turn/start and prints them'
 
   await app.sendPrompt(active, { continueQueue: false });
 
-  assert.equal(requests.length, 1);
-  assert.equal(requests[0].method, 'turn/start');
-  assert.equal(requests[0].params.model, 'gpt-test');
-  assert.equal(requests[0].params.effort, 'high');
+  const turnStart = requests.find((request) => request.method === 'turn/start');
+  assert.ok(turnStart);
+  assert.equal(turnStart.params.model, 'gpt-test');
+  assert.equal(turnStart.params.effort, 'high');
   assert.match(app.output.find((entry) => entry.type === 'send').text, /model: gpt-test · effort: high/);
 });
 
@@ -265,6 +265,48 @@ test('sendPrompt output shows default model and effort when no override is selec
   await app.sendPrompt(active, { continueQueue: false });
 
   assert.match(app.output.find((entry) => entry.type === 'send').text, /model: gpt-default \(default\) · effort: default/);
+});
+
+test('sendPrompt stores token usage and account-level limit deltas', async () => {
+  const active = item('active');
+  const app = makeAppWithQueue([active]);
+  let limitReads = 0;
+  app.rpc = {
+    request: async (method) => {
+      if (method === 'account/rateLimits/read') {
+        limitReads += 1;
+        return {
+          rateLimits: {
+            limitId: 'codex',
+            limitName: 'codex',
+            primary: { usedPercent: limitReads === 1 ? 10 : 14, windowDurationMins: 300 },
+          },
+        };
+      }
+      if (method === 'turn/start') return { turn: { id: 'turn-active' } };
+      return {};
+    },
+  };
+  app.waitForTurnCompletion = async () => {
+    app.handleNotification('thread/tokenUsage/updated', {
+      threadId: app.app.sessionId,
+      turnId: 'turn-active',
+      tokenUsage: { last: { inputTokens: 10, cachedInputTokens: 4, outputTokens: 6, reasoningOutputTokens: 2, totalTokens: 18 } },
+    });
+    app.handleNotification('turn/completed', { turn: { id: 'turn-active', status: 'completed' } });
+  };
+  app.tryReadSession = async () => {};
+  app.scheduleQueueItemUsageRefresh = (id) => { app.pendingUsageRefreshItemId = id; };
+
+  await app.sendPrompt(active, { continueQueue: false });
+
+  assert.equal(active.status, 'completed');
+  assert.equal(active.usage.threadId, app.app.sessionId);
+  assert.equal(active.usage.turnId, 'turn-active');
+  assert.equal(active.usage.tokenUsage.totalTokens, 18);
+  assert.deepEqual(active.usage.limitDeltas.map((delta) => [delta.window, delta.usedPercent]), [['5h', 4]]);
+  assert.equal(active.usage.limitDeltaScope, 'account');
+  assert.equal(active.usage.refreshPending, true);
 });
 
 test('sendPrompt pauses manual send after completion without queue continuation', async () => {

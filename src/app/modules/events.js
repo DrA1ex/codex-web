@@ -41,6 +41,10 @@ module.exports = {
       this.appendOutput(`[error] ${message}`, 'error');
       return;
     }
+    if (method === 'thread/tokenUsage/updated') {
+      this.handleTokenUsageUpdated(params);
+      return;
+    }
     if (method === 'turn/started') {
       const turn = params.turn || params;
       this.currentTurnId = turn.id || turn.turnId || this.currentTurnId;
@@ -49,6 +53,7 @@ module.exports = {
       const item = this.currentItem();
       if (item) {
         item.status = 'sent';
+        this.recordQueueItemTurn(item, this.currentTurnId).catch(() => {});
         this.saveQueue().catch(() => {});
       }
       this.app.state = 'streaming';

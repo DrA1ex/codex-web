@@ -43,6 +43,67 @@ test('handleNotification marks failed turns, appends error, and pauses queue', (
   assert.match(app.app.message, /turn failure/);
 });
 
+test('thread token usage notifications attach only to matching active turn', () => {
+  const active = item('active', 'sent');
+  const app = makeAppWithQueue([active]);
+  app.currentItemId = 'active';
+  app.currentTurnId = 'turn-1';
+  app.app.sessionId = 'thread-1';
+
+  app.handleNotification('thread/tokenUsage/updated', {
+    threadId: 'other-thread',
+    turnId: 'turn-1',
+    tokenUsage: { last: { inputTokens: 1, cachedInputTokens: 0, outputTokens: 1, reasoningOutputTokens: 0, totalTokens: 2 } },
+  });
+  assert.equal(active.usage, null);
+
+  app.handleNotification('thread/tokenUsage/updated', {
+    threadId: 'thread-1',
+    turnId: 'other-turn',
+    tokenUsage: { last: { inputTokens: 1, cachedInputTokens: 0, outputTokens: 1, reasoningOutputTokens: 0, totalTokens: 2 } },
+  });
+  assert.equal(active.usage, null);
+
+  app.handleNotification('thread/tokenUsage/updated', {
+    threadId: 'thread-1',
+    turnId: 'turn-1',
+    tokenUsage: { last: { inputTokens: 10, cachedInputTokens: 4, outputTokens: 6, reasoningOutputTokens: 2, totalTokens: 18 } },
+  });
+
+  assert.equal(active.usage.threadId, 'thread-1');
+  assert.equal(active.usage.turnId, 'turn-1');
+  assert.equal(active.usage.tokenUsage.totalTokens, 18);
+});
+
+test('thread token usage notifications can update a finished matching item', () => {
+  const done = item('done', 'completed');
+  done.usage = {
+    threadId: 'thread-1',
+    turnId: 'turn-done',
+    tokenUsage: null,
+    startedLimits: null,
+    finishedLimits: null,
+    refreshedLimits: null,
+    limitDeltas: [],
+    limitDeltaScope: 'account',
+    usageStatus: 'pending',
+    usageUpdatedAt: new Date(0).toISOString(),
+    refreshPending: false,
+  };
+  const app = makeAppWithQueue([done]);
+  app.app.sessionId = 'thread-1';
+  app.currentItemId = null;
+  app.currentTurnId = null;
+
+  app.handleNotification('thread/tokenUsage/updated', {
+    threadId: 'thread-1',
+    turnId: 'turn-done',
+    tokenUsage: { last: { inputTokens: 2, cachedInputTokens: 1, outputTokens: 3, reasoningOutputTokens: 0, totalTokens: 5 } },
+  });
+
+  assert.equal(done.usage.tokenUsage.totalTokens, 5);
+});
+
 test('handleNotification routes item, delta, plan, diff, and error events to output handlers', () => {
   const app = makeAppWithQueue([]);
 

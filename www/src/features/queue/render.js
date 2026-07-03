@@ -30,14 +30,50 @@ function promptToggleAttrs(item, expanded, editing) {
   ].join(' ');
 }
 
+function compactNumber(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return '';
+  if (number >= 1_000_000) return `${(number / 1_000_000).toFixed(number >= 10_000_000 ? 0 : 1)}m`;
+  if (number >= 1_000) return `${(number / 1_000).toFixed(number >= 10_000 ? 0 : 1)}k`;
+  return String(Math.round(number));
+}
+
+function renderUsageSummary(item) {
+  const usage = item.usage || null;
+  if (!usage || !['completed', 'failed', 'unknown', 'cancelled'].includes(item.status)) return '';
+
+  const chips = [];
+  const title = [];
+  const tokens = usage.tokenUsage || null;
+  if (tokens?.totalTokens != null) {
+    chips.push(`${compactNumber(tokens.totalTokens)} tok`);
+    title.push(`Tokens: ${tokens.totalTokens}`);
+    title.push(`Input: ${tokens.inputTokens || 0}`);
+    title.push(`Cached input: ${tokens.cachedInputTokens || 0}`);
+    title.push(`Output: ${tokens.outputTokens || 0}`);
+    title.push(`Reasoning output: ${tokens.reasoningOutputTokens || 0}`);
+  }
+
+  for (const delta of usage.limitDeltas || []) {
+    if (delta?.usedPercent == null) continue;
+    chips.push(`${delta.window || delta.limitName || 'limit'} +${delta.usedPercent}%`);
+  }
+
+  if (!chips.length) return '';
+  if ((usage.limitDeltas || []).length) title.push('Limit deltas are account-level and may include parallel Codex work.');
+
+  return `<span class="queue-usage" title="${esc(title.join('\n'))}">${chips.map((chip) => `<b>${esc(chip)}</b>`).join('')}</span>`;
+}
+
 function renderQueueHeader(item, index, draggable, completed, expanded, editing) {
   const finishedOrCreatedAt = completed && item.finishedAt ? item.finishedAt : item.createdAt;
   const dragHandle = draggable ? '<span class="queue-drag-handle" title="Drag to reorder">↕</span>' : '';
   const toggleAttrs = promptToggleAttrs(item, expanded, editing);
+  const usage = renderUsageSummary(item);
 
   return `
     <div class="queue-top" ${toggleAttrs}>
-      <span>${dragHandle}#${index + 1} <span class="status ${esc(item.status)}">${esc(item.status)}</span> · ${item.lineCount || 0} lines</span>
+      <span>${dragHandle}#${index + 1} <span class="status ${esc(item.status)}">${esc(item.status)}</span> · ${item.lineCount || 0} lines ${usage}</span>
       <span>${esc(fmtTime(finishedOrCreatedAt))}</span>
     </div>
   `;

@@ -49,6 +49,8 @@ class CodexLimitWatchApp {
     this.pumpTimer = null;
     this.limitTimer = null;
     this.approvalTimer = null;
+    this.usageRefreshTimer = null;
+    this.pendingUsageRefreshItemId = null;
     this.countdownCancel = false;
 
     this.currentTurnResolve = null;

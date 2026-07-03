@@ -1029,6 +1029,33 @@ body.queue-touch-dragging {
     white-space: nowrap;
 }
 
+.queue-usage {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    max-width: 100%;
+    margin-left: 6px;
+    vertical-align: middle;
+}
+
+.queue-usage b {
+    display: inline-flex;
+    align-items: center;
+    max-width: 88px;
+    min-height: 18px;
+    padding: 2px 6px;
+    border: 1px solid var(--border-soft);
+    border-radius: 999px;
+    background: var(--surface-pill);
+    color: var(--muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 10px;
+    font-weight: 750;
+    line-height: 1;
+}
+
 .queue-drag-handle {
     display: inline-flex;
     align-items: center;

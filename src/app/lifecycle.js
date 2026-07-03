@@ -141,6 +141,8 @@ module.exports = {
     if (this.shuttingDown) return;
 
     this.clearPumpTimer();
+    if (this.usageRefreshTimer) clearTimeout(this.usageRefreshTimer);
+    this.usageRefreshTimer = null;
     this.shuttingDown = true;
     this.app.state = 'shutting-down';
     this.app.message = reason;

@@ -19,6 +19,7 @@ function makeQueueItem(text) {
     lineCount: 0,
     preview: '',
     error: null,
+    usage: null,
   };
   normalizeQueueItem(item);
   return item;
@@ -33,6 +34,7 @@ function normalizeQueueItem(item) {
   item.lineCount = lineCount(item.text);
   item.preview = previewOf(item.text);
   if (!Object.prototype.hasOwnProperty.call(item, 'error')) item.error = null;
+  if (!Object.prototype.hasOwnProperty.call(item, 'usage')) item.usage = null;
   return item;
 }
 function countQueue(queue) {
@@ -101,6 +103,7 @@ function updateQueueItemData(queue, body) {
     item.text = String(body.text || '');
     item.status = 'pending';
     item.error = null;
+    item.usage = null;
     normalizeQueueItem(item);
   } else if (body.action === 'duplicate') {
     const dup = makeQueueItem(item.text);
@@ -115,6 +118,7 @@ function updateQueueItemData(queue, body) {
     item.startedAt = null;
     item.finishedAt = null;
     item.error = null;
+    item.usage = null;
   } else if (body.status) {
     item.status = String(body.status);
   }
