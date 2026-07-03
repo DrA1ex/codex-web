@@ -50,7 +50,7 @@ function renderUsageSummary(item) {
   const title = [];
   const tokens = usage.tokenUsage || null;
   if (tokens?.totalTokens != null) {
-    chips.push(`${compactNumber(tokens.totalTokens)} tok`);
+    chips.push(`${compactNumber(tokens.totalTokens)} t.`);
     title.push(`Tokens: ${tokens.totalTokens}`);
     title.push(`Input: ${tokens.inputTokens || 0}`);
     title.push(`Cached input: ${tokens.cachedInputTokens || 0}`);
@@ -60,7 +60,7 @@ function renderUsageSummary(item) {
 
   for (const delta of usage.limitDeltas || []) {
     if (delta?.usedPercent == null) continue;
-    chips.push(`${delta.window || delta.limitName || 'limit'} +${delta.usedPercent}%`);
+    chips.push(`${delta.window || delta.limitName || 'limit'} -${delta.usedPercent}%`);
   }
 
   if (!chips.length) return '';
@@ -75,11 +75,10 @@ function renderQueueHeader(item, index, draggable, completed, expanded, editing)
     ? `<span class="queue-drag-handle" title="Drag to reorder">${icon('drag')}</span>`
     : '';
   const toggleAttrs = promptToggleAttrs(item, expanded, editing);
-  const usage = renderUsageSummary(item);
 
   return `
     <div class="queue-top" ${toggleAttrs}>
-      <span>${dragHandle}#${index + 1} <span class="status ${esc(item.status)}">${esc(item.status)}</span> · ${item.lineCount || 0} lines ${usage}</span>
+      <span>${dragHandle}#${index + 1} <span class="status ${esc(item.status)}">${esc(item.status)}</span> · ${item.lineCount || 0} lines</span>
       <span>${esc(fmtTime(finishedOrCreatedAt))}</span>
     </div>
   `;
@@ -148,6 +147,7 @@ function renderQueueItem(item, index, app) {
       ${renderQueuePrompt(item, idAttr, expanded, editing)}
       ${item.error ? `<div class="prompt-error">${esc(item.error)}</div>` : ''}
       ${editing ? renderEditActions(item, idAttr) : (!completed && !running ? renderQueueActions(item, idAttr, app) : '')}
+      ${completed ? renderUsageSummary(item) : ''}
     </div>
   `;
 }

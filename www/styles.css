@@ -1077,7 +1077,7 @@ body.queue-touch-dragging {
     align-items: center;
     gap: 4px;
     max-width: 100%;
-    margin-left: 6px;
+    padding-top: 8px;
     vertical-align: middle;
 }
 
