@@ -4,7 +4,7 @@ import { addQueue, updateCounter } from '#features/composer';
 import { clearQueueScrollRequest, renderQueue, requestQueueScroll } from '#features/queue';
 import { openConfirm } from '#ui/confirm';
 import { closeScheduleModal, scheduleInputIso } from '#ui/schedule';
-import { setQueueMenuOpen } from '#ui/header';
+import { setOutputMenuOpen, setQueueMenuOpen } from '#ui/header';
 
 export function reportError(error) {
   if (isNetworkError(error)) return;
@@ -20,7 +20,10 @@ export function queueItemById(id) {
 }
 
 export function closeQueueMenuIfOutside(target) {
-  if (!target?.closest?.('.menu-wrap')) setQueueMenuOpen(false);
+  if (!target?.closest?.('.menu-wrap')) {
+    setQueueMenuOpen(false);
+    setOutputMenuOpen(false);
+  }
 }
 
 export function saveSchedule() {
@@ -39,6 +42,7 @@ export function saveSchedule() {
 }
 
 export function undoQueue() {
+  setQueueMenuOpen(false);
   api('/api/queue/undo')
     .then((response) => {
       if (state.composer && response.composerText !== undefined) state.composer.value = response.composerText;
@@ -50,7 +54,24 @@ export function undoQueue() {
 
 export function toggleQueueMenu() {
   const menu = document.getElementById('queueMenu');
+  setOutputMenuOpen(false);
   setQueueMenuOpen(!(menu && !menu.classList.contains('hidden')));
+}
+
+export function toggleOutputMenu() {
+  const menu = document.getElementById('outputMenu');
+  setQueueMenuOpen(false);
+  setOutputMenuOpen(!(menu && !menu.classList.contains('hidden')));
+}
+
+export function scrollOutputToBottomFromMenu() {
+  setOutputMenuOpen(false);
+  scrollOutputToBottom();
+}
+
+export function clearOutputFromMenu() {
+  setOutputMenuOpen(false);
+  post('/api/output/clear');
 }
 
 export function clearPendingQueue() {

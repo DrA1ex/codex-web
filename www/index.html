@@ -37,12 +37,12 @@
 <div id="scheduleBox" class="confirm hidden"></div>
 <main class="main">
   <section class="panel queue-panel">
-    <div class="panel-head"><h2>Queue <span id="queueCountBadge" class="count-badge">0</span></h2><div class="panel-actions queue-head-actions"><button id="queueCollapseBtn" class="mobile-collapse-btn icon-only" title="Collapse queue" aria-expanded="true">⌃</button><button id="undoBtn" title="Undo last">↶ Undo</button><div class="menu-wrap"><button id="queueMenuBtn" class="icon-only" aria-haspopup="menu" aria-expanded="false" title="Queue actions">⋯</button><div id="queueMenu" class="queue-menu hidden" role="menu"><button id="clearBtn" role="menuitem">Clear pending</button><button id="clearCompletedBtn" role="menuitem">Clear completed</button></div></div></div></div>
+    <div class="panel-head"><h2>Queue <span id="queueCountBadge" class="count-badge">0</span></h2><div class="panel-actions queue-head-actions"><button id="queueCollapseBtn" class="mobile-collapse-btn icon-only" title="Collapse queue" aria-expanded="true">⌃</button><button id="undoBtn" title="Undo last">↶ Undo</button><div class="menu-wrap"><button id="queueMenuBtn" class="icon-only" aria-haspopup="menu" aria-expanded="false" title="Queue actions">⋯</button><div id="queueMenu" class="queue-menu hidden" role="menu"><button id="undoMenuBtn" class="mobile-menu-item" role="menuitem">Undo last</button><button id="clearBtn" role="menuitem">Clear pending</button><button id="clearCompletedBtn" role="menuitem">Clear completed</button></div></div></div></div>
     <div id="queueTabs" class="queue-tabs"></div>
     <div id="queue" class="panel-body"></div>
   </section>
   <section class="panel output-panel">
-    <div class="panel-head"><h2>Output</h2><div class="panel-actions"><button id="bottomBtn">↓ Scroll to bottom</button><button id="clearOutputBtn">⌫ Clear output</button></div></div>
+    <div class="panel-head"><h2>Output</h2><div class="panel-actions output-head-actions"><button id="outputCollapseBtn" class="mobile-collapse-btn icon-only" title="Collapse output" aria-expanded="true">⌃</button><button id="bottomBtn" class="desktop-panel-action">↓ Scroll to bottom</button><button id="clearOutputBtn" class="desktop-panel-action">⌫ Clear output</button><div class="menu-wrap output-menu-wrap"><button id="outputMenuBtn" class="icon-only mobile-panel-menu-btn" aria-haspopup="menu" aria-expanded="false" title="Output actions">⋯</button><div id="outputMenu" class="queue-menu output-menu hidden" role="menu"><button id="bottomMenuBtn" role="menuitem">Scroll to bottom</button><button id="clearOutputMenuBtn" role="menuitem">Clear output</button></div></div></div></div>
     <div id="output" class="panel-body output"></div>
   </section>
 </main>

@@ -13,6 +13,7 @@ import { closeScheduleModal, openScheduleModal } from '#ui/schedule';
 import { hideStatusNotice, renderHeader, setMobileCollapsed } from '#ui/header';
 import {
   addQueue,
+  clearOutputFromMenu,
   clearCompletedQueue,
   clearPendingQueue,
   closeQueueMenuIfOutside,
@@ -23,8 +24,10 @@ import {
   queueItemById,
   saveSchedule,
   scrollOutputToBottom,
+  scrollOutputToBottomFromMenu,
   sendQueueItemNow,
   stopServer,
+  toggleOutputMenu,
   toggleQueueMenu,
   toggleTheme,
   undoQueue,
@@ -59,7 +62,9 @@ const BUTTON_ACTIONS = {
   scheduleBtn: openScheduleModal,
   interruptBtn: interruptPrompt,
   undoBtn: undoQueue,
+  undoMenuBtn: undoQueue,
   queueMenuBtn: toggleQueueMenu,
+  outputMenuBtn: toggleOutputMenu,
   clearBtn: clearPendingQueue,
   clearCompletedBtn: clearCompletedQueue,
   stopBtn: stopServer,
@@ -74,6 +79,8 @@ const BUTTON_ACTIONS = {
     })
     .catch(reportError),
   bottomBtn: scrollOutputToBottom,
+  bottomMenuBtn: scrollOutputToBottomFromMenu,
+  clearOutputMenuBtn: clearOutputFromMenu,
   themeBtn: toggleTheme,
 };
 
@@ -132,13 +139,14 @@ function handleOutputToolToggle(target) {
 }
 
 function handleMobileCollapse(target) {
-  const button = target.closest?.('#headerCollapseBtn, #limitsCollapseBtn, #queueCollapseBtn');
+  const button = target.closest?.('#headerCollapseBtn, #limitsCollapseBtn, #queueCollapseBtn, #outputCollapseBtn');
   if (!button) return false;
 
   const sectionById = {
     headerCollapseBtn: 'header',
     limitsCollapseBtn: 'limits',
     queueCollapseBtn: 'queue',
+    outputCollapseBtn: 'output',
   };
   const section = sectionById[button.id];
 

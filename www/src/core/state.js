@@ -30,7 +30,7 @@ export const state = {
   confirmAction: null,
   scheduleOpen: false,
   scheduleDraft: null,
-  mobileCollapsed: { header: false, limits: false, queue: false },
+  mobileCollapsed: { header: false, limits: false, queue: false, output: false },
 
   queueDragId: null,
   queueDropBeforeId: undefined,

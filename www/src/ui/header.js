@@ -118,12 +118,21 @@ export function setQueueMenuOpen(open) {
   if (button) button.setAttribute('aria-expanded', open ? 'true' : 'false');
 }
 
+export function setOutputMenuOpen(open) {
+  const menu = byId('outputMenu');
+  const button = byId('outputMenuBtn');
+
+  if (menu) menu.classList.toggle('hidden', !open);
+  if (button) button.setAttribute('aria-expanded', open ? 'true' : 'false');
+}
+
 function renderControlState(app, counts = {}) {
   const hasSession = Boolean(app.sessionId);
   const pending = counts.pending || 0;
   const completed = counts.completed || 0;
 
   setButtonState('undoBtn', false, pending === 0);
+  setButtonState('undoMenuBtn', false, pending === 0);
   setButtonState('clearBtn', false, pending === 0);
   setButtonState('clearCompletedBtn', false, completed === 0);
   setButtonState('queueMenuBtn', pending === 0 && completed === 0, false);
@@ -381,8 +390,10 @@ export function applyMobileCollapseState() {
   document.body.classList.toggle('mobile-header-collapsed', state.mobileCollapsed.header);
   document.body.classList.toggle('mobile-limits-collapsed', state.mobileCollapsed.limits);
   document.body.classList.toggle('mobile-queue-collapsed', state.mobileCollapsed.queue);
+  document.body.classList.toggle('mobile-output-collapsed', state.mobileCollapsed.output);
 
   updateCollapseButton('headerCollapseBtn', state.mobileCollapsed.header, 'header');
   updateCollapseButton('limitsCollapseBtn', state.mobileCollapsed.limits, 'limits');
   updateCollapseButton('queueCollapseBtn', state.mobileCollapsed.queue, 'queue');
+  updateCollapseButton('outputCollapseBtn', state.mobileCollapsed.output, 'output');
 }

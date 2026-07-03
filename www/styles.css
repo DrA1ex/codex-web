@@ -677,7 +677,7 @@ button:disabled {
     gap: 10px;
     padding: 10px 12px;
     flex: 1 1 auto;
-    min-height: 250px;
+    min-height: 150px;
     overflow: hidden;
 }
 
@@ -774,6 +774,11 @@ button:disabled {
 .menu-wrap {
     position: relative;
     display: inline-flex;
+}
+
+.mobile-menu-item,
+.output-menu-wrap {
+    display: none;
 }
 
 .queue-menu {
@@ -2163,6 +2168,19 @@ pre {
         border-radius: 14px;
     }
 
+    .queue-panel {
+        max-height: min(60dvh, 600px)
+    }
+
+    .output-panel {
+        max-height: min(60dvh, 600px)
+    }
+
+    .queue-panel .panel-body,
+    .output-panel .panel-body {
+        overscroll-behavior: contain;
+    }
+
     .panel-head {
         min-height: 58px;
         padding: 13px 14px;
@@ -2180,13 +2198,32 @@ pre {
     }
 
     .panel-actions .icon-only,
-    .queue-head-actions .mobile-collapse-btn {
+    .queue-head-actions .mobile-collapse-btn,
+    .output-head-actions .mobile-collapse-btn {
         width: 38px;
         height: 38px;
     }
 
     #undoBtn {
         display: none;
+    }
+
+    .queue-menu .mobile-menu-item {
+        display: flex;
+    }
+
+    .output-head-actions .desktop-panel-action {
+        display: none;
+    }
+
+    .output-menu-wrap {
+        display: inline-flex;
+    }
+
+    .mobile-panel-menu-btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
     }
 
     .queue-tabs {
@@ -2249,12 +2286,9 @@ pre {
         line-height: 1.35;
     }
 
-    .output-panel {
-        min-height: 360px;
-    }
-
     body.mobile-queue-collapsed .queue-panel {
         min-height: auto;
+        max-height: none;
     }
 
     body.mobile-queue-collapsed .queue-panel .queue-tabs,
@@ -2264,6 +2298,30 @@ pre {
 
     body.mobile-queue-collapsed .queue-panel .panel-head {
         border-bottom: 0;
+    }
+
+    body.mobile-output-collapsed .output-panel {
+        min-height: auto;
+        max-height: none;
+    }
+
+    body.mobile-output-collapsed .output-panel .panel-body {
+        display: none;
+    }
+
+    body.mobile-output-collapsed .output-panel .panel-head {
+        border-bottom: 0;
+    }
+
+    .composer {
+        min-height: 230px;
+        padding: 12px 14px 14px;
+    }
+
+    .composer textarea {
+        height: clamp(130px, 22dvh, 220px);
+        min-height: 130px;
+        max-height: 34dvh;
     }
 
     .composer-actions button {
