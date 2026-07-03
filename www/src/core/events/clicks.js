@@ -94,9 +94,42 @@ const BUTTON_ACTIONS = {
   themeBtn: toggleTheme,
 };
 
+const MOBILE_MENU_ACTION_DELAY_MS = 170;
+
 function normalizedClickTarget(event) {
   const rawTarget = event.target?.nodeType === Node.TEXT_NODE ? event.target.parentElement : event.target;
   return rawTarget?.closest?.(CLICK_TARGET_SELECTOR) || rawTarget;
+}
+
+function isMobileFloatingMenuAction(target) {
+  return Boolean(target?.closest?.('.queue-menu.mobile-menu-floating'));
+}
+
+function runClickAction(target, event) {
+  return handlePromptToggle(target, event) ||
+    handleQueueFilter(target) ||
+    handleOutputDiffToggle(target) ||
+    handleOutputToolToggle(target) ||
+    handleStatusNotice(target) ||
+    handleMobileCollapse(target) ||
+    handleButton(target) ||
+    handleSessionAction(target) ||
+    handleApprovalAction(target) ||
+    handleQueueItemAction(target);
+}
+
+function delayMobileMenuAction(target, event) {
+  if (!isMobileFloatingMenuAction(target)) return false;
+
+  event.preventDefault();
+  event.stopPropagation();
+  target.classList.add('menu-action-pressed');
+  window.setTimeout(() => {
+    runClickAction(target, event);
+    target.classList.remove('menu-action-pressed');
+  }, MOBILE_MENU_ACTION_DELAY_MS);
+
+  return true;
 }
 
 function shouldSuppressPromptToggle() {
@@ -227,15 +260,8 @@ export function attachClickHandlers() {
 
     closeQueueMenuIfOutside(target);
 
-    handlePromptToggle(target, event) ||
-      handleQueueFilter(target) ||
-      handleOutputDiffToggle(target) ||
-      handleOutputToolToggle(target) ||
-      handleStatusNotice(target) ||
-      handleMobileCollapse(target) ||
-      handleButton(target) ||
-      handleSessionAction(target) ||
-      handleApprovalAction(target) ||
-      handleQueueItemAction(target);
+    if (delayMobileMenuAction(target, event)) return;
+
+    runClickAction(target, event);
   });
 }
