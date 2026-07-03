@@ -3,6 +3,7 @@ import { state } from '#core/state';
 import { sendComposerNow } from '#features/composer';
 import { cancelQueueEditInDom, saveQueueEdit, toggleQueueItemExpandedInDom } from '#features/queue';
 import { closeConfirm, confirmCurrentAction } from '#ui/confirm';
+import { closeLimitResetModal, confirmLimitReset } from '#ui/limit-reset';
 import { closeScheduleModal } from '#ui/schedule';
 import { setQueueMenuOpen } from '#ui/header';
 import { saveSchedule } from './actions.js';
@@ -37,6 +38,12 @@ function handleEscape(event) {
   if (state.confirmAction) {
     event.preventDefault();
     closeConfirm();
+    return;
+  }
+
+  if (state.limitReset.open) {
+    event.preventDefault();
+    closeLimitResetModal();
     return;
   }
 
@@ -77,6 +84,12 @@ export function attachKeyboardHandlers() {
     if (state.confirmAction && event.key === 'Enter') {
       event.preventDefault();
       confirmCurrentAction();
+      return;
+    }
+
+    if (state.limitReset.open && event.key === 'Enter') {
+      event.preventDefault();
+      confirmLimitReset();
       return;
     }
 

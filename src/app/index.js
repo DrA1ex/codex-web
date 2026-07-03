@@ -76,6 +76,7 @@ class CodexLimitWatchApp {
     this.diffSnapshotByFileKey = new Map();
     this.commandOutputByItemId = new Map();
     this.rateLimits = createInitialRateLimits();
+    this.limitResetRequest = null;
     this.approval = null;
     this.debug = createDebugState();
   }

@@ -310,6 +310,17 @@ function rateLimitsRefreshStatus(show) {
     : '';
 }
 
+function resetCreditCount(rateLimits) {
+  return Number(rateLimits?.resetCredits?.availableCount || 0) || 0;
+}
+
+function limitResetButton(rateLimits) {
+  const count = resetCreditCount(rateLimits);
+  return count > 0
+    ? `<div class="limit-reset-action"><button id="limitResetOpenBtn" type="button">Use limit Reset</button></div>`
+    : '';
+}
+
 function limitsCollapseButton() {
   return '<button id="limitsCollapseBtn" class="mobile-collapse-btn icon-only" title="Collapse limits" aria-expanded="true">⌃</button>';
 }
@@ -337,7 +348,7 @@ export function renderLimitStats() {
 
   element.innerHTML = buckets.length
     ? buckets.map((bucket, index) => renderLimitCard(bucket, index === 0 && isRefreshing, index === 0)).join('')
-    : `<div class="limit-card muted"><div class="limit-card-head"><span>Limits</span>${rateLimitsRefreshStatus(isRefreshing)}${limitsCollapseButton()}</div><p>Rate-limit data unavailable.</p></div>`;
+    : `<div class="limit-card muted"><div class="limit-card-head"><span>Limits</span>${rateLimitsRefreshStatus(isRefreshing)}${limitsCollapseButton()}</div><p>Rate-limit data unavailable.</p>${limitResetButton(rateLimits)}</div>`;
 }
 
 export function renderHeader() {

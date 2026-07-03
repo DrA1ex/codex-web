@@ -147,6 +147,7 @@ module.exports = {
       queue: this.queue,
       output: this.output,
       rateLimits: this.rateLimits,
+      limitResetRequest: this.currentLimitResetRequest ? this.currentLimitResetRequest() : null,
       approval: this.approval,
       debug: this.opts.debug
         ? this.debug

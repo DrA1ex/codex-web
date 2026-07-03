@@ -22,7 +22,7 @@ test('rate limits normalize available, limited, and unknown responses', () => {
   assert.equal(available.status, 'available');
   assert.equal(available.buckets[0].remainingPercent, undefined);
   assert.equal(available.buckets[0].windows[0].remainingPercent, 75);
-  assert.equal(available.resetCredits, 3);
+  assert.deepEqual(available.resetCredits, { availableCount: 3, expiresAt: null });
 
   const limited = normalizeRateLimits({
     rateLimitsByLimitId: {
@@ -41,6 +41,65 @@ test('rate limits normalize available, limited, and unknown responses', () => {
   const unknown = normalizeRateLimits({});
   assert.equal(unknown.status, 'unknown');
   assert.equal(unknown.refreshing, false);
+});
+
+test('rate-limit reset request is required, delayed, short-lived, and consumes app-server credit', async () => {
+  let now = 1_700_000_000_000;
+  const calls = [];
+  const app = makeAppWithQueue([]);
+  app.nowMs = () => now;
+  app.rateLimits = normalizeRateLimits({
+    rateLimitResetCredits: { availableCount: 2, expiresAt: 1_700_003_600 },
+  });
+  app.rpc = {
+    exited: false,
+    request: async (method, params) => {
+      calls.push({ method, params });
+      if (method === 'account/rateLimitResetCredit/consume') return { outcome: 'reset' };
+      if (method === 'account/rateLimits/read') {
+        return { rateLimits: { limitId: 'codex', primary: { usedPercent: 0 } }, rateLimitResetCredits: { availableCount: 1 } };
+      }
+      return {};
+    },
+  };
+
+  await assert.rejects(() => app.consumeLimitReset({ requestId: 'missing' }), /Request reset/);
+
+  const requested = app.requestLimitReset().resetRequest;
+  assert.equal(requested.availableCount, 2);
+  assert.equal(requested.creditExpiresAt, 1_700_003_600);
+  assert.equal(requested.waitMs, 5000);
+  assert.match(requested.requestId, /^[a-f0-9]{16}$/);
+  assert.equal(app.currentLimitResetRequest().requestId, requested.requestId);
+
+  await assert.rejects(() => app.consumeLimitReset({ requestId: requested.requestId }), /not ready/);
+
+  now += 5000;
+  const consumed = await app.consumeLimitReset({ requestId: requested.requestId });
+  assert.deepEqual(consumed, { ok: true, outcome: 'reset' });
+  assert.equal(calls[0].method, 'account/rateLimitResetCredit/consume');
+  assert.match(calls[0].params.idempotencyKey, /^[0-9a-f-]{36}$/);
+  assert.equal(calls[1].method, 'account/rateLimits/read');
+  assert.equal(app.limitResetRequest, null);
+  assert.equal(app.rateLimits.buckets.length, 1);
+});
+
+test('rate-limit reset requests expire after one minute and can be requested again', async () => {
+  let now = 1_700_000_000_000;
+  const app = makeAppWithQueue([]);
+  app.nowMs = () => now;
+  app.rateLimits = normalizeRateLimits({
+    rateLimitResetCredits: { availableCount: 1, expiresAt: 1_700_003_600 },
+  });
+
+  const first = app.requestLimitReset().resetRequest;
+  now += 61_000;
+
+  await assert.rejects(() => app.consumeLimitReset({ requestId: first.requestId }), /expired/);
+  assert.equal(app.limitResetRequest, null);
+
+  const second = app.requestLimitReset().resetRequest;
+  assert.notEqual(second.requestId, first.requestId);
 });
 
 test('failed rate-limit refresh preserves stale known limits but marks empty state refreshing', () => {

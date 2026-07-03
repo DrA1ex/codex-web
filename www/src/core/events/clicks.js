@@ -9,6 +9,12 @@ import {
   toggleQueueItemExpandedInDom,
 } from '#features/queue';
 import { closeConfirm, confirmCurrentAction } from '#ui/confirm';
+import {
+  closeLimitResetModal,
+  confirmLimitReset,
+  openLimitResetModal,
+  requestLimitResetAgain,
+} from '#ui/limit-reset';
 import { closeScheduleModal, openScheduleModal } from '#ui/schedule';
 import { hideStatusNotice, renderHeader, setMobileCollapsed } from '#ui/header';
 import {
@@ -70,6 +76,10 @@ const BUTTON_ACTIONS = {
   stopBtn: stopServer,
   confirmCancelBtn: closeConfirm,
   confirmYesBtn: confirmCurrentAction,
+  limitResetOpenBtn: openLimitResetModal,
+  limitResetCancelBtn: closeLimitResetModal,
+  limitResetConfirmBtn: confirmLimitReset,
+  limitResetRequestBtn: requestLimitResetAgain,
   scheduleCloseBtn: closeScheduleModal,
   scheduleSaveBtn: saveSchedule,
   scheduleCancelQueueBtn: () => api('/api/queue/cancel-run')

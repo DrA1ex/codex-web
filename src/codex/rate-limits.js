@@ -36,6 +36,33 @@ function markRateLimitRefreshFailed(previous, err) {
   };
 }
 
+function normalizeResetCredits(credits) {
+  if (credits == null) return null;
+  if (typeof credits === 'number') return { availableCount: Math.max(0, credits), expiresAt: null };
+  if (typeof credits !== 'object') return null;
+
+  const availableCount = Number(
+    credits.availableCount
+      ?? credits.available_count
+      ?? credits.count
+      ?? credits.remaining
+      ?? 0
+  ) || 0;
+  const expiresAt = Number(
+    credits.expiresAt
+      ?? credits.expires_at
+      ?? credits.expirationTime
+      ?? credits.expiration_time
+      ?? 0
+  ) || null;
+
+  return {
+    ...credits,
+    availableCount: Math.max(0, availableCount),
+    expiresAt,
+  };
+}
+
 function normalizeRateLimits(result) {
   const root = result || {};
   const by = root.rateLimitsByLimitId || (root.rateLimits ? { [root.rateLimits.limitId || 'default']: root.rateLimits } : {});
@@ -93,7 +120,7 @@ function normalizeRateLimits(result) {
     message,
     buckets,
     resetAt,
-    resetCredits: root.rateLimitResetCredits || null,
+    resetCredits: normalizeResetCredits(root.rateLimitResetCredits),
     raw: root,
     updatedAt,
     lastSuccessfulUpdatedAt: updatedAt,

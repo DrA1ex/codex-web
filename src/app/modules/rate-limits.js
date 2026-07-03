@@ -1,10 +1,52 @@
 'use strict';
 
+const crypto = require('node:crypto');
+
 const {
   normalizeRateLimits,
   markRateLimitRefreshFailed,
 } = require('../../codex/rate-limits');
-const { nowIso, safeJson, truncate, maskSecrets } = require('../../shared/utils');
+const { nowIso, randomId, safeJson, truncate, maskSecrets } = require('../../shared/utils');
+
+const LIMIT_RESET_WAIT_MS = 5000;
+const LIMIT_RESET_VALID_MS = 60000;
+const LIMIT_RESET_SUCCESS_OUTCOMES = new Set(['reset', 'alreadyRedeemed']);
+
+function nowMs(ctx) {
+  return typeof ctx.nowMs === 'function' ? ctx.nowMs() : Date.now();
+}
+
+function isoFromMs(ms) {
+  return new Date(ms).toISOString();
+}
+
+function resetCreditInfo(rateLimits) {
+  const resetCredits = rateLimits?.resetCredits || null;
+  const availableCount = Number(resetCredits?.availableCount ?? 0) || 0;
+  const expiresAt = Number(resetCredits?.expiresAt || 0) || null;
+  return {
+    availableCount: Math.max(0, availableCount),
+    expiresAt,
+  };
+}
+
+function hasEmptyLimitsWithResetCredit(rateLimits) {
+  return !rateLimits?.buckets?.length && resetCreditInfo(rateLimits).availableCount > 0;
+}
+
+function publicResetRequest(request, now = Date.now()) {
+  if (!request) return null;
+  return {
+    requestId: request.requestId,
+    availableCount: request.availableCount,
+    creditExpiresAt: request.creditExpiresAt,
+    requestedAt: request.requestedAt,
+    availableAt: request.availableAt,
+    expiresAt: request.expiresAt,
+    waitMs: Math.max(0, request.availableAtMs - now),
+    validForMs: LIMIT_RESET_VALID_MS,
+  };
+}
 
 module.exports = {
   scheduleLimitPolling() {
@@ -47,5 +89,82 @@ module.exports = {
       this.broadcast('rateLimits', this.rateLimits);
       this.broadcastAll();
     }
+  },
+
+  currentLimitResetRequest() {
+    const request = this.limitResetRequest;
+    if (!request) return null;
+    const now = nowMs(this);
+    if (now > request.expiresAtMs) {
+      this.limitResetRequest = null;
+      return null;
+    }
+    return publicResetRequest(request, now);
+  },
+
+  requestLimitReset() {
+    if (!hasEmptyLimitsWithResetCredit(this.rateLimits)) {
+      throw new Error('No rate-limit reset is currently available.');
+    }
+
+    const now = nowMs(this);
+    if (this.limitResetRequest && now <= this.limitResetRequest.expiresAtMs) {
+      const existing = publicResetRequest(this.limitResetRequest, now);
+      this.broadcastAll();
+      return { ok: true, resetRequest: existing };
+    }
+
+    const credits = resetCreditInfo(this.rateLimits);
+    const availableAtMs = now + LIMIT_RESET_WAIT_MS;
+    const expiresAtMs = now + LIMIT_RESET_VALID_MS;
+    this.limitResetRequest = {
+      requestId: randomId(8),
+      idempotencyKey: crypto.randomUUID(),
+      availableCount: credits.availableCount,
+      creditExpiresAt: credits.expiresAt,
+      requestedAt: isoFromMs(now),
+      availableAt: isoFromMs(availableAtMs),
+      expiresAt: isoFromMs(expiresAtMs),
+      availableAtMs,
+      expiresAtMs,
+    };
+    this.broadcastAll();
+    return { ok: true, resetRequest: publicResetRequest(this.limitResetRequest, now) };
+  },
+
+  async consumeLimitReset(body = {}) {
+    const requestId = String(body.requestId || '');
+    const request = this.limitResetRequest;
+    const now = nowMs(this);
+
+    if (!request || request.requestId !== requestId) {
+      throw new Error('Request reset before consuming a rate-limit reset.');
+    }
+    if (now < request.availableAtMs) {
+      throw new Error('Rate-limit reset is not ready yet.');
+    }
+    if (now > request.expiresAtMs) {
+      this.limitResetRequest = null;
+      this.broadcastAll();
+      throw new Error('Rate-limit reset request expired. Request reset again.');
+    }
+
+    const result = await this.rpc.request(
+      'account/rateLimitResetCredit/consume',
+      { idempotencyKey: request.idempotencyKey },
+      12000
+    );
+    const outcome = result?.outcome || 'unknown';
+    if (!LIMIT_RESET_SUCCESS_OUTCOMES.has(outcome)) {
+      this.limitResetRequest = null;
+      this.broadcastAll();
+      throw new Error(`Rate-limit reset was not consumed: ${outcome}`);
+    }
+
+    this.limitResetRequest = null;
+    this.appendOutput(`[limits] reset consumed (${outcome})`, 'system');
+    await this.pollRateLimits();
+    this.broadcastAll();
+    return { ok: true, outcome };
   }
 };

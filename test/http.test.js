@@ -110,6 +110,16 @@ test('resolveApiRoute dispatches GET/POST handlers and reports 404/405', async (
   assert.deepEqual(app.output, []);
 });
 
+test('resolveApiRoute exposes rate-limit reset request endpoint', async () => {
+  const app = makeAppWithQueue([]);
+  app.requestLimitReset = () => ({ ok: true, resetRequest: { requestId: 'request-1' } });
+
+  const response = await resolveApiRoute(app, { method: 'POST' }, '/api/limits/reset-request', {});
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(response.body, { ok: true, resetRequest: { requestId: 'request-1' } });
+});
+
 test('handleHttp validates tokens, handles API routes, and returns JSON errors', async () => {
   const app = makeAppWithQueue([]);
   app.token = 'token';

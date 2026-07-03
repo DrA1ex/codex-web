@@ -602,6 +602,52 @@ button:disabled {
     margin: 0;
 }
 
+.limit-reset-action {
+    display: flex;
+    justify-content: flex-start;
+    margin-top: 10px;
+}
+
+.limit-reset-action button {
+    color: var(--warn);
+    border-color: color-mix(in srgb, var(--warn) 30%, var(--border));
+}
+
+.limit-reset-details {
+    display: grid;
+    gap: 8px;
+    margin: 12px 0;
+}
+
+.limit-reset-details div {
+    display: grid;
+    grid-template-columns: minmax(120px, .85fr) minmax(0, 1fr);
+    gap: 10px;
+    align-items: baseline;
+    padding: 8px 10px;
+    border: 1px solid var(--border-soft);
+    border-radius: 8px;
+    background: var(--panel2);
+}
+
+.limit-reset-details span {
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 650;
+}
+
+.limit-reset-details b {
+    min-width: 0;
+    color: var(--text);
+    font-size: 13px;
+    font-weight: 650;
+    overflow-wrap: anywhere;
+}
+
+.limit-reset-error {
+    color: var(--danger-soft);
+}
+
 .countdown-notice {
     position: fixed;
     top: 14px;

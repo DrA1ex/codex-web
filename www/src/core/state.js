@@ -28,6 +28,14 @@ export const state = {
   previousNoticeSnapshot: null,
 
   confirmAction: null,
+  limitReset: {
+    open: false,
+    loading: false,
+    error: '',
+    request: null,
+  },
+  limitResetTimer: null,
+  limitResetSerial: 0,
   scheduleOpen: false,
   scheduleDraft: null,
   mobileCollapsed: { header: false, limits: false, queue: false, output: false },
