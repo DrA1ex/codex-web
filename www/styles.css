@@ -243,6 +243,10 @@ button, textarea, input, select {
 }
 
 button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
     color: var(--text);
     background: var(--button-bg);
     border: 1px solid var(--border);
@@ -272,6 +276,45 @@ button.danger {
 button:disabled {
     opacity: .45;
     cursor: not-allowed;
+}
+
+.icon {
+    --icon-url: none;
+    width: 15px;
+    height: 15px;
+    display: inline-block;
+    flex: 0 0 auto;
+    background: currentColor;
+    -webkit-mask: var(--icon-url) center / contain no-repeat;
+    mask: var(--icon-url) center / contain no-repeat;
+}
+
+.icon-add { --icon-url: url("/assets/icons/add-circle.png"); }
+.icon-arrow-down { --icon-url: url("/assets/icons/arrow-down.png"); }
+.icon-check { --icon-url: url("/assets/icons/check.png"); }
+.icon-chevron-down { --icon-url: url("/assets/icons/chevron-down.png"); }
+.icon-chevron-up { --icon-url: url("/assets/icons/chevron-up.png"); }
+.icon-clear { --icon-url: url("/assets/icons/clear.png"); }
+.icon-close { --icon-url: url("/assets/icons/close.png"); }
+.icon-drag { --icon-url: url("/assets/icons/drag.png"); }
+.icon-duplicate { --icon-url: url("/assets/icons/duplicate.png"); }
+.icon-edit { --icon-url: url("/assets/icons/edit.png"); }
+.icon-menu { --icon-url: url("/assets/icons/menu.png"); }
+.icon-moon { --icon-url: url("/assets/icons/moon.png"); }
+.icon-pause { --icon-url: url("/assets/icons/pause.png"); }
+.icon-play { --icon-url: url("/assets/icons/play.png"); }
+.icon-remove { --icon-url: url("/assets/icons/remove.png"); }
+.icon-retry { --icon-url: url("/assets/icons/retry.png"); }
+.icon-save { --icon-url: url("/assets/icons/save.png"); }
+.icon-schedule { --icon-url: url("/assets/icons/schedule.png"); }
+.icon-send { --icon-url: url("/assets/icons/send.png"); }
+.icon-stop { --icon-url: url("/assets/icons/stop.png"); }
+.icon-sun { --icon-url: url("/assets/icons/sun.png"); }
+.icon-undo { --icon-url: url("/assets/icons/undo.png"); }
+
+.icon-only .icon {
+    width: 17px;
+    height: 17px;
 }
 
 .header {

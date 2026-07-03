@@ -2,10 +2,9 @@
 
 const path = require('node:path');
 
-const { STATIC_TYPES } = require('../shared/config');
-
 const ROOT_STATIC_ASSETS = new Set(['app.js', 'styles.css']);
 const SRC_ASSET_PREFIX = 'src/';
+const BIN_ASSET_PREFIX = 'assets/';
 const SRC_ASSET_EXTENSIONS = new Set([
   '.js',
   '.mjs',
@@ -41,7 +40,7 @@ function isSafeNormalizedPath(decoded, normalized) {
 }
 
 function isAllowedSrcAsset(name) {
-  if (!name.startsWith(SRC_ASSET_PREFIX)) return false;
+  if (!name.startsWith(SRC_ASSET_PREFIX) && !name.startsWith(BIN_ASSET_PREFIX)) return false;
   if (name.endsWith('/') || name.includes('//')) return false;
 
   const parts = name.split('/');
@@ -63,18 +62,7 @@ function staticAssetName(pathname) {
   return null;
 }
 
-function staticContentType(name) {
-  const ext = path.extname(name);
-
-  if (ext === '.js' || ext === '.mjs') return STATIC_TYPES[ext] || 'text/javascript; charset=utf-8';
-  if (ext === '.css') return STATIC_TYPES[ext] || 'text/css; charset=utf-8';
-  if (ext === '.svg') return STATIC_TYPES[ext] || 'image/svg+xml';
-
-  return STATIC_TYPES[ext] || 'application/octet-stream';
-}
-
 module.exports = {
   rawPathname,
-  staticAssetName,
-  staticContentType,
+  staticAssetName
 };

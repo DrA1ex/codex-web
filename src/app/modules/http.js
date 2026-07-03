@@ -1,8 +1,8 @@
 'use strict';
 
-const { URL } = require('node:url');
+const {URL} = require('node:url');
 
-const { countQueue, isPendingLikeStatus } = require('../../queue');
+const {countQueue, isPendingLikeStatus} = require('../../queue');
 const {
   NON_PAUSABLE_STATES,
 } = require('../states');
@@ -10,15 +10,16 @@ const {
   sendText,
   sendJson,
   readAsset,
-  readJsonBody,
+  readJsonBody, sendBinary, readBinaryAsset,
 } = require('../../http/utils');
-const { renderAuthErrorPage } = require('../../http/auth-page');
+const {renderAuthErrorPage} = require('../../http/auth-page');
 const {
   rawPathname,
-  staticAssetName,
-  staticContentType,
+  staticAssetName
 } = require('../../http/static-assets');
-const { resolveApiRoute } = require('../../http/api-routes');
+const {resolveApiRoute} = require('../../http/api-routes');
+const path = require("node:path");
+const {TEXT_TYPES, BINARY_TYPES} = require("../../shared/config");
 
 module.exports = {
   async handleHttp(req, res) {
@@ -40,7 +41,7 @@ module.exports = {
 
       if (parsed.pathname.startsWith('/api/')) {
         if (!this.validateToken(req, parsed)) {
-          return sendJson(res, 403, { error: 'Invalid token' });
+          return sendJson(res, 403, {error: 'Invalid token'});
         }
 
         const body = req.method === 'POST' ? await readJsonBody(req) : {};
@@ -49,7 +50,7 @@ module.exports = {
 
       sendText(res, 404, 'not found');
     } catch (err) {
-      sendJson(res, 500, { error: err.message || String(err) });
+      sendJson(res, 500, {error: err.message || String(err)});
     }
   },
 
@@ -71,7 +72,14 @@ module.exports = {
 
   serveStatic(req, res, parsed, name) {
     try {
-      sendText(res, 200, readAsset(name), staticContentType(name));
+      const ext = path.extname(name);
+      if (ext in TEXT_TYPES) {
+        sendText(res, 200, readAsset(name), TEXT_TYPES[ext]);
+      } else if (ext in BINARY_TYPES) {
+        sendBinary(res, 200, readBinaryAsset(name), BINARY_TYPES[ext]);
+      } else {
+        throw new Error("Unsupported format " + ext);
+      }
     } catch (_) {
       sendText(res, 404, 'not found');
     }
@@ -89,7 +97,7 @@ module.exports = {
 
     res.write(': connected\n\n');
 
-    const client = { res };
+    const client = {res};
     this.clients.add(client);
     this.syncClientCount();
     this.sendSse(client, 'state', this.snapshot());
@@ -150,8 +158,8 @@ module.exports = {
       limitResetRequest: this.currentLimitResetRequest ? this.currentLimitResetRequest() : null,
       approval: this.approval,
       debug: this.opts.debug
-        ? this.debug
-        : { connectedBrowserClients: this.debug.connectedBrowserClients },
+             ? this.debug
+             : {connectedBrowserClients: this.debug.connectedBrowserClients},
     };
   },
 

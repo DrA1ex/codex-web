@@ -65,7 +65,7 @@ export function renderScheduleModal() {
     <div class="confirm-modal schedule-modal" role="dialog" aria-modal="true" aria-labelledby="scheduleTitle">
       <div class="modal-head">
         <b id="scheduleTitle">Schedule queue</b>
-        <button id="scheduleCloseBtn" class="icon-only" title="Close">×</button>
+        <button id="scheduleCloseBtn" class="icon-only" title="Close"><span class="icon icon-close" aria-hidden="true"></span></button>
       </div>
       <div class="schedule-fields">
         <label><span>Date</span><input id="scheduleDateInput" type="date" value="${esc(draft.date)}"></label>

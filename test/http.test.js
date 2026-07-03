@@ -6,7 +6,7 @@ const { EventEmitter } = require('node:events');
 const { Readable } = require('node:stream');
 
 const { renderAuthErrorPage } = require('../src/http/auth-page');
-const { rawPathname, staticAssetName, staticContentType } = require('../src/http/static-assets');
+const { rawPathname, staticAssetName } = require('../src/http/static-assets');
 const { sendText, sendJson, readJsonBody } = require('../src/http/utils');
 const { resolveApiRoute } = require('../src/http/api-routes');
 const { item, makeAppWithQueue, mockResponse } = require('./helpers');
@@ -16,13 +16,10 @@ test('static asset helpers accept safe root/src assets and reject traversal', ()
   assert.equal(staticAssetName('/app.js'), 'app.js');
   assert.equal(staticAssetName('/styles.css'), 'styles.css');
   assert.equal(staticAssetName('/src/ui/button.svg'), 'src/ui/button.svg');
+  assert.equal(staticAssetName('/src/icons/send.png'), 'src/icons/send.png');
   assert.equal(staticAssetName('/src/../secret.js'), null);
   assert.equal(staticAssetName('/src//bad.js'), null);
-  assert.equal(staticAssetName('/%E0%A4%A'), null);
-  assert.equal(staticContentType('src/ui/app.mjs'), 'text/javascript; charset=utf-8');
-  assert.equal(staticContentType('src/ui/styles.css'), 'text/css; charset=utf-8');
-  assert.equal(staticContentType('src/ui/icon.svg'), 'image/svg+xml');
-  assert.equal(staticContentType('src/ui/file.unknown'), 'application/octet-stream');
+  assert.equal(staticAssetName('/%E0%A4%A'), null)
 });
 
 test('sendText and sendJson write expected HTTP response metadata', () => {

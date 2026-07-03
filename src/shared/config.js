@@ -10,18 +10,18 @@ const MAX_OUTPUT_TOTAL_CHARS = 1200 * 1024;
 const OUTPUT_TRUNCATED_MARKER = '\n[output truncated]';
 const DEFAULT_MODEL = 'gpt-5.5';
 const MODEL_OPTIONS = [
-  { value: '', label: `${DEFAULT_MODEL} (default)` },
-  { value: 'gpt-5.5', label: 'gpt-5.5' },
-  { value: 'gpt-5.4', label: 'gpt-5.4' },
-  { value: 'gpt-5.4-mini', label: 'gpt-5.4-mini' },
-  { value: 'gpt-5.3-codex-spark', label: 'gpt-5.3-codex-spark' },
+  {value: '', label: `${DEFAULT_MODEL} (default)`},
+  {value: 'gpt-5.5', label: 'gpt-5.5'},
+  {value: 'gpt-5.4', label: 'gpt-5.4'},
+  {value: 'gpt-5.4-mini', label: 'gpt-5.4-mini'},
+  {value: 'gpt-5.3-codex-spark', label: 'gpt-5.3-codex-spark'},
 ];
 const EFFORT_OPTIONS = [
-  { value: '', label: 'default' },
-  { value: 'low', label: 'low' },
-  { value: 'medium', label: 'medium' },
-  { value: 'high', label: 'high' },
-  { value: 'xhigh', label: 'xhigh' },
+  {value: '', label: 'default'},
+  {value: 'low', label: 'low'},
+  {value: 'medium', label: 'medium'},
+  {value: 'high', label: 'high'},
+  {value: 'xhigh', label: 'xhigh'},
 ];
 
 const ENTRY_FILE_CANDIDATES = [
@@ -38,11 +38,23 @@ const ASSET_DIRS = [
   path.join(LAUNCH_DIR, 'www'),
   path.join(process.cwd(), 'www'),
 ];
-const STATIC_TYPES = {
-  '.css': 'text/css; charset=utf-8',
+
+const TEXT_TYPES = {
   '.js': 'application/javascript; charset=utf-8',
-  '.html': 'text/html; charset=utf-8',
+  '.cjs': 'application/javascript; charset=utf-8',
+  '.mjs': 'application/javascript; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.html': 'text/html; charset=utf-8'
 };
+
+const BINARY_TYPES = {
+  '.png': 'image/png',
+  '.jpg': "image/jpeg",
+  '.jpeg': "image/jpeg",
+  '.gif': "image/gif",
+  '.webp': "image/webp",
+  '.ico': "image/vnd.microsoft.icon"
+}
 
 module.exports = {
   VERSION,
@@ -55,5 +67,6 @@ module.exports = {
   EFFORT_OPTIONS,
   SCRIPT_DIR,
   ASSET_DIRS,
-  STATIC_TYPES,
+  TEXT_TYPES,
+  BINARY_TYPES
 };

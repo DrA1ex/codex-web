@@ -97,7 +97,7 @@ export function renderTheme(app) {
   document.documentElement.dataset.theme = theme;
 
   if (themeButton) {
-    themeButton.textContent = theme === 'light' ? '☀' : '☾';
+    themeButton.innerHTML = `<span class="icon icon-${theme === 'light' ? 'sun' : 'moon'}" aria-hidden="true"></span>`;
     themeButton.title = `Switch to ${theme === 'light' ? 'dark' : 'light'} theme`;
   }
 }
@@ -403,7 +403,7 @@ function limitResetButton(rateLimits) {
 }
 
 function limitsCollapseButton() {
-  return '<button id="limitsCollapseBtn" class="mobile-collapse-btn icon-only" title="Collapse limits" aria-expanded="true">⌃</button>';
+  return '<button id="limitsCollapseBtn" class="mobile-collapse-btn icon-only" title="Collapse limits" aria-expanded="true"><span class="icon icon-chevron-up" aria-hidden="true"></span></button>';
 }
 
 function renderLimitCard(bucket, showRefreshStatus = false, showCollapseButton = false) {
@@ -471,13 +471,7 @@ function updateCollapseButton(id, collapsed, label) {
 
   button.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
   button.title = `${collapsed ? 'Expand' : 'Collapse'} ${label}`;
-
-  if (id === 'limitsCollapseBtn') {
-    button.textContent = collapsed ? '⌄' : '⌃';
-    return;
-  }
-
-  button.textContent = collapsed ? '⌄' : '⌃';
+  button.innerHTML = `<span class="icon icon-chevron-${collapsed ? 'down' : 'up'}" aria-hidden="true"></span>`;
 }
 
 export function applyMobileCollapseState() {

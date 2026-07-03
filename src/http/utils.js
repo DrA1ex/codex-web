@@ -2,32 +2,53 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
-const { spawn } = require('node:child_process');
-const { ASSET_DIRS } = require('../shared/config');
+const {spawn} = require('node:child_process');
+const {ASSET_DIRS} = require('../shared/config');
 
 function openBrowser(url) {
   const cmd = process.platform === 'darwin' ? 'open' : (process.platform === 'win32' ? 'cmd' : 'xdg-open');
   const args = process.platform === 'win32' ? ['/c', 'start', '', url] : [url];
-  const child = spawn(cmd, args, { detached: true, stdio: 'ignore' });
+  const child = spawn(cmd, args, {detached: true, stdio: 'ignore'});
   child.unref();
 }
+
 function sendText(res, status, text, contentType = 'text/plain; charset=utf-8') {
-  res.writeHead(status, { 'Content-Type': contentType, 'Cache-Control': 'no-store' });
+  res.writeHead(status, {'Content-Type': contentType, 'Cache-Control': 'public, max-age=0, must-revalidate'});
   res.end(text);
 }
+
+function sendBinary(res, status, data, contentType = 'application/octet-stream') {
+  res.writeHead(status, {'Content-Type': contentType, 'Cache-Control': 'public, max-age=0, must-revalidate'});
+  res.end(data);
+}
+
 function sendJson(res, status, obj) {
-  res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
+  res.writeHead(status, {'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store'});
   res.end(JSON.stringify(obj));
 }
-function readAsset(name) {
+
+function readTextAsset(name) {
   for (const dir of ASSET_DIRS) {
     const file = path.join(dir, name);
     try {
       if (fs.existsSync(file)) return fs.readFileSync(file, 'utf8');
-    } catch (_) {}
+    } catch (_) {
+    }
   }
   throw new Error(`Missing web asset: ${name}`);
 }
+
+function readBinaryAsset(name) {
+  for (const dir of ASSET_DIRS) {
+    const file = path.join(dir, name);
+    try {
+      if (fs.existsSync(file)) return fs.readFileSync(file);
+    } catch (_) {
+    }
+  }
+  throw new Error(`Missing web asset: ${name}`);
+}
+
 function readJsonBody(req) {
   return new Promise((resolve, reject) => {
     let data = '';
@@ -40,8 +61,11 @@ function readJsonBody(req) {
     });
     req.on('end', () => {
       if (!data) return resolve({});
-      try { resolve(JSON.parse(data)); }
-      catch (err) { reject(new Error('Invalid JSON body')); }
+      try {
+        resolve(JSON.parse(data));
+      } catch (err) {
+        reject(new Error('Invalid JSON body'));
+      }
     });
     req.on('error', reject);
   });
@@ -50,7 +74,9 @@ function readJsonBody(req) {
 module.exports = {
   openBrowser,
   sendText,
+  sendBinary,
   sendJson,
-  readAsset,
+  readAsset: readTextAsset,
+  readBinaryAsset,
   readJsonBody,
 };

@@ -38,6 +38,10 @@ function compactNumber(value) {
   return String(Math.round(number));
 }
 
+function icon(name) {
+  return `<span class="icon icon-${name}" aria-hidden="true"></span>`;
+}
+
 function renderUsageSummary(item) {
   const usage = item.usage || null;
   if (!usage || !['completed', 'failed', 'unknown', 'cancelled'].includes(item.status)) return '';
@@ -67,7 +71,9 @@ function renderUsageSummary(item) {
 
 function renderQueueHeader(item, index, draggable, completed, expanded, editing) {
   const finishedOrCreatedAt = completed && item.finishedAt ? item.finishedAt : item.createdAt;
-  const dragHandle = draggable ? '<span class="queue-drag-handle" title="Drag to reorder">↕</span>' : '';
+  const dragHandle = draggable
+    ? `<span class="queue-drag-handle" title="Drag to reorder">${icon('drag')}</span>`
+    : '';
   const toggleAttrs = promptToggleAttrs(item, expanded, editing);
   const usage = renderUsageSummary(item);
 
@@ -97,8 +103,8 @@ function renderEditActions(item, idAttr) {
 
   return `
     <div class="actions queue-actions">
-      <button data-act="saveEdit" data-id="${idAttr}" class="primary"${disabled}>${saving ? 'Saving...' : 'Save'}</button>
-      <button data-act="cancelEdit" data-id="${idAttr}"${disabled}>Cancel</button>
+      <button data-act="saveEdit" data-id="${idAttr}" class="primary"${disabled}>${icon('save')}${saving ? 'Saving...' : 'Save'}</button>
+      <button data-act="cancelEdit" data-id="${idAttr}"${disabled}>${icon('close')}Cancel</button>
     </div>
   `;
 }
@@ -106,15 +112,15 @@ function renderEditActions(item, idAttr) {
 function renderQueueActions(item, idAttr, app) {
   const sendDisabled = app.state === 'countdown';
   const recoveryActions = item.status === 'unknown' || item.status === 'failed'
-    ? `<button data-act="markCompleted" data-id="${idAttr}">Done</button><button data-act="retry" data-id="${idAttr}">Retry</button>`
+    ? `<button data-act="markCompleted" data-id="${idAttr}">${icon('check')}Done</button><button data-act="retry" data-id="${idAttr}">${icon('retry')}Retry</button>`
     : '';
 
   return `
     <div class="actions queue-actions">
-      <button data-act="edit" data-id="${idAttr}">Edit</button>
-      <button data-act="duplicate" data-id="${idAttr}">Duplicate</button>
-      <button data-act="sendNow" data-id="${idAttr}"${sendDisabled ? ' disabled title="A prompt is already scheduled to send"' : ''}>Send</button>
-      <button data-act="remove" data-id="${idAttr}" class="danger">Remove</button>
+      <button data-act="edit" data-id="${idAttr}">${icon('edit')}Edit</button>
+      <button data-act="duplicate" data-id="${idAttr}">${icon('duplicate')}Duplicate</button>
+      <button data-act="sendNow" data-id="${idAttr}"${sendDisabled ? ' disabled title="A prompt is already scheduled to send"' : ''}>${icon('send')}Send</button>
+      <button data-act="remove" data-id="${idAttr}" class="danger">${icon('remove')}Remove</button>
       ${recoveryActions}
     </div>
   `;
