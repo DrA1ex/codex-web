@@ -1,10 +1,13 @@
 'use strict';
 
 const assert = require('node:assert/strict');
+const fsp = require('node:fs/promises');
+const path = require('node:path');
 const test = require('node:test');
 
 const { extractThreadList, normalizeSession, fallbackThreadTitle, extractMessagePreview } = require('../src/codex/sessions');
-const { item, makeAppWithQueue } = require('./helpers');
+const { sha256, stripTrailingSep } = require('../src/shared/utils');
+const { item, makeAppWithQueue, tempDir } = require('./helpers');
 
 test('session list normalization extracts IDs, preview, cwd match, and updated time', () => {
   const projectDir = process.cwd();
@@ -29,14 +32,24 @@ test('session list normalization extracts IDs, preview, cwd match, and updated t
   assert.equal(session.preview, 'Latest prompt text');
   assert.equal(session.title, 'Latest prompt text');
   assert.equal(session.updatedAt, '2026-01-02T03:04:05.000Z');
+  assert.equal(normalizeSession({ threadId: 'thread-2', title: 'Short title' }, projectDir).title, 'Short title');
   assert.equal(fallbackThreadTitle({ id: 'abc123' }, projectDir), require('node:path').basename(projectDir));
   assert.equal(extractMessagePreview(thread), 'Latest prompt text');
 });
 
 test('loadSessions merges exact and general results, filters ranked sessions, and reports warnings', async () => {
-  const app = makeAppWithQueue([]);
+  const stateDir = await tempDir();
+  const app = makeAppWithQueue([], { stateDir });
   app.app.state = 'paused';
   const projectDir = app.opts.projectDir;
+  const key = sha256(`${stripTrailingSep(projectDir)}\nexact`).slice(0, 32);
+  const queueDir = path.join(stateDir, key);
+  await fsp.mkdir(queueDir, { recursive: true });
+  await fsp.writeFile(path.join(queueDir, 'queue.json'), JSON.stringify([
+    item('queued', 'pending'),
+    item('done', 'completed'),
+    item('next', 'next'),
+  ]));
   const calls = [];
   app.rpc = {
     request: async (method, params) => {
@@ -58,6 +71,7 @@ test('loadSessions merges exact and general results, filters ranked sessions, an
   assert.deepEqual(calls.map((c) => c.method), ['thread/list', 'thread/list']);
   assert.deepEqual(app.sessions.map((s) => s.id), ['exact']);
   assert.equal(app.sessions[0].preview, 'duplicate');
+  assert.deepEqual(app.sessions[0].queueCounts, { pending: 2, completed: 1 });
 });
 
 test('loadSessions preserves warnings from failed list requests', async () => {

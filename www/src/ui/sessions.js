@@ -15,19 +15,34 @@ function renderSessionError(app) {
 }
 
 function renderSessionRow(session) {
+  const counts = session.queueCounts || {};
+  const preview = String(session.preview || '').trim();
+  const title = String(session.title || preview || 'Untitled session').trim();
+  const showPreview = preview && preview !== title;
+  const id = String(session.id || '').trim();
+  const canSelect = Boolean(id);
+  const selectAttrs = canSelect ? `data-session="${esc(id)}"` : 'disabled title="Session id unavailable"';
+  const updated = fmtTime(session.updatedAt);
+  const meta = [
+    id ? `ID: ${esc(id)}` : '',
+    session.cwd ? `CWD: ${esc(session.cwd)}` : '',
+    updated ? `Updated: ${esc(updated)}` : '',
+  ].filter(Boolean);
   return `
     <div class="session panel-item">
       <div class="session-main">
-        <div class="session-title">
-          ${esc(session.title || session.id)} <span class="badge">${esc(session.cwdMatch || 'other')}</span>
+        <div class="session-title-row">
+          <div class="session-title" title="${esc(title)}">${esc(title)}</div>
+          <div class="session-queue-badges" aria-label="Saved queue records">
+            <span class="badge warn session-queue-badge"><b>${Number(counts.pending || 0)}</b><span>pending</span></span>
+            <span class="badge ok session-queue-badge"><b>${Number(counts.completed || 0)}</b><span>complete</span></span>
+          </div>
         </div>
-        <div class="session-meta">ID: ${esc(session.id)}</div>
-        <div class="session-meta">CWD: ${esc(session.cwd || '—')}</div>
-        <div class="session-meta">Updated: ${esc(fmtTime(session.updatedAt))}</div>
-        <div class="session-preview">${esc(session.preview || '')}</div>
+        ${meta.length ? `<div class="session-meta-row">${meta.map((item) => `<span class="session-meta">${item}</span>`).join('')}</div>` : ''}
+        ${showPreview ? `<div class="session-preview">${esc(preview)}</div>` : ''}
       </div>
       <div class="session-actions">
-        <button data-session="${esc(session.id)}" class="primary">Select</button>
+        <button ${selectAttrs} class="primary">Select</button>
       </div>
     </div>
   `;

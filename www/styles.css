@@ -1423,22 +1423,42 @@ textarea:focus {
 .session-main {
     min-width: 0;
     display: grid;
-    gap: 4px;
+    gap: 7px;
 }
 
 .session-actions {
     display: flex;
-    align-items: flex-end;
+    align-items: center;
     justify-content: flex-end;
 }
 
+.session-title-row {
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
 .session-title {
+    flex: 1 1 auto;
     min-width: 0;
     color: var(--text);
     font-weight: 750;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+}
+
+.session-meta-row {
+    min-width: 0;
+    display: flex;
+    gap: 8px 12px;
+    flex-wrap: wrap;
+}
+
+.session-meta {
+    min-width: 0;
+    max-width: 100%;
 }
 
 .session-meta,
@@ -1453,7 +1473,27 @@ textarea:focus {
 
 .session-preview {
     color: var(--muted);
-    margin-top: 2px;
+}
+
+.session-queue-badges {
+    flex: 0 0 auto;
+    display: flex;
+    justify-content: flex-end;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+
+.session-queue-badge {
+    min-height: 26px;
+    padding: 6px 8px;
+    font-size: 11px;
+}
+
+.session-queue-badge b {
+    color: inherit;
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+    font-weight: 800;
 }
 
 .approval {

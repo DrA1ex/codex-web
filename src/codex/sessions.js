@@ -12,10 +12,12 @@ function normalizeSession(t, projectDir) {
   const rank = pathRelation(projectDir, cwd);
   const updated = t.updatedAt || t.recencyAt || t.createdAt || t.lastActivityAt || null;
   const updatedAtMs = typeof updated === 'number' ? updated * 1000 : (updated ? Date.parse(updated) : 0);
+  const explicitTitle = t.name || t.title || t.threadTitle || t.displayName || t.metadata?.title || '';
+  const preview = t.preview || t.lastUserMessage || extractMessagePreview(t) || '';
   return {
     id,
-    title: fallbackThreadTitle(t, projectDir),
-    preview: t.preview || t.lastUserMessage || extractMessagePreview(t) || '',
+    title: explicitTitle || truncate(preview, 80) || 'Untitled session',
+    preview,
     cwd,
     cwdMatch: rank === 0 ? 'exact' : (rank === 1 ? 'child' : (rank === 2 ? 'parent' : 'other')),
     rank,

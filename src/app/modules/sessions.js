@@ -1,12 +1,37 @@
 'use strict';
 
+const fs = require('node:fs');
+const path = require('node:path');
+
 const { mapApprovalPolicy, mapSandbox } = require('../../codex/policies');
 const {
   extractThreadList,
   normalizeSession,
   fallbackThreadTitle,
 } = require('../../codex/sessions');
-const { shortId } = require('../../shared/utils');
+const { countQueue } = require('../../queue');
+const { shortId, sha256, stripTrailingSep } = require('../../shared/utils');
+
+function queuePathForSession(opts, sessionId) {
+  const key = sha256(`${stripTrailingSep(opts.projectDir)}\n${sessionId}`).slice(0, 32);
+  return path.join(opts.stateDir, key, 'queue.json');
+}
+
+function readSessionQueueCounts(opts, sessionId) {
+  const empty = { pending: 0, completed: 0 };
+  if (!sessionId) return empty;
+  try {
+    const raw = JSON.parse(fs.readFileSync(queuePathForSession(opts, sessionId), 'utf8'));
+    const queue = Array.isArray(raw) ? raw : (Array.isArray(raw.items) ? raw.items : []);
+    const counts = countQueue(queue);
+    return {
+      pending: counts.pending || 0,
+      completed: counts.completed || 0,
+    };
+  } catch (_) {
+    return empty;
+  }
+}
 
 module.exports = {
   async loadSessions() {
@@ -50,7 +75,11 @@ module.exports = {
 
     const byId = new Map();
     for (const t of threads) byId.set(t.id || t.threadId || t.sessionId, t);
-    const ranked = [...byId.values()].map((t) => normalizeSession(t, this.opts.projectDir));
+    const ranked = [...byId.values()].map((t) => {
+      const session = normalizeSession(t, this.opts.projectDir);
+      session.queueCounts = readSessionQueueCounts(this.opts, session.id);
+      return session;
+    });
     ranked.sort((a, b) => a.rank - b.rank || (b.updatedAtMs || 0) - (a.updatedAtMs || 0));
     this.sessions = this.opts.allSessions ? ranked : ranked.filter((s) => s.rank <= 2 || s.cwdMatch === 'exact').slice(0, this.opts.sessionPickerLimit);
     if (this.sessions.length === 0 && !this.opts.allSessions) {
