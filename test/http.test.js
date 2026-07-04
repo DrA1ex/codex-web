@@ -17,6 +17,7 @@ test('static asset helpers accept safe root/src assets and reject traversal', ()
   assert.equal(staticAssetName('/styles.css'), 'styles.css');
   assert.equal(staticAssetName('/src/ui/button.svg'), 'src/ui/button.svg');
   assert.equal(staticAssetName('/src/icons/send.png'), 'src/icons/send.png');
+  assert.equal(staticAssetName('/assets/icons/send.png'), 'assets/icons/send.png');
   assert.equal(staticAssetName('/src/../secret.js'), null);
   assert.equal(staticAssetName('/src//bad.js'), null);
   assert.equal(staticAssetName('/%E0%A4%A'), null)
@@ -57,16 +58,33 @@ test('auth error page does not include runtime token placeholders', () => {
   assert.doesNotMatch(html, /__TOKEN__/);
 });
 
-test('index requires a valid token and does not leak token on auth error', () => {
+test('index requires a valid token and does not leak token on auth error', async () => {
   const app = makeAppWithQueue([]);
   app.token = 'secret-token';
   const res = mockResponse();
 
-  app.serveIndex({ headers: {} }, res, new URL('http://localhost/'));
+  await app.serveIndex({ headers: {} }, res, new URL('http://localhost/'));
 
   assert.equal(res.status, 403);
   assert.match(res.body, /Authorization error/);
   assert.doesNotMatch(res.body, /secret-token/);
+});
+
+test('handleHttp serves static text and binary assets asynchronously', async () => {
+  const app = makeAppWithQueue([]);
+  app.token = 'token';
+
+  const css = mockResponse();
+  await app.handleHttp({ method: 'GET', url: '/styles.css', headers: { host: 'localhost' } }, css);
+  assert.equal(css.status, 200);
+  assert.equal(css.headers['Content-Type'], 'text/css; charset=utf-8');
+  assert.match(css.body, /body/);
+
+  const icon = mockResponse();
+  await app.handleHttp({ method: 'GET', url: '/assets/icons/send.png', headers: { host: 'localhost' } }, icon);
+  assert.equal(icon.status, 200);
+  assert.equal(icon.headers['Content-Type'], 'image/png');
+  assert.ok(icon.body.length > 0);
 });
 
 test('snapshot exposes queue controls, sessions, rate limits, and debug summary', () => {

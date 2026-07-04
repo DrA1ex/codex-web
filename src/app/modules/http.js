@@ -10,7 +10,9 @@ const {
   sendText,
   sendJson,
   readAsset,
-  readJsonBody, sendBinary, readBinaryAsset,
+  readJsonBody,
+  sendBinary,
+  readBinaryAsset,
 } = require('../../http/utils');
 const {renderAuthErrorPage} = require('../../http/auth-page');
 const {
@@ -18,8 +20,8 @@ const {
   staticAssetName
 } = require('../../http/static-assets');
 const {resolveApiRoute} = require('../../http/api-routes');
-const path = require("node:path");
-const {TEXT_TYPES, BINARY_TYPES} = require("../../shared/config");
+const path = require('node:path');
+const {TEXT_TYPES, BINARY_TYPES} = require('../../shared/config');
 
 module.exports = {
   async handleHttp(req, res) {
@@ -27,12 +29,12 @@ module.exports = {
       const parsed = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
 
       if (req.method === 'GET' && parsed.pathname === '/') {
-        return this.serveIndex(req, res, parsed);
+        return await this.serveIndex(req, res, parsed);
       }
 
       if (req.method === 'GET') {
         const assetName = staticAssetName(rawPathname(req.url));
-        if (assetName) return this.serveStatic(req, res, parsed, assetName);
+        if (assetName) return await this.serveStatic(req, res, parsed, assetName);
       }
 
       if (req.method === 'GET' && parsed.pathname === '/events') {
@@ -61,24 +63,24 @@ module.exports = {
     return queryToken === this.token || headerToken === this.token;
   },
 
-  serveIndex(req, res, parsed) {
+  async serveIndex(req, res, parsed) {
     if (!this.validateToken(req, parsed)) {
       return sendText(res, 403, renderAuthErrorPage(), 'text/html; charset=utf-8');
     }
 
-    const html = readAsset('index.html').replaceAll('__TOKEN__', this.token);
+    const html = (await readAsset('index.html')).replaceAll('__TOKEN__', this.token);
     sendText(res, 200, html, 'text/html; charset=utf-8');
   },
 
-  serveStatic(req, res, parsed, name) {
+  async serveStatic(req, res, parsed, name) {
     try {
       const ext = path.extname(name);
       if (ext in TEXT_TYPES) {
-        sendText(res, 200, readAsset(name), TEXT_TYPES[ext]);
+        sendText(res, 200, await readAsset(name), TEXT_TYPES[ext]);
       } else if (ext in BINARY_TYPES) {
-        sendBinary(res, 200, readBinaryAsset(name), BINARY_TYPES[ext]);
+        sendBinary(res, 200, await readBinaryAsset(name), BINARY_TYPES[ext]);
       } else {
-        throw new Error("Unsupported format " + ext);
+        throw new Error(`Unsupported format ${ext}`);
       }
     } catch (_) {
       sendText(res, 404, 'not found');

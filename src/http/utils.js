@@ -1,6 +1,6 @@
 'use strict';
 
-const fs = require('node:fs');
+const fsp = require('node:fs/promises');
 const path = require('node:path');
 const {spawn} = require('node:child_process');
 const {ASSET_DIRS} = require('../shared/config');
@@ -27,26 +27,23 @@ function sendJson(res, status, obj) {
   res.end(JSON.stringify(obj));
 }
 
-function readTextAsset(name) {
+async function readAssetFile(name, encoding) {
   for (const dir of ASSET_DIRS) {
     const file = path.join(dir, name);
     try {
-      if (fs.existsSync(file)) return fs.readFileSync(file, 'utf8');
+      return await fsp.readFile(file, encoding);
     } catch (_) {
     }
   }
   throw new Error(`Missing web asset: ${name}`);
 }
 
+function readTextAsset(name) {
+  return readAssetFile(name, 'utf8');
+}
+
 function readBinaryAsset(name) {
-  for (const dir of ASSET_DIRS) {
-    const file = path.join(dir, name);
-    try {
-      if (fs.existsSync(file)) return fs.readFileSync(file);
-    } catch (_) {
-    }
-  }
-  throw new Error(`Missing web asset: ${name}`);
+  return readAssetFile(name);
 }
 
 function readJsonBody(req) {
