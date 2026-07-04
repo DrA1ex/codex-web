@@ -5,6 +5,7 @@ const {
   isApprovalMethod,
   isCompactionMethod,
   extractDeltaText,
+  extractItemText,
   formatItemStarted,
   outputTypeForItem,
   formatItemCompleted,
@@ -101,6 +102,9 @@ module.exports = {
         this.updateCommandOutput(item);
         return;
       }
+      if (item.type === 'agentMessage') {
+        this.recordOutputGroupSummary(extractItemText(item), 'agentMessage');
+      }
       const label = formatItemCompleted(item);
       if (label) this.appendOutput(label, item?.status === 'failed' ? 'error' : 'item');
       return;
@@ -109,6 +113,7 @@ module.exports = {
       const text = extractDeltaText(method, params);
       if (text && method.includes('commandExecution') && this.appendCommandOutputText(params.item || params, text)) return;
       const type = isCompactionMethod(method) ? 'context-delta' : (method.includes('commandExecution') || method.includes('tool') ? 'tool-delta' : (/reasoning/i.test(method) ? 'reasoning-delta' : 'delta'));
+      if (text && /summary/i.test(method)) this.recordOutputGroupSummary(text, 'summaryDelta', true);
       if (text) this.appendOutput(text, type, true);
       return;
     }

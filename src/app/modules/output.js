@@ -52,6 +52,8 @@ module.exports = {
       promptText: item.text,
       status: 'active',
       summary: 'Running...',
+      summaryText: '',
+      summarySource: '',
       startedAt: nowIso(),
       finishedAt: null,
       model: this.opts.model || this.app.defaultModel || '',
@@ -73,8 +75,22 @@ module.exports = {
     return this.output.filter((entry) => entry.groupId === groupId);
   },
 
+  recordOutputGroupSummary(text, source = 'summary', append = false) {
+    const group = this.outputGroupForId(this.currentOutputGroupId);
+    const value = String(text || '').trim();
+    if (!group || !value) return null;
+
+    group.summaryText = append
+      ? appendLimitedOutputText(group.summaryText ? `${group.summaryText}\n` : '', value).trim()
+      : limitOutputText(value).trim();
+    group.summarySource = source;
+    if (group.status !== 'active') group.summary = group.summaryText;
+    return group;
+  },
+
   summarizeOutputGroup(group, status, errMessage) {
     if (errMessage) return `Failed: ${errMessage}`;
+    if (group.summaryText) return group.summaryText;
 
     const lines = this.importantOutputLinesForGroup(group.id);
     const assistant = [...lines]

@@ -10,6 +10,7 @@ const {
   limitOutputText,
   appendLimitedOutputText,
   extractDeltaText,
+  extractItemText,
   formatItemStarted,
   outputTypeForItem,
   formatItemCompleted,
@@ -25,6 +26,8 @@ test('output formatting classifies stream items and deltas', () => {
   assert.equal(extractDeltaText('turn/delta', { deltaBase64: Buffer.from('hello').toString('base64') }), 'hello');
   assert.equal(extractDeltaText('turn/delta', { bytesBase64: Buffer.from('bytes').toString('base64') }), 'bytes');
   assert.equal(extractDeltaText('turn/delta', { text: 'text delta' }), 'text delta');
+  assert.equal(extractItemText({ text: 'item text' }), 'item text');
+  assert.equal(extractItemText({ content: [{ text: 'part one' }, { text: { value: 'part two' } }] }), 'part one\npart two');
   assert.equal(formatItemStarted({ type: 'commandExecution', command: ['npm', 'test'] }), '[tool] command: npm test');
   assert.equal(formatItemStarted({ type: 'mcpToolCall', server: 'srv', tool: 'read' }), '[tool] srv:read');
   assert.equal(formatItemStarted({ type: 'webSearch', query: 'docs' }), '[tool] web search docs');

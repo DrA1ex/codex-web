@@ -142,6 +142,37 @@ test('handleNotification routes item, delta, plan, diff, and error events to out
   assert.equal(app.output.at(-1).type, 'event');
 });
 
+test('handleNotification captures explicit prompt summaries without changing transcript output', () => {
+  const app = makeAppWithQueue([]);
+  app.createOutputGroupForItem({ id: 'active', text: 'Summarize this prompt' });
+
+  app.handleNotification('turn/delta', { delta: 'Verbose assistant output.' });
+  app.handleNotification('turn/summary/delta', { delta: 'Short execution summary.' });
+  app.finishCurrentOutputGroup('completed');
+
+  assert.equal(app.outputGroups[0].summary, 'Short execution summary.');
+  assert.equal(app.outputGroups[0].summarySource, 'summaryDelta');
+  assert.equal(app.output.at(-1).type, 'context-delta');
+  assert.equal(app.output.at(-1).text, 'Short execution summary.');
+});
+
+test('handleNotification captures completed agent messages as group summaries', () => {
+  const app = makeAppWithQueue([]);
+  app.createOutputGroupForItem({ id: 'active', text: 'Use final agent message' });
+
+  app.handleNotification('item/completed', {
+    item: {
+      type: 'agentMessage',
+      content: [{ text: 'Final AI summary.' }],
+    },
+  });
+  app.finishCurrentOutputGroup('completed');
+
+  assert.equal(app.outputGroups[0].summary, 'Final AI summary.');
+  assert.equal(app.outputGroups[0].summarySource, 'agentMessage');
+  assert.equal(app.output.length, 0);
+});
+
 test('handleServerRequest auto-responds configured approvals and built-in server requests', async () => {
   const app = makeAppWithQueue([], { approvalResponse: 'accept-for-session' });
   const responses = [];

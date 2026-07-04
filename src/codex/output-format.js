@@ -47,6 +47,22 @@ function extractDeltaText(method, params) {
   }
   return '';
 }
+function extractItemText(item) {
+  if (!item) return '';
+  if (typeof item.text === 'string') return item.text;
+  if (typeof item.message === 'string') return item.message;
+  if (typeof item.content === 'string') return item.content;
+  if (Array.isArray(item.content)) {
+    return item.content.map((part) => {
+      if (typeof part === 'string') return part;
+      if (typeof part?.text === 'string') return part.text;
+      if (typeof part?.content === 'string') return part.content;
+      if (typeof part?.text?.value === 'string') return part.text.value;
+      return '';
+    }).filter(Boolean).join('\n');
+  }
+  return '';
+}
 function formatItemStarted(item) {
   if (!item) return '';
   if (item.type === 'commandExecution') return `[tool] command: ${asArray(item.command).join(' ') || item.command || ''}`;
@@ -85,6 +101,7 @@ module.exports = {
   limitOutputText,
   appendLimitedOutputText,
   extractDeltaText,
+  extractItemText,
   formatItemStarted,
   outputTypeForItem,
   formatItemCompleted,
