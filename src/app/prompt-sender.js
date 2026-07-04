@@ -25,6 +25,7 @@ function shouldOnlyQueuePrompt(ctx) {
   return !!(
     ctx.app.state !== 'watching'
     || ctx.app.scheduledRunAt
+    || ctx.hasActivePrompt()
     || ctx.currentItemId
     || ctx.currentTurnId
     || ctx.isQueueProcessingActive()
@@ -101,7 +102,7 @@ module.exports = {
       throw new Error('A prompt is already scheduled to send');
     }
 
-    if (this.isQueueProcessingActive()) {
+    if (this.isQueueProcessingActive() || this.hasActivePrompt()) {
       return await this.movePendingToNext(item);
     }
 

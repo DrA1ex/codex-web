@@ -3,6 +3,7 @@
 const {
   FINISHED_QUEUE_STATUSES,
   FAILURE_QUEUE_STATUSES,
+  RUNNING_QUEUE_STATUSES,
   allHaveStatus,
   hasStatus,
 } = require('./states');
@@ -85,6 +86,7 @@ module.exports = {
     if (this.app.state === 'initializing' || this.app.state === 'selecting-session') return;
     if ((this.app.state === 'paused' && !this.app.scheduledRunAt) || this.app.state === 'approval-required') return;
     if (this.currentItemId || this.currentTurnId) return;
+    if (hasStatus(this.queue, RUNNING_QUEUE_STATUSES)) return;
 
     const pending = this.queue.find((item) => isPendingLikeStatus(item.status));
     if (!pending) {

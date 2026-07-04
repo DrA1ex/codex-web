@@ -59,6 +59,26 @@ test('sendComposerNow queues instead of erroring when busy or pending exists', a
   assert.equal(queued.lastScheduledDelay, 200);
 });
 
+test('sendComposerNow queues normal text when a sent queue item is active but current ids are missing', async () => {
+  const active = item('active', 'sent');
+  const app = makeAppWithQueue([active]);
+  app.rateLimits = { status: 'available', buckets: [], resetAt: null };
+  app.app.state = 'watching';
+  app.sendPrompt = async () => { throw new Error('should not start a second turn'); };
+  app.rpc = { request: async (method) => { throw new Error(`should not call ${method}`); } };
+
+  const result = await app.sendComposerNow('normal follow-up text');
+
+  assert.equal(result.ok, true);
+  assert.equal(result.clearComposer, true);
+  assert.deepEqual(app.queue.map((queueItem) => [queueItem.id, queueItem.status, queueItem.text]), [
+    ['active', 'sent', 'Prompt active'],
+    [result.item.id, 'pending', 'normal follow-up text'],
+  ]);
+  assert.equal(app.lastScheduledDelay, 200);
+  assert.equal(app.output.some((entry) => entry.type === 'user-note'), false);
+});
+
 test('sendComposerNow queues and clears composer when limits are not available', async () => {
   const app = makeAppWithQueue([]);
   app.rateLimits = { status: 'limited', buckets: [], resetAt: null };

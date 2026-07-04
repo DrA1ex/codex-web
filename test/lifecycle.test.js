@@ -41,6 +41,23 @@ test('processing and active prompt helpers follow state, turn, and queue statuse
   assert.equal(app.hasActivePrompt(), true);
 });
 
+test('pumpQueue does not start another item when queue still has a sent item', async () => {
+  const active = item('active', 'sent');
+  const pending = item('pending');
+  const app = makeAppWithQueue([active, pending]);
+  app.app.state = 'watching';
+  app.rateLimits = { status: 'available', buckets: [], resetAt: null };
+  app.runCountdownAndSend = async () => { throw new Error('should not start another item while sent item exists'); };
+
+  await app.pumpQueue();
+
+  assert.deepEqual(app.queue.map((queueItem) => [queueItem.id, queueItem.status]), [
+    ['active', 'sent'],
+    ['pending', 'pending'],
+  ]);
+  assert.equal(app.lastScheduledDelay, undefined);
+});
+
 test('canChangeSession blocks unsafe queue states and allows completed idle session', () => {
   const pending = makeAppWithQueue([item('pending')]);
   pending.app.state = 'watching';
