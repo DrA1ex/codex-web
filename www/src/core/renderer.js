@@ -5,7 +5,6 @@ import { updateCounter } from '#features/composer';
 import { renderApproval } from '#ui/approval';
 import { renderConfirm } from '#ui/confirm';
 import { renderHeader } from '#ui/header';
-import { renderHelpModal } from '#ui/help';
 import { renderLimitResetModal } from '#ui/limit-reset';
 import { renderScheduleModal } from '#ui/schedule';
 import { renderSessions } from '#ui/sessions';
@@ -83,7 +82,6 @@ export function render(force = false) {
   renderSection('sessions', force);
   renderSection('approval', force);
   renderConfirm();
-  renderHelpModal();
   renderLimitResetModal();
   renderScheduleModal();
   renderSection('queue', force);
