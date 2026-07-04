@@ -122,6 +122,22 @@ test('command output completion updates existing tool block once and falls back 
   assert.match(fallback.output.at(-1).text, /exit: 1/);
 });
 
+test('anonymous command output fallback stays inside the current output group', () => {
+  const app = makeAppWithQueue([]);
+  const first = app.createOutputGroupForItem({ id: 'item-1', text: 'First prompt' });
+  app.appendCommandOutput({ command: ['npm', 'test'] });
+  assert.equal(app.appendCommandOutputText({}, 'first output\n'), true);
+  app.finishCurrentOutputGroup('completed');
+
+  const second = app.createOutputGroupForItem({ id: 'item-2', text: 'Second prompt' });
+  assert.equal(app.appendCommandOutputText({}, 'second output\n'), false);
+
+  assert.equal(app.output.length, 1);
+  assert.equal(app.output[0].groupId, first.id);
+  assert.equal(app.output[0].tool.output, 'first output\n');
+  assert.equal(app.currentOutputGroupId, second.id);
+});
+
 test('clearOutput clears diff and command tracking maps', () => {
   const app = makeAppWithQueue([]);
   app.appendCommandOutput({ id: 'cmd-1', command: 'echo hi' });

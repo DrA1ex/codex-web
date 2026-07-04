@@ -58,9 +58,19 @@ module.exports = {
     if (method === 'turn/started') {
       const turn = params.turn || params;
       const turnId = turn.id || turn.turnId || this.currentTurnId;
-      if (this.forceSteer?.outputGroupId && turnId !== this.forceSteer.originalTurnId) {
+      const isForceSteerReplacement = !!(
+        this.forceSteer?.outputGroupId
+        && turnId
+        && turnId !== this.forceSteer.originalTurnId
+        && (
+          turnId === this.forceSteer.replacementTurnId
+          || (!this.forceSteer.replacementTurnId && this.forceSteer.awaitingReplacementTurn)
+        )
+      );
+      if (isForceSteerReplacement) {
         this.useOutputGroup(this.forceSteer.outputGroupId);
         if (!this.forceSteer.replacementTurnId) this.forceSteer.replacementTurnId = turnId;
+        this.forceSteer.awaitingReplacementTurn = false;
       } else {
         const group = this.outputGroupForTurnId(turnId);
         if (group) this.useOutputGroup(group.id);
@@ -95,6 +105,9 @@ module.exports = {
       ) {
         if (this.forceSteer.outputGroupId) this.useOutputGroup(this.forceSteer.outputGroupId);
         this.appendOutput('[steer] Original turn interrupted', 'system');
+        if (!this.forceSteer.replacementTurnId && !this.forceSteer.awaitingReplacementTurn) {
+          this.forceSteer = null;
+        }
         this.broadcastAll();
         return;
       }

@@ -187,6 +187,8 @@ module.exports = {
     if (!outputItem) return;
     const id = this.commandItemId(item);
     if (id) this.commandOutputByItemId.set(String(id), outputItem.id);
+    const groupKey = outputItem.groupId ? `__last_group__:${outputItem.groupId}` : '__last_group__:none';
+    this.commandOutputByItemId.set(groupKey, outputItem.id);
     this.commandOutputByItemId.set('__last__', outputItem.id);
   },
 
@@ -217,7 +219,11 @@ module.exports = {
 
   commandOutputEntry(item) {
     const id = this.commandItemId(item);
-    const outputId = (id && this.commandOutputByItemId.get(String(id))) || this.commandOutputByItemId.get('__last__');
+    const groupId = this.currentOutputGroupId || null;
+    const groupOutputId = groupId ? this.commandOutputByItemId.get(`__last_group__:${groupId}`) : null;
+    const outputId = (id && this.commandOutputByItemId.get(String(id)))
+      || groupOutputId
+      || (!groupId ? this.commandOutputByItemId.get('__last__') : null);
     return outputId ? this.output.find((x) => x.id === outputId) : null;
   },
 

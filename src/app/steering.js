@@ -114,6 +114,7 @@ module.exports = {
       queueItemId: item?.id || null,
       originalTurnId,
       replacementTurnId: null,
+      awaitingReplacementTurn: false,
       outputGroupId: group?.id || null,
       text,
       continueQueue,
@@ -139,6 +140,7 @@ module.exports = {
     }
 
     this.appendOutput('[steer] Sending follow-up prompt', 'system');
+    this.forceSteer.awaitingReplacementTurn = true;
     const result = await this.rpc.request('turn/start', forceTurnStartParams(this, text));
     const turn = result?.turn || result || {};
     const replacementTurnId = turn.id || turn.turnId || null;
@@ -146,6 +148,7 @@ module.exports = {
       this.currentTurnId = replacementTurnId;
       this.debug.lastTurnId = replacementTurnId;
       this.forceSteer.replacementTurnId = replacementTurnId;
+      this.forceSteer.awaitingReplacementTurn = false;
       if (this.forceSteer.outputGroupId) this.useOutputGroup(this.forceSteer.outputGroupId);
       if (item) await this.recordQueueItemTurn(item, replacementTurnId);
       this.updateCurrentOutputGroup({ turnId: replacementTurnId, status: 'active' });

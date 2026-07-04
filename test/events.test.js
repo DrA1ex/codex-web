@@ -173,6 +173,26 @@ test('handleNotification captures completed agent messages as group summaries', 
   assert.equal(app.output.length, 0);
 });
 
+test('stale force steer state does not capture a normal later queue turn', () => {
+  const app = makeAppWithQueue([]);
+  const first = app.createOutputGroupForItem({ id: 'item-1', text: 'Interrupted prompt' });
+  app.forceSteer = {
+    queueItemId: 'item-1',
+    originalTurnId: 'turn-a',
+    replacementTurnId: null,
+    awaitingReplacementTurn: false,
+    outputGroupId: first.id,
+  };
+  const second = app.createOutputGroupForItem({ id: 'item-2', text: 'Next prompt' });
+
+  app.handleNotification('turn/started', { turn: { id: 'turn-b' } });
+
+  assert.equal(app.currentOutputGroupId, second.id);
+  assert.equal(app.output.at(-1).groupId, second.id);
+  assert.deepEqual(first.turnIds, []);
+  assert.deepEqual(second.turnIds, ['turn-b']);
+});
+
 test('handleServerRequest auto-responds configured approvals and built-in server requests', async () => {
   const app = makeAppWithQueue([], { approvalResponse: 'accept-for-session' });
   const responses = [];
