@@ -476,6 +476,39 @@ test('queued compact command waits for app-server compaction completion', async 
   assert.equal(app.lastScheduledDelay, 200);
 });
 
+test('queued compact command completes when app-server reports a compact turn completion', async () => {
+  const compact = item('compact', 'pending', { text: '/compact' });
+  const next = item('next');
+  const app = makeAppWithQueue([compact, next]);
+  const requests = [];
+  app.rpc = {
+    request: async (method, params) => {
+      requests.push({ method, params });
+      if (method === 'account/rateLimits/read') {
+        return { rateLimits: { limitId: 'codex', limitName: 'codex', primary: { usedPercent: 10, windowDurationMins: 300 } } };
+      }
+      if (method === 'thread/read') {
+        return { thread: { contextTokenCount: 5000 } };
+      }
+      if (method === 'thread/compact/start') {
+        app.handleNotification('turn/started', { turn: { id: 'compact-turn' } });
+        app.handleNotification('turn/completed', { turn: { id: 'compact-turn', status: 'completed' } });
+      }
+      return {};
+    },
+  };
+
+  await app.runCountdownAndSend(compact, { continueQueue: true });
+
+  assert.equal(compact.status, 'completed');
+  assert.equal(app.currentItemId, null);
+  assert.equal(app.currentTurnId, null);
+  assert.equal(app.snapshot().app.canInterrupt, false);
+  assert.equal(app.app.state, 'watching');
+  assert.equal(app.lastScheduledDelay, 200);
+  assert.match(app.output.find((entry) => /\[command] \/compact completed/.test(entry.text))?.text || '', /completed/);
+});
+
 test('queued command failure pauses queue and marks item failed', async () => {
   const compact = item('compact', 'pending', { text: '/compact' });
   const app = makeAppWithQueue([compact]);

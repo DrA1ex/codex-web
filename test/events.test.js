@@ -104,6 +104,29 @@ test('thread token usage notifications can update a finished matching item', () 
   assert.equal(done.usage.tokenUsage.totalTokens, 5);
 });
 
+test('context token count updates from session and compaction payloads', async () => {
+  const app = makeAppWithQueue([]);
+  app.rpc = {
+    request: async () => ({
+      thread: {
+        id: 'session',
+        contextTokenCount: 12345,
+      },
+    }),
+  };
+
+  await app.tryReadSession();
+  assert.equal(app.snapshot().app.contextTokens, 12345);
+
+  app.handleNotification('thread/compacted', {
+    threadId: 'session',
+    beforeTokens: 12345,
+    afterTokens: 4321,
+  });
+
+  assert.equal(app.snapshot().app.contextTokens, 4321);
+});
+
 test('handleNotification routes item, delta, plan, diff, and error events to output handlers', () => {
   const app = makeAppWithQueue([]);
 

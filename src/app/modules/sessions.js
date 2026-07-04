@@ -205,6 +205,7 @@ module.exports = {
     try {
       const read = await this.rpc.request('thread/read', { threadId: this.app.sessionId, includeTurns: true }, 6000);
       const thread = read?.thread || read || {};
+      this.updateContextTokenCount(read);
       this.app.sessionTitle = fallbackThreadTitle(thread, this.opts.projectDir) || this.app.sessionTitle;
       this.app.session = normalizeSession(thread, this.opts.projectDir);
     } catch (err) {

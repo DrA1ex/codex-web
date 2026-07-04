@@ -34,6 +34,8 @@ function createAppState(opts) {
     theme: 'dark',
     sessionError: null,
     scheduledRunAt: null,
+    contextTokens: null,
+    contextTokensUpdatedAt: null,
     connectedClients: 0,
     startedAt: nowIso(),
   };

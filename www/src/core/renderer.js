@@ -1,6 +1,7 @@
 import { state } from '#core/state';
 import { renderQueue } from '#features/queue';
 import { renderOutput } from '#features/output';
+import { updateCounter } from '#features/composer';
 import { renderApproval } from '#ui/approval';
 import { renderConfirm } from '#ui/confirm';
 import { renderHeader } from '#ui/header';
@@ -88,4 +89,5 @@ export function render(force = false) {
   renderSection('queue', force);
   renderSection('output', force);
   renderSection('debug', force);
+  updateCounter();
 }

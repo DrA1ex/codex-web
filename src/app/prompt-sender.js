@@ -361,6 +361,8 @@ module.exports = {
       this.currentQueueCommandReject = null;
       this.currentQueueCommand = null;
       this.currentItemId = null;
+      this.currentTurnId = null;
+      this.turnStarted = false;
       this.currentManualSend = false;
       this.manualSendContinueQueue = false;
       await this.saveState();

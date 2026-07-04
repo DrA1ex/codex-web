@@ -264,6 +264,24 @@ module.exports = {
   extractCompactionTokenCount,
   compactUsageOutput,
 
+  setContextTokenCount(value) {
+    const count = finiteNumber(value);
+    if (count === null) return false;
+    this.app.contextTokens = count;
+    this.app.contextTokensUpdatedAt = nowIso();
+    return true;
+  },
+
+  updateContextTokenCount(value = {}) {
+    return this.setContextTokenCount(extractThreadTokenCount(value));
+  },
+
+  updateContextTokenCountFromCompaction(params = {}) {
+    return this.setContextTokenCount(
+      extractCompactionTokenCount(params, 'after') ?? extractThreadTokenCount(params),
+    );
+  },
+
   async refreshPreviousQueueItemUsage() {
     const id = this.pendingUsageRefreshItemId;
     if (!id) return false;
@@ -312,7 +330,9 @@ module.exports = {
     if (!this.app.sessionId) return null;
     try {
       const read = await this.rpc.request('thread/read', { threadId: this.app.sessionId, includeTurns: true }, 6000);
-      return extractThreadTokenCount(read);
+      const count = extractThreadTokenCount(read);
+      this.setContextTokenCount(count);
+      return count;
     } catch (err) {
       this.debugLog?.('thread token read failed', err.message || String(err));
       return null;
@@ -387,6 +407,7 @@ module.exports = {
   },
 
   handleTokenUsageUpdated(params = {}) {
+    this.updateContextTokenCount(params);
     const threadId = params.threadId || params.thread?.id || null;
     const turnId = params.turnId || params.turn?.id || null;
     if (!threadId || !turnId) return false;

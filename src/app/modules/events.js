@@ -48,6 +48,7 @@ module.exports = {
     }
     if (method === 'thread/compacted') {
       if (!params?.threadId || params.threadId === this.app.sessionId) {
+        this.updateContextTokenCountFromCompaction(params);
         this.appendOutput('[compact] completed', 'system');
         if (this.currentQueueCommand === '/compact' && this.currentQueueCommandResolve) {
           this.currentQueueCommandResolve(params || {});
@@ -57,6 +58,7 @@ module.exports = {
     }
     if (method === 'turn/started') {
       const turn = params.turn || params;
+      this.updateContextTokenCount(params);
       const turnId = turn.id || turn.turnId || this.currentTurnId;
       const isForceSteerReplacement = !!(
         this.forceSteer?.outputGroupId
@@ -92,6 +94,7 @@ module.exports = {
     }
     if (method === 'turn/completed' || method === 'turn/failed') {
       const turn = params.turn || params;
+      this.updateContextTokenCount(params);
       const eventTurnId = turn.id || turn.turnId || params.turnId || null;
       const status = turn.status || (method === 'turn/failed' ? 'failed' : 'completed');
       const errMessage = turn?.error?.message || params?.error?.message || null;
@@ -127,6 +130,9 @@ module.exports = {
       this.finishCurrentOutputGroup(status === 'completed' ? 'completed' : 'failed', errMessage);
       this.tryReadSession().then(() => this.broadcastAll()).catch((err) => this.debugLog('refresh session title failed', err.message));
       if (this.currentTurnResolve) this.currentTurnResolve();
+      if (method === 'turn/completed' && this.currentQueueCommand === '/compact' && this.currentQueueCommandResolve) {
+        this.currentQueueCommandResolve(params || {});
+      }
       if (this.forceSteer?.replacementTurnId && eventTurnId === this.forceSteer.replacementTurnId) {
         this.forceSteer = null;
       }

@@ -5,6 +5,11 @@ import { openConfirm } from '#ui/confirm';
 import { openHelp } from '#ui/help';
 import { requestQueueScroll } from '#features/queue';
 
+function formatCount(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number.toLocaleString('en-US') : 'unknown';
+}
+
 function applyComposerResponse(response) {
   const composer = state.composer;
   if (!composer) return;
@@ -32,7 +37,10 @@ export function updateCounter() {
   const lines = text ? text.split(/\r?\n/).length : 0;
   const counter = document.getElementById('counter');
 
-  if (counter) counter.textContent = `Lines: ${lines} · Chars: ${text.length}`;
+  if (counter) {
+    const context = formatCount(state.snap?.app?.contextTokens);
+    counter.textContent = `Context: ${context} · Lines: ${lines} · Chars: ${text.length}`;
+  }
   setButtonState('addBtn', !text.trim(), false);
 }
 
