@@ -1,6 +1,6 @@
-import { state } from '#core/state';
-import { esc } from '#utils/format';
-import { byId, setHidden } from '#utils/dom';
+import {state} from '#core/state';
+import {esc} from '#utils/format';
+import {byId, setHidden} from '#utils/dom';
 
 export function openHelp(commands = []) {
   state.help.open = true;
@@ -51,7 +51,7 @@ function renderCommand(command, index) {
   const expanded = Boolean(state.expandedHelpCommands[key]);
   const detailsId = `helpCommandDetails${index}`;
   return `
-    <section class="help-command ${expanded ? 'expanded' : ''}">
+    <section id="helpCommand${index}" class="help-command ${expanded ? 'expanded' : ''}">
       <button type="button" class="help-command-head" data-help-command="${index}" aria-expanded="${expanded ? 'true' : 'false'}" aria-controls="${detailsId}">
         <span class="icon icon-chevron-${expanded ? 'up' : 'down'}" aria-hidden="true"></span>
         <b class="help-command-name">${esc(command.command || '')}</b>

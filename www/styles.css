@@ -1817,6 +1817,8 @@ textarea:focus {
     justify-content: center;
     padding: 18px;
     background: var(--overlay-bg);
+    min-height: 0;
+    overflow: hidden;
 }
 
 .confirm-modal {
@@ -1842,10 +1844,10 @@ textarea:focus {
 
 .help-modal {
     width: min(720px, 100%);
-    height: min(720px, calc(100vh - 36px));
-    max-height: calc(100vh - 36px);
-    display: flex;
-    flex-direction: column;
+    height: auto;
+    max-height: min(720px, calc(100vh - 36px));
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr);
     gap: 10px;
     overflow: hidden;
 }
@@ -1860,17 +1862,28 @@ textarea:focus {
 
 .help-list {
     display: grid;
+    align-content: start;
     gap: 6px;
     min-height: 0;
+    max-height: 100%;
     overflow: auto;
-    padding-right: 2px;
+    overscroll-behavior: contain;
+    padding-right: 4px;
 }
 
 .help-command {
     border: 1px solid var(--border-soft);
     border-radius: 7px;
     background: var(--panel2);
-    overflow: hidden;
+}
+
+.help-command.expanded {
+    border-color: color-mix(in srgb, var(--accent) 45%, var(--border-soft));
+    background: color-mix(in srgb, var(--panel2) 88%, var(--accent));
+}
+
+.help-command.expanded .help-command-head {
+    border-bottom: 1px solid var(--border-soft);
 }
 
 .help-command-head {
@@ -1906,6 +1919,10 @@ textarea:focus {
     white-space: nowrap;
 }
 
+.help-command.expanded .help-command-head span:not(.icon) {
+    white-space: normal;
+}
+
 .help-command-head em {
     color: var(--muted);
     font-size: 12px;
@@ -1915,7 +1932,7 @@ textarea:focus {
 
 .help-command-details {
     margin: 0;
-    padding: 0 10px 10px 38px;
+    padding: 10px 10px 12px 38px;
     color: var(--muted);
     line-height: 1.45;
 }
