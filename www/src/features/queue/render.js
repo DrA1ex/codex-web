@@ -19,16 +19,11 @@ function queueItemClassName({ active, running, completed, draggable, expanded, e
   ].filter(Boolean).join(' ');
 }
 
-function completedArchiveIncrement(level) {
-  if (level <= 0) return 3;
-  if (level === 1) return 7;
-  return 21 * (3 ** (level - 2));
-}
-
 function completedArchiveVisibleDays(level) {
-  let total = 1;
-  for (let i = 0; i < level; i++) total += completedArchiveIncrement(i);
-  return total;
+  if (level <= 0) return 1;
+  if (level === 1) return 3;
+  if (level === 2) return 7;
+  return 21 * (3 ** (level - 3));
 }
 
 function queueItemTime(item) {
@@ -88,8 +83,12 @@ function renderUsageSummary(item) {
   return `<span class="queue-usage" title="${esc(title.join('\n'))}">${chips.map((chip) => `<b>${esc(chip)}</b>`).join('')}</span>`;
 }
 
-function renderCompletedArchiveControl(hiddenCount, nextIncrementDays, visibleDays) {
-  const windowLabel = visibleDays === 1 ? '24h' : `${visibleDays} days`;
+function dayLabel(days) {
+  return days === 1 ? '1 day' : `${days} days`;
+}
+
+function renderCompletedArchiveControl(hiddenCount, nextVisibleDays, visibleDays) {
+  const windowLabel = visibleDays === 1 ? '24h' : dayLabel(visibleDays);
   const hiddenLabel = hiddenCount === 1 ? '1 completed prompt' : `${hiddenCount} completed prompts`;
 
   return `
@@ -101,7 +100,7 @@ function renderCompletedArchiveControl(hiddenCount, nextIncrementDays, visibleDa
       <div class="prompt-preview archive-summary">${esc(`${hiddenLabel} are hidden.`)}</div>
       <div class="actions queue-actions">
         <button type="button" data-completed-archive-more="1" title="Show completed prompts older than ${esc(windowLabel)}">
-          ${icon('chevron-down')}Show more (${esc(`${nextIncrementDays} days`)})
+          ${icon('chevron-down')}Show more (${esc(dayLabel(nextVisibleDays))})
         </button>
       </div>
     </div>
@@ -206,11 +205,13 @@ function renderCompletedArchive(items, app, indexById) {
     else hiddenCount += 1;
   }
 
-  const rendered = visible.map((item) => renderQueueItem(item, indexById.get(item.id) ?? 0, app));
+  const rendered = [];
 
   if (hiddenCount > 0) {
-    rendered.push(renderCompletedArchiveControl(hiddenCount, completedArchiveIncrement(level), visibleDays));
+    rendered.push(renderCompletedArchiveControl(hiddenCount, completedArchiveVisibleDays(level + 1), visibleDays));
   }
+
+  rendered.push(...visible.map((item) => renderQueueItem(item, indexById.get(item.id) ?? 0, app)));
 
   return rendered.join('');
 }
@@ -330,7 +331,7 @@ export function renderQueue() {
   const indexById = new Map(queue.map((item, index) => [item.id, index]));
   const completedItems = filteredQueue
     .filter((item) => item.status === 'completed')
-    .sort((left, right) => queueItemTime(right) - queueItemTime(left) || (indexById.get(left.id) || 0) - (indexById.get(right.id) || 0));
+    .sort((left, right) => queueItemTime(left) - queueItemTime(right) || (indexById.get(left.id) || 0) - (indexById.get(right.id) || 0));
   const otherItems = filteredQueue.filter((item) => item.status !== 'completed');
 
   const oldRects = queueItemRects(container);
