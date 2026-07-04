@@ -240,20 +240,49 @@ test('queued compact command waits for app-server compaction completion', async 
   const next = item('next');
   const app = makeAppWithQueue([compact, next]);
   const requests = [];
+  let limitReads = 0;
+  let threadReads = 0;
   app.rpc = {
     request: async (method, params) => {
       requests.push({ method, params });
-      setImmediate(() => app.handleNotification('thread/compacted', { threadId: app.app.sessionId, turnId: 'compact-turn' }));
+      if (method === 'account/rateLimits/read') {
+        limitReads += 1;
+        return {
+          rateLimits: {
+            limitId: 'codex',
+            limitName: 'codex',
+            primary: { usedPercent: limitReads === 1 ? 12 : 13, windowDurationMins: 300 },
+          },
+        };
+      }
+      if (method === 'thread/read') {
+        threadReads += 1;
+        return { thread: { contextTokenCount: threadReads === 1 ? 12000 : 4200 } };
+      }
+      if (method === 'thread/compact/start') {
+        app.handleNotification('thread/compacted', { threadId: app.app.sessionId, turnId: 'compact-turn' });
+      }
       return {};
     },
   };
 
   await app.runCountdownAndSend(compact, { continueQueue: true });
 
-  assert.deepEqual(requests, [{ method: 'thread/compact/start', params: { threadId: app.app.sessionId } }]);
+  assert.deepEqual(requests.map((request) => request.method), [
+    'account/rateLimits/read',
+    'thread/read',
+    'thread/compact/start',
+    'thread/read',
+    'account/rateLimits/read',
+  ]);
   assert.equal(compact.kind, 'command');
   assert.equal(compact.status, 'completed');
   assert.match(app.output.find((entry) => /\[compact] completed/.test(entry.text))?.text || '', /completed/);
+  const usageOutput = app.output.find((entry) => /\[compact usage]/.test(entry.text))?.text || '';
+  assert.match(usageOutput, /tokens: 12,000 -> 4,200 \(-7,800\)/);
+  assert.match(usageOutput, /codex 5h: 12% -> 13% \(\+1%\)/);
+  assert.equal(compact.usage.compactTokensBefore, 12000);
+  assert.equal(compact.usage.compactTokensAfter, 4200);
   assert.equal(app.app.state, 'watching');
   assert.equal(app.lastScheduledDelay, 200);
 });

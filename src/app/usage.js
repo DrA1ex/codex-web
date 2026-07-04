@@ -101,6 +101,117 @@ function normalizeTokenBreakdown(value) {
   return result;
 }
 
+function finiteNumber(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? Math.max(0, Math.round(number)) : null;
+}
+
+function firstFiniteNumber(values) {
+  for (const value of values) {
+    const number = finiteNumber(value);
+    if (number !== null) return number;
+  }
+  return null;
+}
+
+function extractThreadTokenCount(value = {}) {
+  const thread = value.thread || value;
+  return firstFiniteNumber([
+    thread.contextTokenCount,
+    thread.contextTokens,
+    thread.context_token_count,
+    thread.context_tokens,
+    thread.tokenCount,
+    thread.tokens,
+    thread.totalTokens,
+    thread.total_tokens,
+    thread.context?.tokenCount,
+    thread.context?.tokens,
+    thread.context?.totalTokens,
+    thread.contextWindow?.usedTokens,
+    thread.contextWindow?.tokenCount,
+    thread.context_window?.used_tokens,
+    thread.context_window?.token_count,
+    thread.tokenUsage?.totalTokens,
+    thread.token_usage?.total_tokens,
+    thread.usage?.totalTokens,
+  ]);
+}
+
+function extractCompactionTokenCount(params = {}, phase) {
+  const compact = params.compaction || params.compact || params.summary || params;
+  const phaseNode = phase === 'before'
+    ? (compact.before || compact.previous || compact.pre || params.before)
+    : (compact.after || compact.next || compact.post || params.after);
+
+  return firstFiniteNumber([
+    phaseNode?.contextTokenCount,
+    phaseNode?.contextTokens,
+    phaseNode?.tokenCount,
+    phaseNode?.tokens,
+    phaseNode?.totalTokens,
+    phase === 'before' ? compact.beforeTokens : compact.afterTokens,
+    phase === 'before' ? compact.beforeTokenCount : compact.afterTokenCount,
+    phase === 'before' ? compact.previousTokens : compact.currentTokens,
+    phase === 'before' ? params.beforeTokens : params.afterTokens,
+    phase === 'before' ? params.beforeTokenCount : params.afterTokenCount,
+  ]);
+}
+
+function formatNumber(value) {
+  return Number(value).toLocaleString('en-US');
+}
+
+function formatPercent(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return '?';
+  return `${Math.round(number * 10) / 10}%`;
+}
+
+function formatTokenChange(before, after) {
+  if (before === null && after === null) return 'tokens: unavailable';
+  if (before === null) return `tokens: ? -> ${formatNumber(after)}`;
+  if (after === null) return `tokens: ${formatNumber(before)} -> ?`;
+
+  const delta = after - before;
+  const signed = delta > 0 ? `+${formatNumber(delta)}` : formatNumber(delta);
+  return `tokens: ${formatNumber(before)} -> ${formatNumber(after)} (${signed})`;
+}
+
+function formatLimitUsageChanges(startSnapshot, endSnapshot) {
+  const endBuckets = new Map((endSnapshot?.buckets || []).map((bucket) => [bucket.limitId, bucket]));
+  const lines = [];
+
+  for (const startBucket of startSnapshot?.buckets || []) {
+    const endBucket = endBuckets.get(startBucket.limitId);
+    if (!endBucket) continue;
+
+    const endWindows = new Map((endBucket.windows || []).map((windowInfo) => [windowKey(windowInfo), windowInfo]));
+    for (const startWindow of startBucket.windows || []) {
+      const endWindow = endWindows.get(windowKey(startWindow));
+      if (!endWindow) continue;
+
+      const before = Number(startWindow.usedPercent);
+      const after = Number(endWindow.usedPercent);
+      const delta = Number.isFinite(before) && Number.isFinite(after)
+        ? Math.round((after - before) * 10) / 10
+        : null;
+      const signed = delta === null ? '' : ` (${delta > 0 ? '+' : ''}${formatPercent(delta)})`;
+      lines.push(`${startBucket.limitName || startBucket.limitId} ${windowLabel(startWindow)}: ${formatPercent(before)} -> ${formatPercent(after)}${signed}`);
+    }
+  }
+
+  return lines;
+}
+
+function compactUsageOutput(usage = {}) {
+  const before = usage.compactTokensBefore ?? null;
+  const after = usage.compactTokensAfter ?? null;
+  const lines = ['[compact usage]', formatTokenChange(before, after)];
+  lines.push(...formatLimitUsageChanges(usage.startedLimits, usage.finishedLimits));
+  return lines.join('\n');
+}
+
 function publicUsageStatus(usage) {
   if (!usage) return 'unavailable';
   if (usage.tokenUsage || (usage.limitDeltas || []).length) return usage.refreshPending ? 'estimated' : 'final';
@@ -149,6 +260,9 @@ module.exports = {
   cloneLimitSnapshot,
   calculateLimitDeltas,
   normalizeTokenBreakdown,
+  extractThreadTokenCount,
+  extractCompactionTokenCount,
+  compactUsageOutput,
 
   async refreshPreviousQueueItemUsage() {
     const id = this.pendingUsageRefreshItemId;
@@ -192,6 +306,57 @@ module.exports = {
     usage.usageUpdatedAt = nowIso();
     await this.saveQueue();
     return true;
+  },
+
+  async readThreadTokenCount() {
+    if (!this.app.sessionId) return null;
+    try {
+      const read = await this.rpc.request('thread/read', { threadId: this.app.sessionId, includeTurns: true }, 6000);
+      return extractThreadTokenCount(read);
+    } catch (err) {
+      this.debugLog?.('thread token read failed', err.message || String(err));
+      return null;
+    }
+  },
+
+  async beginQueuedCommandUsage(item) {
+    await this.refreshPreviousQueueItemUsage();
+    await safePollRateLimits(this, 'command usage baseline');
+
+    const usage = ensureUsage(item, this);
+    usage.threadId = this.app.sessionId || null;
+    usage.turnId = null;
+    usage.tokenUsage = null;
+    usage.startedLimits = cloneLimitSnapshot(this.rateLimits);
+    usage.finishedLimits = null;
+    usage.refreshedLimits = null;
+    usage.limitDeltas = [];
+    usage.limitDeltaScope = 'account';
+    usage.usageStatus = 'pending';
+    usage.usageUpdatedAt = nowIso();
+    usage.refreshPending = false;
+    usage.command = item.command || null;
+    usage.compactTokensBefore = item.command === '/compact' ? await this.readThreadTokenCount() : null;
+    usage.compactTokensAfter = null;
+    return usage;
+  },
+
+  async completeQueuedCommandUsage(item, eventParams = null) {
+    if (!item?.usage?.startedLimits) return null;
+
+    const usage = ensureUsage(item, this);
+    if (item.command === '/compact') {
+      usage.compactTokensBefore = usage.compactTokensBefore ?? extractCompactionTokenCount(eventParams, 'before');
+      usage.compactTokensAfter = extractCompactionTokenCount(eventParams, 'after') ?? await this.readThreadTokenCount();
+    }
+
+    await safePollRateLimits(this, 'command usage final');
+    await updateUsageFromLimits(this, item, 'finishedLimits');
+    usage.refreshPending = false;
+    usage.usageStatus = publicUsageStatus(usage);
+    usage.usageUpdatedAt = nowIso();
+    await this.saveQueue();
+    return usage;
   },
 
   async completeQueueItemUsage(item) {

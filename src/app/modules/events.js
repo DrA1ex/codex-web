@@ -50,7 +50,7 @@ module.exports = {
       if (!params?.threadId || params.threadId === this.app.sessionId) {
         this.appendOutput('[compact] completed', 'system');
         if (this.currentQueueCommand === '/compact' && this.currentQueueCommandResolve) {
-          this.currentQueueCommandResolve();
+          this.currentQueueCommandResolve(params || {});
         }
       }
       return;

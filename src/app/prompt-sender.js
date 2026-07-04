@@ -14,6 +14,7 @@ const {
   setWaitingForLimits,
   setRefreshingLimits,
 } = require('./limit-wait');
+const { compactUsageOutput } = require('./usage');
 
 function normalizePromptText(text) {
   return String(text || '').replace(/\r\n/g, '\n');
@@ -321,14 +322,19 @@ module.exports = {
     this.currentItemId = item.id;
     this.app.state = 'sending';
     this.app.message = `Running command ${item.command}`;
+    if (item.command === '/compact') await this.beginQueuedCommandUsage(item);
     await this.saveQueue();
     this.appendOutput(`[command] #${this.visibleIndex(item.id)} ${item.command}`, 'system');
     this.broadcastAll();
 
     try {
-      await this.runQueueCommand(item.command);
+      const commandResult = await this.runQueueCommand(item.command);
       item.status = 'completed';
       item.finishedAt = nowIso();
+      if (item.command === '/compact') {
+        const usage = await this.completeQueuedCommandUsage(item, commandResult);
+        if (usage) this.appendOutput(compactUsageOutput(usage), 'system');
+      }
       this.appendOutput(`[command] ${item.command} completed`, 'system');
       await this.saveQueue();
     } catch (err) {
@@ -377,8 +383,9 @@ module.exports = {
 
   async runCompactCommand() {
     if (!this.app.sessionId) throw new Error('No Codex session selected');
+    const completion = this.waitForQueuedCommand('/compact');
     await this.rpc.request('thread/compact/start', { threadId: this.app.sessionId });
-    await this.waitForQueuedCommand('/compact');
+    return await completion;
   },
 
   waitForQueuedCommand(command) {
