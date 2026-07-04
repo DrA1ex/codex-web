@@ -950,6 +950,11 @@ button:disabled {
     color: var(--tab-active-text);
 }
 
+.queue-tab.active:hover {
+    background: color-mix(in srgb, var(--tab-active-bg) 72%, var(--surface-hover-muted));
+    box-shadow: inset 0 0 0 1px var(--mobile-active-ring);
+}
+
 .panel-body {
     flex: 1;
     min-height: 0;
