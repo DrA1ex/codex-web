@@ -34,7 +34,7 @@ export function renderHelpModal() {
     <div class="confirm-modal help-modal" role="dialog" aria-modal="true" aria-labelledby="helpTitle">
       <div class="confirm-head help-head">
         <b id="helpTitle">Commands</b>
-        <button id="helpCloseBtn" class="icon-only" title="Close command help"><span class="icon icon-clear" aria-hidden="true"></span></button>
+        <button id="helpCloseBtn" class="icon-only" title="Close command help"><span class="icon icon-close" aria-hidden="true"></span></button>
       </div>
       <div class="help-list">
         ${commands.map(renderCommand).join('')}
@@ -50,11 +50,26 @@ function renderCommand(command, index) {
     <section class="help-command ${expanded ? 'expanded' : ''}">
       <button type="button" class="help-command-head" data-help-command="${index}" aria-expanded="${expanded ? 'true' : 'false'}" aria-controls="${detailsId}">
         <span class="icon icon-chevron-${expanded ? 'up' : 'down'}" aria-hidden="true"></span>
-        <code>${esc(command.command || '')}</code>
+        <b class="help-command-name">${esc(command.command || '')}</b>
         <span>${esc(command.short || '')}</span>
         ${command.kind ? `<em>${esc(command.kind)}</em>` : ''}
       </button>
-      ${expanded ? `<p id="${detailsId}" class="help-command-details">${esc(command.details || '')}</p>` : ''}
+      ${expanded ? renderCommandDetails(command, detailsId) : ''}
     </section>
+  `;
+}
+
+function renderCommandDetails(command, detailsId) {
+  const examples = Array.isArray(command.examples) ? command.examples.filter(Boolean) : [];
+  return `
+    <div id="${detailsId}" class="help-command-details">
+      <p>${esc(command.details || '')}</p>
+      ${examples.length ? `
+        <div class="help-examples">
+          <span>Examples</span>
+          ${examples.map((example) => `<pre><code>${esc(example)}</code></pre>`).join('')}
+        </div>
+      ` : ''}
+    </div>
   `;
 }

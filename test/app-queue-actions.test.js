@@ -43,6 +43,7 @@ test('help command returns structured command reference', async () => {
   assert.ok(result.help.commands.some((entry) => entry.command === '/think <text>' && /active prompt/i.test(entry.short)));
   assert.ok(result.help.commands.some((entry) => entry.command === '/think! <text>' && /interrupt/i.test(entry.short)));
   assert.ok(result.help.commands.some((entry) => entry.command === '/compact' && /Compact/i.test(entry.short)));
+  assert.ok(result.help.commands.every((entry) => entry.details && entry.examples?.length));
 });
 
 test('reorderQueueItem reorders only pending slots and preserves non-pending positions', async () => {

@@ -1842,10 +1842,12 @@ textarea:focus {
 
 .help-modal {
     width: min(720px, 100%);
-    max-height: min(720px, calc(100vh - 36px));
+    height: min(720px, calc(100vh - 36px));
+    max-height: calc(100vh - 36px);
     display: flex;
     flex-direction: column;
     gap: 10px;
+    overflow: hidden;
 }
 
 .help-head {
@@ -1859,6 +1861,7 @@ textarea:focus {
 .help-list {
     display: grid;
     gap: 6px;
+    min-height: 0;
     overflow: auto;
     padding-right: 2px;
 }
@@ -1889,7 +1892,7 @@ textarea:focus {
     background: var(--hover);
 }
 
-.help-command-head code {
+.help-command-name {
     color: var(--accent);
     font-weight: 750;
     white-space: nowrap;
@@ -1915,6 +1918,38 @@ textarea:focus {
     padding: 0 10px 10px 38px;
     color: var(--muted);
     line-height: 1.45;
+}
+
+.help-command-details p {
+    margin: 0 0 10px;
+}
+
+.help-examples {
+    display: grid;
+    gap: 6px;
+}
+
+.help-examples > span {
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 750;
+}
+
+.help-examples pre {
+    margin: 0;
+    padding: 8px;
+    border: 1px solid var(--border-soft);
+    border-radius: 7px;
+    background: var(--approval-pre-bg);
+    color: var(--text);
+    overflow: auto;
+}
+
+.help-examples code {
+    font-family: var(--mono);
+    font-size: 12px;
+    white-space: pre-wrap;
+    word-break: break-word;
 }
 
 .shutdown-overlay {
