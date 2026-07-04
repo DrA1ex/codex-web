@@ -86,7 +86,13 @@ export function clearPendingQueue() {
 
 export function clearCompletedQueue() {
   setQueueMenuOpen(false);
-  if (confirm('Clear all completed prompts?')) post('/api/queue/clear-completed');
+  openConfirm(
+    'clear-completed',
+    'Clear completed prompts?',
+    'This will permanently remove all completed prompts from the queue. This cannot be undone.',
+    'Yes, clear completed',
+    true,
+  );
 }
 
 export function scrollOutputToBottom() {

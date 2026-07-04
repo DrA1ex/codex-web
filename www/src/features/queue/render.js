@@ -6,6 +6,7 @@ import { animateQueueItems, clearQueueScrollRequest, queueItemRects, scrollQueue
 import { isPendingQueueItem, isRunningStatus, queueMatchesFilter } from './status.js';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+const COMPLETED_ARCHIVE_FALLBACK_COUNT = 10;
 
 function queueItemClassName({ active, running, completed, draggable, expanded, editing }) {
   return [
@@ -103,6 +104,22 @@ function renderCompletedArchiveControl(hiddenCount, nextVisibleDays, visibleDays
           ${icon('chevron-down')}Show more (${esc(dayLabel(nextVisibleDays))})
         </button>
       </div>
+    </div>
+  `;
+}
+
+function renderCompletedArchiveFallback(visibleDays, fallbackCount, totalCount) {
+  const windowLabel = visibleDays === 1 ? '24h' : dayLabel(visibleDays);
+  const fallbackLabel = fallbackCount === 1 ? '1 completed prompt' : `${fallbackCount} completed prompts`;
+  const hiddenLabel = totalCount === 1 ? '1 completed prompt' : `${totalCount} completed prompts`;
+
+  return `
+    <div class="queue-item completed archive-control">
+      <div class="queue-top">
+        <span>Completed archive</span>
+        <span>No prompts within ${esc(windowLabel)}</span>
+      </div>
+      <div class="prompt-preview archive-summary">${esc(`Showing last ${fallbackLabel}. ${hiddenLabel} total.`)}</div>
     </div>
   `;
 }
@@ -205,13 +222,18 @@ function renderCompletedArchive(items, app, indexById) {
     else hiddenCount += 1;
   }
 
+  const fallbackVisible = visible.length ? visible : items.slice(-COMPLETED_ARCHIVE_FALLBACK_COUNT);
   const rendered = [];
 
   if (hiddenCount > 0) {
     rendered.push(renderCompletedArchiveControl(hiddenCount, completedArchiveVisibleDays(level + 1), visibleDays));
   }
 
-  rendered.push(...visible.map((item) => renderQueueItem(item, indexById.get(item.id) ?? 0, app)));
+  if (!visible.length && fallbackVisible.length) {
+    rendered.push(renderCompletedArchiveFallback(visibleDays, fallbackVisible.length, items.length));
+  }
+
+  rendered.push(...fallbackVisible.map((item) => renderQueueItem(item, indexById.get(item.id) ?? 0, app)));
 
   return rendered.join('');
 }

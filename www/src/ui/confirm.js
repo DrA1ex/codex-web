@@ -11,6 +11,7 @@ const CONFIRM_ACTIONS = {
     if (result.message) alert(result.message);
     return getState();
   }),
+  'clear-completed': () => api('/api/queue/clear-completed'),
   stop: () => api('/api/control/stop'),
   remove: ({ id }) => api('/api/queue/remove', { id }),
 };
