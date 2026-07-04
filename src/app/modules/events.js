@@ -46,6 +46,15 @@ module.exports = {
       this.handleTokenUsageUpdated(params);
       return;
     }
+    if (method === 'thread/compacted') {
+      if (!params?.threadId || params.threadId === this.app.sessionId) {
+        this.appendOutput('[compact] completed', 'system');
+        if (this.currentQueueCommand === '/compact' && this.currentQueueCommandResolve) {
+          this.currentQueueCommandResolve();
+        }
+      }
+      return;
+    }
     if (method === 'turn/started') {
       const turn = params.turn || params;
       this.currentTurnId = turn.id || turn.turnId || this.currentTurnId;

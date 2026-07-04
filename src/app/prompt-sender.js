@@ -7,6 +7,7 @@ const {
   isPendingLikeStatus,
   normalizeQueueItem,
   parseExactCommand,
+  parseQueuedCommand,
 } = require('../queue');
 const {
   waitForAvailableLimits,
@@ -56,6 +57,12 @@ function promptEffortLabel(ctx) {
 
 function promptSendLabel(ctx, item) {
   return `[send] #${item.id} · ${item.lineCount} lines · model: ${promptModelLabel(ctx)} · effort: ${promptEffortLabel(ctx)}`;
+}
+
+function queueAddLabel(item) {
+  return item.kind === 'command'
+    ? `[queue] added #${item.id} · command ${item.command}`
+    : `[queue] added #${item.id} · ${item.lineCount} lines`;
 }
 
 function finishFailedPrompt(ctx, item, err) {
@@ -146,6 +153,7 @@ module.exports = {
 
     const command = parseExactCommand(trimmed);
     if (command) return await this.executeCommand(command);
+    const queuedCommand = parseQueuedCommand(trimmed);
     if (!this.app.sessionId) throw new Error('No Codex session selected');
 
     const queueOnly = shouldOnlyQueuePrompt(this);
@@ -153,8 +161,18 @@ module.exports = {
     this.queue.push(item);
 
     await this.saveQueue();
-    this.appendOutput(`[queue] added #${item.id} · ${item.lineCount} lines`, 'system');
+    this.appendOutput(queueAddLabel(item), 'system');
     this.broadcastAll();
+
+    if (queuedCommand) {
+      if (!queueOnly) {
+        this.app.state = 'watching';
+        this.app.message = 'Command queued';
+        this.broadcastAll();
+      }
+      this.schedulePump(200);
+      return { ok: true, clearComposer: true, item };
+    }
 
     if (queueOnly || await waitForAvailableLimits(this, 'manual send')) {
       this.schedulePump(200);
@@ -201,6 +219,10 @@ module.exports = {
 
     if (this.app.state === 'paused' || this.countdownCancel) {
       await resetNext();
+      return;
+    }
+    if (item.kind === 'command') {
+      await this.executeQueuedCommand(item, { continueQueue });
       return;
     }
     await this.sendPrompt(item, { continueQueue });
@@ -283,6 +305,92 @@ module.exports = {
         this.broadcastAll();
       }
     }
+  },
+
+  async executeQueuedCommand(item, options = {}) {
+    const continueQueue = options.continueQueue !== false;
+
+    normalizeQueueItem(item);
+    if (item.kind !== 'command' || !item.command) throw new Error('Queue item is not a command');
+
+    this.currentManualSend = !continueQueue;
+    item.status = 'sending';
+    item.startedAt = nowIso();
+    item.error = null;
+
+    this.currentItemId = item.id;
+    this.app.state = 'sending';
+    this.app.message = `Running command ${item.command}`;
+    await this.saveQueue();
+    this.appendOutput(`[command] #${this.visibleIndex(item.id)} ${item.command}`, 'system');
+    this.broadcastAll();
+
+    try {
+      await this.runQueueCommand(item.command);
+      item.status = 'completed';
+      item.finishedAt = nowIso();
+      this.appendOutput(`[command] ${item.command} completed`, 'system');
+      await this.saveQueue();
+    } catch (err) {
+      item.status = 'failed';
+      item.finishedAt = nowIso();
+      item.error = err.message;
+      await this.saveQueue();
+      this.appendOutput(`[error] command ${item.command} failed: ${err.message}`, 'error');
+      this.pause('Auto-send paused after queued command failure. Type /resume after reviewing the error.');
+    } finally {
+      if (this.currentQueueCommandTimer) clearTimeout(this.currentQueueCommandTimer);
+      this.currentQueueCommandTimer = null;
+      this.currentQueueCommandResolve = null;
+      this.currentQueueCommandReject = null;
+      this.currentQueueCommand = null;
+      this.currentItemId = null;
+      this.currentManualSend = false;
+      this.manualSendContinueQueue = false;
+      await this.saveState();
+      this.broadcastAll();
+    }
+
+    const failed = item.status === 'failed';
+    if (!failed && continueQueue && !['paused', 'approval-required', 'error'].includes(this.app.state)) {
+      this.app.state = 'watching';
+      this.broadcastAll();
+      this.schedulePump(200);
+      return;
+    }
+
+    if (!failed && !continueQueue && !['paused', 'approval-required', 'error'].includes(this.app.state)) {
+      this.app.state = 'paused';
+      this.app.message = 'Manual command completed. Auto-send paused.';
+      this.broadcastAll();
+    }
+  },
+
+  async runQueueCommand(command) {
+    switch (command) {
+      case '/compact':
+        return await this.runCompactCommand();
+      default:
+        throw new Error(`Unsupported queued command: ${command}`);
+    }
+  },
+
+  async runCompactCommand() {
+    if (!this.app.sessionId) throw new Error('No Codex session selected');
+    await this.rpc.request('thread/compact/start', { threadId: this.app.sessionId });
+    await this.waitForQueuedCommand('/compact');
+  },
+
+  waitForQueuedCommand(command) {
+    return new Promise((resolve, reject) => {
+      this.currentQueueCommand = command;
+      this.currentQueueCommandResolve = resolve;
+      this.currentQueueCommandReject = reject;
+      this.currentQueueCommandTimer = setTimeout(() => {
+        if (this.currentQueueCommand === command) reject(new Error(`${command} did not finish before timeout`));
+      }, 10 * 60 * 1000);
+      if (typeof this.currentQueueCommandTimer.unref === 'function') this.currentQueueCommandTimer.unref();
+    });
   },
 
   waitForTurnCompletion() {

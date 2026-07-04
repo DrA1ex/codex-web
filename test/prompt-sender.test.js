@@ -86,6 +86,23 @@ test('sendComposerNow executes exact command and validates empty/session states'
   await assert.rejects(() => noSession.sendComposerNow('hello'), /No Codex session selected/);
 });
 
+test('sendComposerNow queues compact command instead of executing it immediately', async () => {
+  const app = makeAppWithQueue([]);
+  app.rateLimits = { status: 'available', buckets: [], resetAt: null };
+  app.app.state = 'watching';
+  app.executeCommand = async () => { throw new Error('should not execute queued command immediately'); };
+
+  const result = await app.sendComposerNow('/compact');
+
+  assert.equal(result.ok, true);
+  assert.equal(result.clearComposer, true);
+  assert.equal(result.item.kind, 'command');
+  assert.equal(result.item.command, '/compact');
+  assert.equal(app.queue.length, 1);
+  assert.equal(app.app.state, 'watching');
+  assert.equal(app.lastScheduledDelay, 200);
+});
+
 test('sendItemNow keeps active prompt above pending item when queue is already processing', async () => {
   const active = item('active', 'sent');
   const first = item('first');
@@ -216,6 +233,42 @@ test('runCountdownAndSend resets next item when cancelled during countdown', asy
   await app.runCountdownAndSend(pending);
 
   assert.equal(pending.status, 'pending');
+});
+
+test('queued compact command waits for app-server compaction completion', async () => {
+  const compact = item('compact', 'pending', { text: '/compact' });
+  const next = item('next');
+  const app = makeAppWithQueue([compact, next]);
+  const requests = [];
+  app.rpc = {
+    request: async (method, params) => {
+      requests.push({ method, params });
+      setImmediate(() => app.handleNotification('thread/compacted', { threadId: app.app.sessionId, turnId: 'compact-turn' }));
+      return {};
+    },
+  };
+
+  await app.runCountdownAndSend(compact, { continueQueue: true });
+
+  assert.deepEqual(requests, [{ method: 'thread/compact/start', params: { threadId: app.app.sessionId } }]);
+  assert.equal(compact.kind, 'command');
+  assert.equal(compact.status, 'completed');
+  assert.match(app.output.find((entry) => /\[compact] completed/.test(entry.text))?.text || '', /completed/);
+  assert.equal(app.app.state, 'watching');
+  assert.equal(app.lastScheduledDelay, 200);
+});
+
+test('queued command failure pauses queue and marks item failed', async () => {
+  const compact = item('compact', 'pending', { text: '/compact' });
+  const app = makeAppWithQueue([compact]);
+  app.rpc = { request: async () => { throw new Error('compact unavailable'); } };
+
+  await app.runCountdownAndSend(compact, { continueQueue: true });
+
+  assert.equal(compact.status, 'failed');
+  assert.equal(compact.error, 'compact unavailable');
+  assert.equal(app.app.state, 'paused');
+  assert.match(app.output.at(-1).text, /queued command failure/);
 });
 
 test('sendPrompt marks successful prompts, waits for completion, and schedules queue continuation', async () => {

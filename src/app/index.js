@@ -55,6 +55,10 @@ class CodexLimitWatchApp {
 
     this.currentTurnResolve = null;
     this.currentTurnReject = null;
+    this.currentQueueCommandResolve = null;
+    this.currentQueueCommandReject = null;
+    this.currentQueueCommand = null;
+    this.currentQueueCommandTimer = null;
     this.currentItemId = null;
     this.currentTurnId = null;
     this.currentManualSend = false;

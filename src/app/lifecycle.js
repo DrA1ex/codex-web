@@ -142,7 +142,9 @@ module.exports = {
 
     this.clearPumpTimer();
     if (this.usageRefreshTimer) clearTimeout(this.usageRefreshTimer);
+    if (this.currentQueueCommandTimer) clearTimeout(this.currentQueueCommandTimer);
     this.usageRefreshTimer = null;
+    this.currentQueueCommandTimer = null;
     this.shuttingDown = true;
     this.app.state = 'shutting-down';
     this.app.message = reason;

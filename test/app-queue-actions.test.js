@@ -5,7 +5,7 @@ const test = require('node:test');
 
 const { item, makeAppWithQueue } = require('./helpers');
 
-test('addPrompt normalizes CRLF text and executes exact commands instead of queueing', async () => {
+test('addPrompt normalizes CRLF text, executes immediate commands, and queues queue commands', async () => {
   const app = makeAppWithQueue([]);
   const commands = [];
   app.executeCommand = async (command) => { commands.push(command); return { ok: true, clearComposer: true }; };
@@ -17,11 +17,18 @@ test('addPrompt normalizes CRLF text and executes exact commands instead of queu
   assert.deepEqual(commands, ['/pause']);
   assert.equal(app.queue.length, 0);
 
+  const compactResult = await app.addPrompt('/compact');
+  assert.equal(compactResult.ok, true);
+  assert.equal(compactResult.item.kind, 'command');
+  assert.equal(compactResult.item.command, '/compact');
+  assert.equal(app.queue.length, 1);
+  assert.match(app.output.at(-1).text, /command \/compact/);
+
   const result = await app.addPrompt('one\r\ntwo');
   assert.equal(result.ok, true);
   assert.equal(result.item.text, 'one\ntwo');
   assert.equal(result.item.lineCount, 2);
-  assert.equal(app.queue.length, 1);
+  assert.equal(app.queue.length, 2);
   assert.equal(app.lastScheduledDelay, 200);
 });
 

@@ -17,6 +17,7 @@ const {
   removeQueueItem,
   reorderPendingItem,
   parseExactCommand,
+  parseQueuedCommand,
 } = require('../src/queue');
 const { item } = require('./helpers');
 
@@ -61,8 +62,15 @@ test('queue items are normalized, ordered, and counted', () => {
 test('standalone commands are parsed exactly', () => {
   assert.equal(parseExactCommand(' /pause\n'), '/pause');
   assert.equal(parseExactCommand('/approve-session'), '/approve-session');
+  assert.equal(parseExactCommand('/compact'), null);
+  assert.equal(parseQueuedCommand('/compact'), '/compact');
+  assert.equal(parseQueuedCommand('/pause'), null);
   assert.equal(parseExactCommand('/send now'), null);
   assert.equal(parseExactCommand('hello'), null);
+
+  const compact = makeQueueItem('/compact');
+  assert.equal(compact.kind, 'command');
+  assert.equal(compact.command, '/compact');
 });
 
 test('queue data helpers move, undo, clear, edit, duplicate, retry, and remove safely', () => {

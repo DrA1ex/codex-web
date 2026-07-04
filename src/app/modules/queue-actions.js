@@ -10,6 +10,7 @@ const {
   removeQueueItem: removeQueueItemData,
   reorderPendingItem,
   parseExactCommand,
+  parseQueuedCommand,
 } = require('../../queue');
 
 module.exports = {
@@ -18,11 +19,12 @@ module.exports = {
     if (!trimmed) return { ok: false, message: 'Prompt is empty' };
     const command = parseExactCommand(trimmed);
     if (command) return await this.executeCommand(command);
+    const queuedCommand = parseQueuedCommand(trimmed);
     const item = makeQueueItem(String(text).replace(/\r\n/g, '\n'));
     this.queue.push(item);
     await this.saveQueue();
     this.app.state = this.app.state === 'done' ? 'watching' : this.app.state;
-    this.appendOutput(`[queue] added #${item.id} · ${item.lineCount} lines`, 'system');
+    this.appendOutput(queuedCommand ? `[queue] added #${item.id} · command ${queuedCommand}` : `[queue] added #${item.id} · ${item.lineCount} lines`, 'system');
     this.broadcastAll();
     this.schedulePump(200);
     return { ok: true, clearComposer: true, item };
@@ -82,7 +84,7 @@ module.exports = {
       case '/pause': this.pause(); return { ok: true, clearComposer: true };
       case '/resume': this.resume(); return { ok: true, clearComposer: true };
       case '/quit': await this.shutdown('quit command'); return { ok: true, clearComposer: true };
-      case '/help': return { ok: true, message: '/send, /undo, /clear, /pause, /resume, /quit, /approve, /approve-session, /decline, /cancel' };
+      case '/help': return { ok: true, message: '/compact can be queued. Immediate commands: /send, /undo, /clear, /pause, /resume, /quit, /approve, /approve-session, /decline, /cancel' };
       case '/approve': await this.respondApproval('accept'); return { ok: true, clearComposer: true };
       case '/approve-session': await this.respondApproval('accept-for-session'); return { ok: true, clearComposer: true };
       case '/decline': await this.respondApproval('decline'); return { ok: true, clearComposer: true };

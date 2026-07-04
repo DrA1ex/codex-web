@@ -75,10 +75,11 @@ function renderQueueHeader(item, index, draggable, completed, expanded, editing)
     ? `<span class="queue-drag-handle" title="Drag to reorder">${icon('drag')}</span>`
     : '';
   const toggleAttrs = promptToggleAttrs(item, expanded, editing);
+  const itemKind = item.kind === 'command' ? `command ${item.command || ''}` : `${item.lineCount || 0} lines`;
 
   return `
     <div class="queue-top" ${toggleAttrs}>
-      <span>${dragHandle}#${index + 1} <span class="status ${esc(item.status)}">${esc(item.status)}</span> · ${item.lineCount || 0} lines</span>
+      <span>${dragHandle}#${index + 1} <span class="status ${esc(item.status)}">${esc(item.status)}</span> · ${esc(itemKind)}</span>
       <span>${esc(fmtTime(finishedOrCreatedAt))}</span>
     </div>
   `;

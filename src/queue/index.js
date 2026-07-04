@@ -3,15 +3,20 @@
 const { nowIso, randomId, lineCount, previewOf } = require('../shared/utils');
 
 const PENDING_LIKE_STATUSES = new Set(['pending', 'next']);
+const IMMEDIATE_COMMANDS = new Set(['/send', '/undo', '/clear', '/pause', '/resume', '/quit', '/help', '/approve', '/approve-session', '/decline', '/cancel']);
+const QUEUED_COMMANDS = new Set(['/compact']);
 
 function isPendingLikeStatus(status) {
   return PENDING_LIKE_STATUSES.has(status);
 }
 
 function makeQueueItem(text) {
+  const command = parseQueuedCommand(text);
   const item = {
     id: randomId(4),
     text,
+    kind: command ? 'command' : 'prompt',
+    command,
     status: 'pending',
     createdAt: nowIso(),
     startedAt: null,
@@ -27,6 +32,9 @@ function makeQueueItem(text) {
 function normalizeQueueItem(item) {
   item.id = item.id || randomId(4);
   item.text = String(item.text || '');
+  const command = parseQueuedCommand(item.text);
+  item.kind = command ? 'command' : (item.kind || 'prompt');
+  item.command = command || (item.kind === 'command' ? item.command || '' : null);
   item.status = item.status || 'pending';
   item.createdAt = item.createdAt || nowIso();
   item.startedAt = item.startedAt || null;
@@ -163,8 +171,11 @@ function reorderPendingItem(queue, id, body = {}) {
 }
 function parseExactCommand(text) {
   const trimmed = String(text || '').trim();
-  const commands = new Set(['/send', '/undo', '/clear', '/pause', '/resume', '/quit', '/help', '/approve', '/approve-session', '/decline', '/cancel']);
-  return commands.has(trimmed) ? trimmed : null;
+  return IMMEDIATE_COMMANDS.has(trimmed) ? trimmed : null;
+}
+function parseQueuedCommand(text) {
+  const trimmed = String(text || '').trim();
+  return QUEUED_COMMANDS.has(trimmed) ? trimmed : null;
 }
 
 module.exports = {
@@ -182,4 +193,5 @@ module.exports = {
   removeQueueItem,
   reorderPendingItem,
   parseExactCommand,
+  parseQueuedCommand,
 };
