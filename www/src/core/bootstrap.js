@@ -46,7 +46,13 @@ function attachEventStream() {
   stream.addEventListener('output', (event) => {
     markNetworkOnline();
     if (!state.snap) return;
-    state.snap.output = JSON.parse(event.data);
+    const payload = JSON.parse(event.data);
+    if (Array.isArray(payload)) {
+      state.snap.output = payload;
+    } else {
+      state.snap.output = payload.output || [];
+      state.snap.outputGroups = payload.outputGroups || [];
+    }
     state.renderKeys.output = sectionKey('output', state.snap);
     renderOutput();
   });

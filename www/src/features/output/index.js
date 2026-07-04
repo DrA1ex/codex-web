@@ -106,6 +106,79 @@ function renderCommandToolLine(line) {
   `;
 }
 
+function groupStatusLabel(group) {
+  if (group.status === 'active') return 'running';
+  if (group.status === 'failed') return 'failed';
+  return 'done';
+}
+
+function groupMetaLabel(group) {
+  const pieces = [];
+  if (group.model) pieces.push(group.model);
+  if (group.effort) pieces.push(`effort: ${group.effort}`);
+  return pieces.join(' · ');
+}
+
+function renderOutputGroup(group, lines) {
+  const expanded = group.status === 'active' || Boolean(state.expandedOutputGroups[group.id]);
+  const groupId = esc(group.id || '');
+  const status = groupStatusLabel(group);
+  const summary = group.summary || (group.status === 'active' ? 'Running...' : 'Prompt completed.');
+  const meta = groupMetaLabel(group);
+  const body = expanded
+    ? `<div class="out-group-body">${lines.map(renderOutputLine).join('')}</div>`
+    : `<p class="out-group-summary">${esc(summary)}</p>`;
+
+  return `
+    <section class="out-group ${expanded ? 'expanded' : 'collapsed'} ${esc(group.status || '')}">
+      <button type="button" class="out-group-head" data-output-group="${groupId}" aria-expanded="${expanded ? 'true' : 'false'}">
+        <span class="out-group-chevron">${expanded ? 'v' : '>'}</span>
+        <span class="out-group-title">Prompt</span>
+        <strong>${esc(group.title || 'Prompt')}</strong>
+        <b class="out-group-status">${esc(status)}</b>
+        ${meta ? `<em>${esc(meta)}</em>` : ''}
+      </button>
+      ${body}
+    </section>
+  `;
+}
+
+function renderGroupedOutput(lines, groups) {
+  if (!groups.length) return lines.map(renderOutputLine).join('');
+
+  const linesByGroup = new Map();
+  for (const line of lines) {
+    if (!line.groupId) continue;
+    const bucket = linesByGroup.get(line.groupId) || [];
+    bucket.push(line);
+    linesByGroup.set(line.groupId, bucket);
+  }
+
+  const rendered = [];
+  const renderedGroupIds = new Set();
+
+  for (const line of lines) {
+    if (!line.groupId) {
+      rendered.push(renderOutputLine(line));
+      continue;
+    }
+    if (renderedGroupIds.has(line.groupId)) continue;
+    const group = groups.find((candidate) => candidate.id === line.groupId);
+    if (!group) {
+      rendered.push(renderOutputLine(line));
+      continue;
+    }
+    renderedGroupIds.add(line.groupId);
+    rendered.push(renderOutputGroup(group, linesByGroup.get(line.groupId) || []));
+  }
+
+  for (const group of groups) {
+    if (!renderedGroupIds.has(group.id)) rendered.push(renderOutputGroup(group, []));
+  }
+
+  return rendered.join('');
+}
+
 function renderOutputLine(line) {
   const type = line.type || 'text';
   const meta = outputLabel(type, line.text);
@@ -125,12 +198,25 @@ function renderOutputLine(line) {
   `;
 }
 
+function updateOutputJumpAction() {
+  const button = document.getElementById('bottomBtn');
+  if (!button) return;
+  button.classList.toggle('has-new-output', state.outputUnread);
+  button.innerHTML = `<span class="icon icon-arrow-down" aria-hidden="true"></span>${state.outputUnread ? 'New output' : 'Scroll to bottom'}`;
+}
+
 export function renderOutput() {
   const outputEl = state.outputEl;
   if (!outputEl) return;
 
   const wasAtBottom = outputEl.scrollHeight - outputEl.scrollTop - outputEl.clientHeight < 30;
-  outputEl.innerHTML = (state.snap?.output || []).map(renderOutputLine).join('');
+  outputEl.innerHTML = renderGroupedOutput(state.snap?.output || [], state.snap?.outputGroups || []);
 
-  if (wasAtBottom) outputEl.scrollTop = outputEl.scrollHeight;
+  if (wasAtBottom) {
+    outputEl.scrollTop = outputEl.scrollHeight;
+    state.outputUnread = false;
+  } else {
+    state.outputUnread = true;
+  }
+  updateOutputJumpAction();
 }

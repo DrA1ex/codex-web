@@ -24,6 +24,8 @@ import {
   clearPendingQueue,
   closeQueueMenuIfOutside,
   confirmRemoveQueueItem,
+  copyVisibleOutput,
+  copyVisibleOutputFromMenu,
   interruptPrompt,
   post,
   reportError,
@@ -48,6 +50,7 @@ const CLICK_TARGET_SELECTOR = [
   '[data-queue-filter]',
   '[data-output-diff]',
   '[data-output-tool]',
+  '[data-output-group]',
   '[data-toggle-prompt]',
   '#statusNotice',
 ].join(',');
@@ -90,6 +93,8 @@ const BUTTON_ACTIONS = {
     .catch(reportError),
   bottomBtn: scrollOutputToBottom,
   bottomMenuBtn: scrollOutputToBottomFromMenu,
+  copyOutputBtn: copyVisibleOutput,
+  copyOutputMenuBtn: copyVisibleOutputFromMenu,
   clearOutputMenuBtn: clearOutputFromMenu,
   themeBtn: toggleTheme,
 };
@@ -110,6 +115,7 @@ function runClickAction(target, event) {
     handleQueueFilter(target) ||
     handleOutputDiffToggle(target) ||
     handleOutputToolToggle(target) ||
+    handleOutputGroupToggle(target) ||
     handleStatusNotice(target) ||
     handleMobileCollapse(target) ||
     handleButton(target) ||
@@ -177,6 +183,15 @@ function handleOutputToolToggle(target) {
   if (!toggle || toggle.disabled) return false;
 
   state.expandedToolOutput[toggle.dataset.outputTool] = !state.expandedToolOutput[toggle.dataset.outputTool];
+  renderOutput();
+  return true;
+}
+
+function handleOutputGroupToggle(target) {
+  const toggle = target.closest?.('[data-output-group]');
+  if (!toggle) return false;
+
+  state.expandedOutputGroups[toggle.dataset.outputGroup] = !state.expandedOutputGroups[toggle.dataset.outputGroup];
   renderOutput();
   return true;
 }

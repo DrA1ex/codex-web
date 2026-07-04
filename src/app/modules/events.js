@@ -48,6 +48,7 @@ module.exports = {
     if (method === 'turn/started') {
       const turn = params.turn || params;
       this.currentTurnId = turn.id || turn.turnId || this.currentTurnId;
+      this.updateCurrentOutputGroup({ turnId: this.currentTurnId || null, status: 'active' });
       this.debug.lastTurnId = this.currentTurnId;
       this.turnStarted = true;
       const item = this.currentItem();
@@ -76,6 +77,7 @@ module.exports = {
       }
       this.finishActiveOutputBlocks();
       this.appendOutput(status === 'completed' ? '[turn] completed' : `[turn] ${status}${errMessage ? ': ' + errMessage : ''}`, status === 'completed' ? 'turn' : 'error');
+      this.finishCurrentOutputGroup(status === 'completed' ? 'completed' : 'failed', errMessage);
       this.tryReadSession().then(() => this.broadcastAll()).catch((err) => this.debugLog('refresh session title failed', err.message));
       if (this.currentTurnResolve) this.currentTurnResolve();
       if (status !== 'completed') this.pause('Auto-send paused after turn failure. Type /resume after reviewing the error.');

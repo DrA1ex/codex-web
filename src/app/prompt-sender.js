@@ -224,6 +224,7 @@ module.exports = {
     this.turnStarted = false;
     this.turnCompletionSeen = false;
     this.turnCompletionStatus = null;
+    this.createOutputGroupForItem(item);
 
     await this.beginQueueItemUsage(item);
     await this.saveQueue();
@@ -254,8 +255,12 @@ module.exports = {
       const continueAfterPrompt = shouldContinueAfterPrompt(this, continueQueue);
 
       await this.completeQueueItemUsage(item);
+      if (this.currentOutputGroupId) {
+        this.finishCurrentOutputGroup(item.status === 'failed' ? 'failed' : 'completed', item.error || null);
+      }
       this.currentItemId = null;
       this.currentTurnId = null;
+      this.currentOutputGroupId = null;
       this.currentManualSend = false;
       this.manualSendContinueQueue = false;
       this.currentTurnResolve = null;

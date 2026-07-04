@@ -156,6 +156,7 @@ module.exports = {
       sessions: this.sessions,
       queue: this.queue,
       output: this.output,
+      outputGroups: this.outputGroups,
       rateLimits: this.rateLimits,
       limitResetRequest: this.currentLimitResetRequest ? this.currentLimitResetRequest() : null,
       approval: this.approval,

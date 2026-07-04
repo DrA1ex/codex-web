@@ -267,6 +267,28 @@ test('sendPrompt output shows default model and effort when no override is selec
   assert.match(app.output.find((entry) => entry.type === 'send').text, /model: gpt-default \(default\) · effort: default/);
 });
 
+test('sendPrompt creates and completes an output group with turn metadata', async () => {
+  const active = item('active');
+  const app = makeAppWithQueue([active], { model: 'gpt-test', effort: 'medium' });
+  app.rpc = { request: async () => ({ turn: { id: 'turn-active' } }) };
+  app.waitForTurnCompletion = async () => {
+    app.handleNotification('turn/started', { turn: { id: 'turn-active' } });
+    app.handleNotification('turn/delta', { delta: 'Prompt work finished.' });
+    app.handleNotification('turn/completed', { turn: { id: 'turn-active', status: 'completed' } });
+  };
+  app.tryReadSession = async () => {};
+
+  await app.sendPrompt(active, { continueQueue: false });
+
+  assert.equal(app.outputGroups.length, 1);
+  assert.equal(app.outputGroups[0].queueItemId, 'active');
+  assert.equal(app.outputGroups[0].turnId, 'turn-active');
+  assert.equal(app.outputGroups[0].status, 'completed');
+  assert.equal(app.outputGroups[0].summary, 'Prompt work finished.');
+  assert.ok(app.output.every((entry) => entry.groupId === app.outputGroups[0].id));
+  assert.equal(app.currentOutputGroupId, null);
+});
+
 test('sendPrompt stores token usage and account-level limit deltas', async () => {
   const active = item('active');
   const app = makeAppWithQueue([active]);

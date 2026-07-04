@@ -69,6 +69,11 @@ export function scrollOutputToBottomFromMenu() {
   scrollOutputToBottom();
 }
 
+export function copyVisibleOutputFromMenu() {
+  setOutputMenuOpen(false);
+  copyVisibleOutput();
+}
+
 export function clearOutputFromMenu() {
   setOutputMenuOpen(false);
   post('/api/output/clear');
@@ -86,6 +91,18 @@ export function clearCompletedQueue() {
 
 export function scrollOutputToBottom() {
   if (state.outputEl) state.outputEl.scrollTop = state.outputEl.scrollHeight;
+  state.outputUnread = false;
+  const button = document.getElementById('bottomBtn');
+  if (button) {
+    button.classList.remove('has-new-output');
+    button.innerHTML = '<span class="icon icon-arrow-down" aria-hidden="true"></span>Scroll to bottom';
+  }
+}
+
+export function copyVisibleOutput() {
+  const text = state.outputEl?.innerText || '';
+  if (!text.trim()) return;
+  navigator.clipboard?.writeText(text).catch(reportError);
 }
 
 export function toggleTheme() {

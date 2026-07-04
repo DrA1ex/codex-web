@@ -20,6 +20,8 @@ export const state = {
 
   expandedDiffOutput: Object.create(null),
   expandedToolOutput: Object.create(null),
+  expandedOutputGroups: Object.create(null),
+  outputUnread: false,
   activeQueueFilter: 'all',
   renderKeys: Object.create(null),
   lastNoticeKey: '',

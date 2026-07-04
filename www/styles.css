@@ -1271,6 +1271,108 @@ textarea:focus {
     padding: 13px 18px;
 }
 
+.secondary-action {
+    color: var(--muted);
+}
+
+#bottomBtn.has-new-output {
+    border-color: var(--accent);
+    color: var(--accent);
+}
+
+.out-group {
+    min-width: 0;
+    margin: 0 0 10px;
+    overflow: hidden;
+    border: 1px solid var(--border-soft);
+    border-radius: 8px;
+    background: var(--output-card-bg);
+}
+
+.out-group.active {
+    border-color: var(--accent);
+}
+
+.out-group.failed {
+    border-color: var(--danger-soft);
+}
+
+.out-group-head {
+    width: 100%;
+    min-width: 0;
+    display: grid;
+    grid-template-columns: 16px auto minmax(0, 1fr) auto;
+    gap: 9px;
+    align-items: center;
+    border: 0;
+    border-radius: 0;
+    padding: 9px 11px;
+    background: var(--output-toggle-hover-bg);
+    box-shadow: none;
+    color: var(--output-body-strong);
+    text-align: left;
+}
+
+.out-group-head:hover {
+    background: var(--panel2);
+}
+
+.out-group-chevron {
+    color: var(--muted);
+    font-weight: 800;
+}
+
+.out-group-title {
+    color: var(--output-accent);
+    font-weight: 800;
+}
+
+.out-group-head strong {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-weight: 700;
+}
+
+.out-group-head em {
+    grid-column: 3 / 5;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--muted);
+    font-size: 12px;
+    font-style: normal;
+}
+
+.out-group-status {
+    justify-self: end;
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 750;
+}
+
+.out-group.active .out-group-status {
+    color: var(--accent);
+}
+
+.out-group.failed .out-group-status {
+    color: var(--danger);
+}
+
+.out-group-summary {
+    margin: 0;
+    padding: 10px 12px 12px 36px;
+    color: var(--output-body);
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+.out-group-body {
+    padding: 8px 12px 10px;
+}
+
 .out-line {
     display: grid;
     grid-template-columns: minmax(0, 1fr);

@@ -126,14 +126,36 @@ test('clearOutput clears diff and command tracking maps', () => {
   const app = makeAppWithQueue([]);
   app.appendCommandOutput({ id: 'cmd-1', command: 'echo hi' });
   app.updateDiffOutput('diff --git a/file b/file\n--- a/file\n+++ b/file\n-old\n+new');
+  app.createOutputGroupForItem({ id: 'item-1', text: 'Grouped prompt' });
 
   app.clearOutput();
 
   assert.deepEqual(app.output, []);
+  assert.deepEqual(app.outputGroups, []);
+  assert.equal(app.currentOutputGroupId, null);
   assert.equal(app.currentDiffOutputId, null);
   assert.equal(app.currentDiffFileKey, null);
   assert.equal(app.diffSnapshotByFileKey.size, 0);
   assert.equal(app.commandOutputByItemId.size, 0);
+});
+
+test('output groups stamp entries and summarize completed prompts', () => {
+  const app = makeAppWithQueue([]);
+  const group = app.createOutputGroupForItem({ id: 'item-1', text: 'Implement grouped output\nDetails' });
+
+  app.appendOutput('[send] #item-1', 'send');
+  app.appendOutput('[prompt]\nImplement grouped output', 'prompt');
+  app.appendOutput('Done with grouped output.', 'delta', true);
+  app.finishCurrentOutputGroup('completed');
+
+  assert.equal(app.outputGroups.length, 1);
+  assert.equal(app.outputGroups[0].id, group.id);
+  assert.equal(app.outputGroups[0].queueItemId, 'item-1');
+  assert.equal(app.outputGroups[0].title, 'Implement grouped output');
+  assert.equal(app.outputGroups[0].status, 'completed');
+  assert.equal(app.outputGroups[0].summary, 'Done with grouped output.');
+  assert.ok(app.output.every((entry) => entry.groupId === group.id));
+  assert.ok(app.output.every((entry) => entry.queueItemId === 'item-1'));
 });
 
 test('trimOutput enforces line and character limits and removes stale command mappings', () => {

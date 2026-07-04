@@ -9,26 +9,128 @@ const {
 } = require('../../codex/output-format');
 
 module.exports = {
-  appendOutput(text, type = 'text', appendToPrevious = false) {
+  outputPayload() {
+    return { output: this.output, outputGroups: this.outputGroups };
+  },
+
+  broadcastOutput() {
+    this.broadcast('output', this.outputPayload());
+  },
+
+  outputGroupTitle(item) {
+    const firstLine = String(item?.text || '').trim().split(/\r?\n/).find(Boolean) || `Prompt #${item?.id || '?'}`;
+    return firstLine.length > 76 ? `${firstLine.slice(0, 73)}...` : firstLine;
+  },
+
+  outputGroupForId(groupId) {
+    return groupId ? this.outputGroups.find((group) => group.id === groupId) || null : null;
+  },
+
+  currentOutputMeta(extra = {}) {
+    const group = this.outputGroupForId(this.currentOutputGroupId);
+    if (!group) return { ...extra };
+    return {
+      groupId: group.id,
+      queueItemId: group.queueItemId,
+      turnId: this.currentTurnId || group.turnId || null,
+      ...extra,
+    };
+  },
+
+  createOutputGroupForItem(item) {
+    const existing = this.outputGroups.find((group) => group.queueItemId === item.id && group.status === 'active');
+    if (existing) {
+      this.currentOutputGroupId = existing.id;
+      return existing;
+    }
+
+    const group = {
+      id: randomId(8),
+      queueItemId: item.id,
+      turnId: null,
+      title: this.outputGroupTitle(item),
+      promptText: item.text,
+      status: 'active',
+      summary: 'Running...',
+      startedAt: nowIso(),
+      finishedAt: null,
+      model: this.opts.model || this.app.defaultModel || '',
+      effort: this.opts.effort || this.app.effort || '',
+    };
+    this.outputGroups.push(group);
+    this.currentOutputGroupId = group.id;
+    return group;
+  },
+
+  updateCurrentOutputGroup(fields) {
+    const group = this.outputGroupForId(this.currentOutputGroupId);
+    if (!group) return null;
+    Object.assign(group, fields);
+    return group;
+  },
+
+  importantOutputLinesForGroup(groupId) {
+    return this.output.filter((entry) => entry.groupId === groupId);
+  },
+
+  summarizeOutputGroup(group, status, errMessage) {
+    if (errMessage) return `Failed: ${errMessage}`;
+
+    const lines = this.importantOutputLinesForGroup(group.id);
+    const assistant = [...lines]
+      .reverse()
+      .find((entry) => entry.type === 'delta' && String(entry.text || '').trim());
+    if (assistant) {
+      const text = String(assistant.text || '').replace(/\s+/g, ' ').trim();
+      return text.length > 180 ? `${text.slice(0, 177)}...` : text;
+    }
+
+    const diffs = lines.filter((entry) => entry.type === 'diff');
+    const tools = lines.filter((entry) => entry.type === 'tool');
+    const failedTool = tools.find((entry) => {
+      const code = entry.tool?.exitCode;
+      return code !== null && code !== undefined && code !== 0;
+    });
+
+    if (failedTool) return `Finished with a failing command: ${failedTool.tool?.command || 'command'}.`;
+    if (diffs.length && tools.length) return `Completed with ${diffs.length} diff block(s) and ${tools.length} command/tool block(s).`;
+    if (diffs.length) return `Completed with ${diffs.length} diff block(s).`;
+    if (tools.length) return `Completed with ${tools.length} command/tool block(s).`;
+    return status === 'failed' ? 'Prompt failed.' : 'Prompt completed.';
+  },
+
+  finishCurrentOutputGroup(status = 'completed', errMessage = null) {
+    const group = this.outputGroupForId(this.currentOutputGroupId);
+    if (!group || group.status !== 'active') return null;
+    group.status = status;
+    group.finishedAt = nowIso();
+    group.turnId = this.currentTurnId || group.turnId || null;
+    group.summary = this.summarizeOutputGroup(group, status, errMessage);
+    return group;
+  },
+
+  appendOutput(text, type = 'text', appendToPrevious = false, meta = null) {
     if (text === undefined || text === null || text === '') return;
     if (type !== 'diff') this.closeCurrentDiffOutput();
+    const outputMeta = meta || this.currentOutputMeta();
     let entry;
     if (appendToPrevious && this.output.length) {
       const last = this.output[this.output.length - 1];
-      if (canAppendOutput(last.type, type)) {
+      if (canAppendOutput(last.type, type) && (last.groupId || null) === (outputMeta.groupId || null)) {
         last.text = appendLimitedOutputText(last.text, text);
         last.ts = nowIso();
+        Object.assign(last, outputMeta);
         entry = last;
       } else {
-        entry = { id: randomId(5), ts: nowIso(), type, text: limitOutputText(text) };
+        entry = { id: randomId(5), ts: nowIso(), type, text: limitOutputText(text), ...outputMeta };
         this.output.push(entry);
       }
     } else {
-      entry = { id: randomId(5), ts: nowIso(), type, text: limitOutputText(text) };
+      entry = { id: randomId(5), ts: nowIso(), type, text: limitOutputText(text), ...outputMeta };
       this.output.push(entry);
     }
     this.trimOutput();
-    this.broadcast('output', this.output);
+    this.broadcastOutput();
     return entry;
   },
 
@@ -51,6 +153,7 @@ module.exports = {
       ts: nowIso(),
       type: 'tool',
       text: `[tool] command: ${command}`,
+      ...this.currentOutputMeta({ groupRole: 'tool' }),
       tool: {
         kind: 'command',
         command,
@@ -62,7 +165,7 @@ module.exports = {
     };
     this.output.push(entry);
     this.trimOutput();
-    this.broadcast('output', this.output);
+    this.broadcastOutput();
     this.trackCommandOutput(item, entry);
     return entry;
   },
@@ -82,7 +185,7 @@ module.exports = {
     out.tool.output = appendLimitedOutputText(out.tool.output || '', text);
     out.tool.active = true;
     out.ts = nowIso();
-    this.broadcast('output', this.output);
+    this.broadcastOutput();
     return true;
   },
 
@@ -97,7 +200,7 @@ module.exports = {
       out.tool.exitCode = exitCode;
       out.tool.active = false;
       out.ts = nowIso();
-      this.broadcast('output', this.output);
+      this.broadcastOutput();
       return;
     }
     if (out) {
@@ -105,7 +208,7 @@ module.exports = {
         out.text = appendLimitedOutputText(out.text, line);
       }
       out.ts = nowIso();
-      this.broadcast('output', this.output);
+      this.broadcastOutput();
       return;
     }
     this.appendOutput(`[tool] command\n${line.trim()}`, item?.status === 'failed' ? 'error' : 'tool');
@@ -226,6 +329,7 @@ module.exports = {
     } else {
       this.closeCurrentDiffOutput();
       const entry = { id: randomId(5), ts: nowIso(), type: 'diff', text: section.text, diff: section.diff };
+      Object.assign(entry, this.currentOutputMeta({ groupRole: 'diff' }));
       this.output.push(entry);
       this.currentDiffOutputId = entry.id;
       this.currentDiffFileKey = section.fileKey;
@@ -254,7 +358,7 @@ module.exports = {
       this.currentDiffFileKey = null;
       this.lastDiffOutputText = null;
     }
-    this.broadcast('output', this.output);
+    this.broadcastOutput();
   },
 
   trimOutput() {
@@ -271,16 +375,20 @@ module.exports = {
     for (const [key, value] of this.commandOutputByItemId.entries()) {
       if (!outputIds.has(value)) this.commandOutputByItemId.delete(key);
     }
+    const groupIds = new Set(this.output.map((x) => x.groupId).filter(Boolean));
+    this.outputGroups = this.outputGroups.filter((group) => groupIds.has(group.id) || group.id === this.currentOutputGroupId);
   },
 
   clearOutput() {
     this.output = [];
+    this.outputGroups = [];
+    this.currentOutputGroupId = null;
     this.lastDiffOutputText = null;
     this.currentDiffOutputId = null;
     this.currentDiffFileKey = null;
     if (this.diffSnapshotByFileKey) this.diffSnapshotByFileKey.clear();
     this.commandOutputByItemId.clear();
-    this.broadcast('output', this.output);
+    this.broadcastOutput();
     this.broadcastAll();
   }
 };

@@ -72,6 +72,8 @@ class CodexLimitWatchApp {
     this.app = createAppState(opts);
     this.queue = [];
     this.output = [];
+    this.outputGroups = [];
+    this.currentOutputGroupId = null;
     this.lastDiffOutputText = null;
     this.currentDiffOutputId = null;
     this.currentDiffFileKey = null;

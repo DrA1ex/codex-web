@@ -47,7 +47,7 @@ export function sectionKey(name, snapshot) {
       sendLocked: app.state === 'countdown',
     });
   }
-  if (name === 'output') return stableKey(snapshot?.output);
+  if (name === 'output') return stableKey({ output: snapshot?.output, outputGroups: snapshot?.outputGroups });
   if (name === 'debug') return stableKey(snapshot?.debug);
 
   return '';
