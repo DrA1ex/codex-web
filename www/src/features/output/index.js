@@ -205,11 +205,29 @@ function updateOutputJumpAction() {
   button.innerHTML = `<span class="icon icon-arrow-down" aria-hidden="true"></span>${state.outputUnread ? 'New output' : 'Scroll to bottom'}`;
 }
 
+function outputIsNearBottom() {
+  const outputEl = state.outputEl;
+  if (!outputEl) return true;
+  return outputEl.scrollHeight - outputEl.scrollTop - outputEl.clientHeight < 30;
+}
+
+export function updateOutputScrollState() {
+  const nextUnread = !outputIsNearBottom();
+  if (state.outputUnread === nextUnread) return;
+  state.outputUnread = nextUnread;
+  updateOutputJumpAction();
+}
+
+export function attachOutputScrollHandler() {
+  if (!state.outputEl) return;
+  state.outputEl.addEventListener('scroll', updateOutputScrollState, { passive: true });
+}
+
 export function renderOutput() {
   const outputEl = state.outputEl;
   if (!outputEl) return;
 
-  const wasAtBottom = outputEl.scrollHeight - outputEl.scrollTop - outputEl.clientHeight < 30;
+  const wasAtBottom = outputIsNearBottom();
   outputEl.innerHTML = renderGroupedOutput(state.snap?.output || [], state.snap?.outputGroups || []);
 
   if (wasAtBottom) {
