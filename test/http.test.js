@@ -102,6 +102,21 @@ test('snapshot exposes queue controls, sessions, rate limits, and debug summary'
   assert.deepEqual(snap.debug, { connectedBrowserClients: 2 });
 });
 
+test('snapshot caps completed archive and exposes archive metadata', () => {
+  const completed = Array.from({ length: 12 }, (_, index) => item(`done-${index}`, 'completed', {
+    finishedAt: new Date(Date.now() - (index * 1000)).toISOString(),
+  }));
+  const app = makeAppWithQueue([...completed, item('pending')]);
+  app.app.state = 'watching';
+
+  const snap = app.snapshot();
+
+  assert.equal(snap.completedArchive.items.length, 10);
+  assert.equal(snap.completedArchive.hasMore, true);
+  assert.equal(snap.completedArchive.cursor.id, snap.completedArchive.items[0].id);
+  assert.equal(snap.queue.filter((queueItem) => queueItem.status === 'completed').length, 10);
+});
+
 test('resolveApiRoute dispatches GET/POST handlers and reports 404/405', async () => {
   const app = makeAppWithQueue([item('pending')]);
   app.app.state = 'paused';
@@ -133,6 +148,67 @@ test('resolveApiRoute exposes rate-limit reset request endpoint', async () => {
 
   assert.equal(response.status, 200);
   assert.deepEqual(response.body, { ok: true, resetRequest: { requestId: 'request-1' } });
+});
+
+test('resolveApiRoute exposes completed archive pages', async () => {
+  const completed = Array.from({ length: 12 }, (_, index) => item(`done-${index}`, 'completed', {
+    finishedAt: new Date(Date.now() - (index * 1000)).toISOString(),
+  }));
+  const app = makeAppWithQueue([...completed, item('pending')]);
+  const initial = app.completedArchiveSnapshot();
+
+  const response = await resolveApiRoute(app, { method: 'POST' }, '/api/queue/completed-page', {
+    before: initial.cursor,
+    limit: 50,
+  });
+
+  assert.equal(response.status, 200);
+  assert.equal(response.body.items.length, 2);
+  assert.equal(response.body.hasMore, false);
+  assert.equal(response.body.cursor.id, response.body.items[0].id);
+});
+
+test('completed archive pages walk large history to the end', async () => {
+  const base = Date.parse('2026-01-01T00:00:00.000Z');
+  const completed = Array.from({ length: 123 }, (_, index) => item(`done-${index}`, 'completed', {
+    finishedAt: new Date(base + (index * 1000)).toISOString(),
+  }));
+  const app = makeAppWithQueue([...completed, item('pending')]);
+
+  let page = app.completedArchiveSnapshot();
+  const loaded = [...page.items];
+
+  while (page.hasMore) {
+    const response = await resolveApiRoute(app, { method: 'POST' }, '/api/queue/completed-page', {
+      before: page.cursor,
+      limit: 50,
+    });
+    assert.equal(response.status, 200);
+    page = response.body;
+    loaded.push(...page.items);
+  }
+
+  assert.equal(loaded.length, 123);
+  assert.equal(new Set(loaded.map((queueItem) => queueItem.id)).size, 123);
+  assert.equal(page.hasMore, false);
+});
+
+test('completed archive stale cursor does not restart from newest page', async () => {
+  const completed = Array.from({ length: 12 }, (_, index) => item(`done-${index}`, 'completed', {
+    finishedAt: new Date(Date.now() - (index * 1000)).toISOString(),
+  }));
+  const app = makeAppWithQueue([...completed, item('pending')]);
+
+  const response = await resolveApiRoute(app, { method: 'POST' }, '/api/queue/completed-page', {
+    before: { id: 'missing-cursor' },
+    limit: 50,
+  });
+
+  assert.equal(response.status, 200);
+  assert.equal(response.body.items.length, 0);
+  assert.equal(response.body.hasMore, false);
+  assert.equal(response.body.cursor, null);
+  assert.equal(response.body.totalCompleted, 12);
 });
 
 test('handleHttp validates tokens, handles API routes, and returns JSON errors', async () => {

@@ -14,6 +14,57 @@ const {
 } = require('../../queue');
 const { commandHelpPayload } = require('../commands');
 
+const COMPLETED_ARCHIVE_INITIAL_COUNT = 10;
+const COMPLETED_ARCHIVE_PAGE_SIZE = 50;
+
+function queueItemTime(item) {
+  const time = new Date(item?.finishedAt || item?.createdAt || 0).getTime();
+  return Number.isFinite(time) ? time : 0;
+}
+
+function completedQueueEntries(queue) {
+  return queue
+    .map((item, index) => ({ item, index, time: queueItemTime(item) }))
+    .filter((entry) => entry.item.status === 'completed')
+    .sort((left, right) => left.time - right.time || left.index - right.index);
+}
+
+function completedQueuePage(queue, before = null, limit = COMPLETED_ARCHIVE_INITIAL_COUNT) {
+  const entries = completedQueueEntries(queue);
+  if (!entries.length) {
+    return { items: [], hasMore: false, cursor: null, totalCompleted: 0 };
+  }
+
+  let end = entries.length;
+  if (before?.id) {
+    const beforeIndex = entries.findIndex((entry) => entry.item.id === before.id);
+    if (beforeIndex >= 0) {
+      end = beforeIndex;
+    } else {
+      const beforeTime = Date.parse(before.finishedAt || before.createdAt || '');
+      if (!Number.isFinite(beforeTime)) end = 0;
+      else {
+        const timeIndex = entries.findIndex((entry) => entry.time >= beforeTime);
+        end = timeIndex >= 0 ? timeIndex : entries.length;
+      }
+    }
+  }
+
+  const pageLimit = Math.max(1, Math.min(200, Number(limit) || COMPLETED_ARCHIVE_INITIAL_COUNT));
+  const start = Math.max(0, end - pageLimit);
+  const items = entries.slice(start, end).map((entry) => entry.item);
+
+  return {
+    items,
+    hasMore: start > 0,
+    cursor: items[0] ? {
+      id: items[0].id,
+      finishedAt: items[0].finishedAt || null,
+    } : null,
+    totalCompleted: entries.length,
+  };
+}
+
 module.exports = {
   async addPrompt(text) {
     const trimmed = String(text || '').trim();
@@ -118,6 +169,15 @@ module.exports = {
     await this.saveQueue();
     this.appendOutput(`[queue] cleared ${result.removed} completed prompt(s)`, 'system');
     this.broadcastAll();
+  },
+
+  completedArchiveSnapshot() {
+    return completedQueuePage(this.queue, null, COMPLETED_ARCHIVE_INITIAL_COUNT);
+  },
+
+  async loadCompletedArchivePage(body = {}) {
+    const before = body.before || null;
+    return completedQueuePage(this.queue, before, body.limit || COMPLETED_ARCHIVE_PAGE_SIZE);
   },
 
   async updateQueueItem(body) {

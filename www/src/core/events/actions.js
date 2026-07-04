@@ -95,6 +95,58 @@ export function clearCompletedQueue() {
   );
 }
 
+function queueTime(item) {
+  const time = new Date(item?.finishedAt || item?.createdAt || 0).getTime();
+  return Number.isFinite(time) ? time : 0;
+}
+
+function mergeCompletedArchiveItems(items, nextItems) {
+  const byId = new Map();
+  for (const item of items || []) byId.set(item.id, item);
+  for (const item of nextItems || []) byId.set(item.id, item);
+  return [...byId.values()]
+    .filter((item) => item?.status === 'completed')
+    .sort((left, right) => queueTime(left) - queueTime(right) || String(left.id || '').localeCompare(String(right.id || '')));
+}
+
+function mergeLoadedQueue(queue, archiveItems) {
+  const byId = new Map();
+  for (const item of queue || []) byId.set(item.id, item);
+  for (const item of archiveItems || []) byId.set(item.id, item);
+  return [...byId.values()];
+}
+
+export async function loadCompletedArchiveMore() {
+  const archive = state.completedArchiveCache;
+  if (!state.snap?.app?.sessionId || archive.loading || !archive.hasMore || !archive.cursor) return;
+
+  archive.loading = true;
+  renderQueue();
+
+  try {
+    const response = await api('/api/queue/completed-page', {
+      before: archive.cursor,
+      limit: 50,
+    });
+
+    archive.items = mergeCompletedArchiveItems(archive.items, response.items || []);
+    archive.totalCompleted = Number(response.totalCompleted || archive.totalCompleted || state.snap?.app?.queueCounts?.completed || 0);
+    archive.hasMore = archive.items.length < archive.totalCompleted && Boolean(response.hasMore);
+    archive.cursor = archive.items[0] ? {
+      id: archive.items[0].id,
+      finishedAt: archive.items[0].finishedAt || null,
+    } : (response.cursor || archive.cursor);
+    if (state.snap?.queue) state.snap.queue = mergeLoadedQueue(state.snap.queue, archive.items);
+    renderQueue();
+    await getState().catch(reportError);
+  } catch (error) {
+    reportError(error);
+  } finally {
+    archive.loading = false;
+    renderQueue();
+  }
+}
+
 export function scrollOutputToBottom() {
   if (state.outputEl) state.outputEl.scrollTop = state.outputEl.scrollHeight;
   state.outputUnread = false;

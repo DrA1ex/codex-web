@@ -88,9 +88,18 @@ function dayLabel(days) {
   return days === 1 ? '1 day' : `${days} days`;
 }
 
-function renderCompletedArchiveControl(hiddenCount, nextVisibleDays, visibleDays) {
+function renderCompletedArchiveControl(hiddenCount, nextVisibleDays, visibleDays, hasMore, loading) {
   const windowLabel = visibleDays === 1 ? '24h' : dayLabel(visibleDays);
   const hiddenLabel = hiddenCount === 1 ? '1 completed prompt' : `${hiddenCount} completed prompts`;
+  const showMoreLabel = loading ? 'Loading...' : `Show more (${dayLabel(nextVisibleDays)})`;
+  const button = hiddenCount > 0 || hasMore
+    ? `<button type="button" data-completed-archive-more="1"${loading ? ' disabled' : ''} title="Show completed prompts older than ${esc(windowLabel)}">
+          ${icon('chevron-down')}${esc(showMoreLabel)}
+        </button>`
+    : '';
+  const summary = hiddenCount > 0
+    ? `${hiddenLabel} are hidden.`
+    : (hasMore ? 'More history is available.' : 'No more history is available.');
 
   return `
     <div class="queue-item completed archive-control">
@@ -98,20 +107,19 @@ function renderCompletedArchiveControl(hiddenCount, nextVisibleDays, visibleDays
         <span>Completed archive</span>
         <span>Older than ${esc(windowLabel)}</span>
       </div>
-      <div class="prompt-preview archive-summary">${esc(`${hiddenLabel} are hidden.`)}</div>
+      <div class="prompt-preview archive-summary">${esc(summary)}</div>
       <div class="actions queue-actions">
-        <button type="button" data-completed-archive-more="1" title="Show completed prompts older than ${esc(windowLabel)}">
-          ${icon('chevron-down')}Show more (${esc(dayLabel(nextVisibleDays))})
-        </button>
+        ${button}
       </div>
     </div>
   `;
 }
 
-function renderCompletedArchiveFallback(visibleDays, fallbackCount, totalCount) {
+function renderCompletedArchiveFallback(visibleDays, fallbackCount, totalCount, hasMore, loading) {
   const windowLabel = visibleDays === 1 ? '24h' : dayLabel(visibleDays);
   const fallbackLabel = fallbackCount === 1 ? '1 completed prompt' : `${fallbackCount} completed prompts`;
   const hiddenLabel = totalCount === 1 ? '1 completed prompt' : `${totalCount} completed prompts`;
+  const extra = hasMore ? (loading ? ' Loading more history...' : ' More history is available.') : '';
 
   return `
     <div class="queue-item completed archive-control">
@@ -119,7 +127,7 @@ function renderCompletedArchiveFallback(visibleDays, fallbackCount, totalCount) 
         <span>Completed archive</span>
         <span>No prompts within ${esc(windowLabel)}</span>
       </div>
-      <div class="prompt-preview archive-summary">${esc(`Showing last ${fallbackLabel}. ${hiddenLabel} total.`)}</div>
+      <div class="prompt-preview archive-summary">${esc(`Showing last ${fallbackLabel}. ${hiddenLabel} total.${extra}`)}</div>
     </div>
   `;
 }
@@ -212,6 +220,8 @@ function renderCompletedArchive(items, app, indexById) {
   if (!items.length) return '';
 
   const level = Math.max(0, Number(state.completedQueueArchiveLevel) || 0);
+  const hasMore = Boolean(state.completedArchiveCache?.hasMore);
+  const loading = Boolean(state.completedArchiveCache?.loading);
   const visibleDays = completedArchiveVisibleDays(level);
   const cutoff = Date.now() - (visibleDays * DAY_MS);
   const visible = [];
@@ -225,12 +235,12 @@ function renderCompletedArchive(items, app, indexById) {
   const fallbackVisible = visible.length ? visible : items.slice(-COMPLETED_ARCHIVE_FALLBACK_COUNT);
   const rendered = [];
 
-  if (hiddenCount > 0) {
-    rendered.push(renderCompletedArchiveControl(hiddenCount, completedArchiveVisibleDays(level + 1), visibleDays));
+  if (hiddenCount > 0 || hasMore) {
+    rendered.push(renderCompletedArchiveControl(hiddenCount, completedArchiveVisibleDays(level + 1), visibleDays, hasMore, loading));
   }
 
   if (!visible.length && fallbackVisible.length) {
-    rendered.push(renderCompletedArchiveFallback(visibleDays, fallbackVisible.length, items.length));
+    rendered.push(renderCompletedArchiveFallback(visibleDays, fallbackVisible.length, app?.queueCounts?.completed || items.length, hasMore, loading));
   }
 
   rendered.push(...fallbackVisible.map((item) => renderQueueItem(item, indexById.get(item.id) ?? 0, app)));

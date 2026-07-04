@@ -124,6 +124,9 @@ module.exports = {
   snapshot() {
     const counts = countQueue(this.queue);
     const nextPending = this.queue.find((item) => isPendingLikeStatus(item.status)) || null;
+    const completedArchive = this.completedArchiveSnapshot ? this.completedArchiveSnapshot() : { items: [], hasMore: false, cursor: null, totalCompleted: 0 };
+    const completedArchiveIds = new Set((completedArchive.items || []).map((item) => item.id));
+    const queue = this.queue.filter((item) => item.status !== 'completed' || completedArchiveIds.has(item.id));
     const manualPromptActive = !!(this.currentManualSend && (this.currentItemId || this.currentTurnId));
     const hasPendingQueue = this.queue.some((item) => isPendingLikeStatus(item.status));
     const hasScheduledQueue = !!this.app.scheduledRunAt;
@@ -154,7 +157,8 @@ module.exports = {
         canScheduleQueue: this.canScheduleQueue(),
       },
       sessions: this.sessions,
-      queue: this.queue,
+      queue,
+      completedArchive,
       output: this.output,
       outputGroups: this.outputGroups,
       rateLimits: this.rateLimits,

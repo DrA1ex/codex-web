@@ -34,6 +34,9 @@ const POST_ROUTES = new Map([
     await app.removeQueueItem(String(body.id));
     return { ok: true };
   }],
+  ['/api/queue/completed-page', async (app, body) => {
+    return await app.loadCompletedArchivePage(body);
+  }],
   ['/api/queue/reorder', async (app, body) => {
     await app.reorderQueueItem(String(body.id), body);
     return { ok: true };

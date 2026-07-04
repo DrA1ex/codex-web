@@ -7,6 +7,14 @@ export const state = {
 
   expandedQueueItems: Object.create(null),
   completedQueueArchiveLevel: 0,
+  completedArchiveCache: {
+    sessionId: '',
+    items: [],
+    hasMore: false,
+    totalCompleted: 0,
+    cursor: null,
+    loading: false,
+  },
   editingQueueItemId: null,
   editDrafts: Object.create(null),
   savingQueueEdits: Object.create(null),

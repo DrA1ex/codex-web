@@ -29,6 +29,7 @@ import {
   copyVisibleOutputFromMenu,
   forceSteerNote,
   interruptPrompt,
+  loadCompletedArchiveMore,
   post,
   reportError,
   queueItemById,
@@ -145,6 +146,7 @@ function handleCompletedArchiveMore(target) {
   if (!control) return false;
 
   state.completedQueueArchiveLevel += 1;
+  loadCompletedArchiveMore().catch(reportError);
   renderQueue();
   return true;
 }

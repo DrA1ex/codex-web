@@ -18,6 +18,58 @@ const CACHED_SECTIONS = {
   debug: renderDebug,
 };
 
+function queueTime(item) {
+  const time = new Date(item?.finishedAt || item?.createdAt || 0).getTime();
+  return Number.isFinite(time) ? time : 0;
+}
+
+function mergeCompletedArchiveQueue(queue, archiveItems) {
+  const byId = new Map();
+  for (const item of queue || []) byId.set(item.id, item);
+  for (const item of archiveItems || []) byId.set(item.id, item);
+  return [...byId.values()];
+}
+
+function syncCompletedArchiveCache(snapshot) {
+  const sessionId = snapshot?.app?.sessionId || '';
+  const cache = state.completedArchiveCache;
+  if (cache.sessionId !== sessionId) {
+    cache.sessionId = sessionId;
+    cache.items = [];
+    cache.hasMore = false;
+    cache.totalCompleted = 0;
+    cache.cursor = null;
+    cache.loading = false;
+  }
+
+  const archive = snapshot?.completedArchive || null;
+  if (!archive) return;
+
+  const totalCompleted = Number(snapshot?.app?.queueCounts?.completed || 0);
+  if (!totalCompleted) {
+    cache.items = [];
+    cache.hasMore = false;
+    cache.totalCompleted = 0;
+    cache.cursor = null;
+    cache.loading = false;
+    return;
+  }
+  cache.totalCompleted = totalCompleted;
+
+  const incoming = Array.isArray(archive.items) ? archive.items : [];
+  if (incoming.length) {
+    const merged = mergeCompletedArchiveQueue(cache.items, incoming)
+      .filter((item) => item?.status === 'completed')
+      .sort((left, right) => queueTime(left) - queueTime(right) || String(left.id || '').localeCompare(String(right.id || '')));
+    cache.items = merged;
+    cache.cursor = merged[0] ? { id: merged[0].id, finishedAt: merged[0].finishedAt || null } : null;
+  } else if (!cache.items.length) {
+    cache.cursor = archive.cursor || null;
+  }
+
+  cache.hasMore = cache.items.length < totalCompleted && Boolean(archive.hasMore || cache.hasMore);
+}
+
 function stableKey(value) {
   try {
     return JSON.stringify(value == null ? null : value);
@@ -47,6 +99,10 @@ export function sectionKey(name, snapshot) {
       canInterrupt: app.canInterrupt,
       sendLocked: app.state === 'countdown',
       completedArchiveLevel: state.completedQueueArchiveLevel,
+      completedArchiveHasMore: state.completedArchiveCache.hasMore,
+      completedArchiveLoading: state.completedArchiveCache.loading,
+      completedArchiveCursor: state.completedArchiveCache.cursor,
+      completedArchiveCount: state.completedArchiveCache.items.length,
     });
   }
   if (name === 'output') return stableKey({ output: snapshot?.output, outputGroups: snapshot?.outputGroups });
@@ -72,6 +128,8 @@ function renderSection(name, force) {
 
 export function update(snapshot) {
   const isFirstRender = !state.snap;
+  syncCompletedArchiveCache(snapshot);
+  snapshot.queue = mergeCompletedArchiveQueue(snapshot.queue || [], state.completedArchiveCache.items);
   state.snap = snapshot;
   render(isFirstRender);
 }
