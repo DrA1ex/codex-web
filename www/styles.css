@@ -1318,8 +1318,10 @@ textarea:focus {
 }
 
 .out-group-chevron {
+    justify-self: center;
     color: var(--muted);
-    font-weight: 800;
+    width: 14px;
+    height: 14px;
 }
 
 .out-group-title {

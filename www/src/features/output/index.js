@@ -132,7 +132,7 @@ function renderOutputGroup(group, lines) {
   return `
     <section class="out-group ${expanded ? 'expanded' : 'collapsed'} ${esc(group.status || '')}">
       <button type="button" class="out-group-head" data-output-group="${groupId}" aria-expanded="${expanded ? 'true' : 'false'}">
-        <span class="out-group-chevron">${expanded ? 'v' : '>'}</span>
+        <span class="out-group-chevron icon icon-chevron-${expanded ? 'up' : 'down'}" aria-hidden="true"></span>
         <span class="out-group-title">Prompt</span>
         <strong>${esc(group.title || 'Prompt')}</strong>
         <b class="out-group-status">${esc(status)}</b>
