@@ -121,6 +121,7 @@ function runClickAction(target, event) {
     handleOutputDiffToggle(target) ||
     handleOutputToolToggle(target) ||
     handleOutputGroupToggle(target) ||
+    handleCompletedArchiveMore(target) ||
     handleForceSteer(target) ||
     handleHelpCommand(target) ||
     handleStatusNotice(target) ||
@@ -136,6 +137,15 @@ function handleHelpCommand(target) {
   const index = commandButton?.dataset?.helpCommand;
   if (index === undefined) return false;
   toggleHelpCommand(index);
+  return true;
+}
+
+function handleCompletedArchiveMore(target) {
+  const control = target?.closest?.('[data-completed-archive-more]');
+  if (!control) return false;
+
+  state.completedQueueArchiveLevel += 1;
+  renderQueue();
   return true;
 }
 

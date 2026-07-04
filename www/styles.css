@@ -1072,6 +1072,17 @@ body.queue-touch-dragging {
     line-height: 1.15;
 }
 
+.queue-item.archive-control .prompt-preview {
+    cursor: default;
+    overflow: visible;
+    text-overflow: clip;
+    white-space: normal;
+}
+
+.queue-item.archive-control .queue-actions {
+    margin-top: 7px;
+}
+
 .queue-top span {
     overflow: hidden;
     text-overflow: ellipsis;

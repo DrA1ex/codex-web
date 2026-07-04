@@ -46,6 +46,7 @@ export function sectionKey(name, snapshot) {
       nextPendingId: app.nextPendingId,
       canInterrupt: app.canInterrupt,
       sendLocked: app.state === 'countdown',
+      completedArchiveLevel: state.completedQueueArchiveLevel,
     });
   }
   if (name === 'output') return stableKey({ output: snapshot?.output, outputGroups: snapshot?.outputGroups });

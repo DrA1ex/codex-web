@@ -5,6 +5,8 @@ import { captureActiveEditor, queueContainer, queueDraftValue, restoreActiveEdit
 import { animateQueueItems, clearQueueScrollRequest, queueItemRects, scrollQueueItemAfterMove } from './scroll.js';
 import { isPendingQueueItem, isRunningStatus, queueMatchesFilter } from './status.js';
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+
 function queueItemClassName({ active, running, completed, draggable, expanded, editing }) {
   return [
     'queue-item',
@@ -15,6 +17,23 @@ function queueItemClassName({ active, running, completed, draggable, expanded, e
     expanded && 'expanded',
     editing && 'editing',
   ].filter(Boolean).join(' ');
+}
+
+function completedArchiveIncrement(level) {
+  if (level <= 0) return 3;
+  if (level === 1) return 7;
+  return 21 * (3 ** (level - 2));
+}
+
+function completedArchiveVisibleDays(level) {
+  let total = 1;
+  for (let i = 0; i < level; i++) total += completedArchiveIncrement(i);
+  return total;
+}
+
+function queueItemTime(item) {
+  const time = new Date(item?.finishedAt || item?.createdAt || 0).getTime();
+  return Number.isFinite(time) ? time : 0;
 }
 
 function promptToggleAttrs(item, expanded, editing) {
@@ -67,6 +86,26 @@ function renderUsageSummary(item) {
   if ((usage.limitDeltas || []).length) title.push('Limit deltas are account-level and may include parallel Codex work.');
 
   return `<span class="queue-usage" title="${esc(title.join('\n'))}">${chips.map((chip) => `<b>${esc(chip)}</b>`).join('')}</span>`;
+}
+
+function renderCompletedArchiveControl(hiddenCount, nextIncrementDays, visibleDays) {
+  const windowLabel = visibleDays === 1 ? '24h' : `${visibleDays} days`;
+  const hiddenLabel = hiddenCount === 1 ? '1 completed prompt' : `${hiddenCount} completed prompts`;
+
+  return `
+    <div class="queue-item completed archive-control">
+      <div class="queue-top">
+        <span>Completed archive</span>
+        <span>Older than ${esc(windowLabel)}</span>
+      </div>
+      <div class="prompt-preview archive-summary">${esc(`${hiddenLabel} are hidden.`)}</div>
+      <div class="actions queue-actions">
+        <button type="button" data-completed-archive-more="1" title="Show completed prompts older than ${esc(windowLabel)}">
+          ${icon('chevron-down')}Show more (${esc(`${nextIncrementDays} days`)})
+        </button>
+      </div>
+    </div>
+  `;
 }
 
 function renderQueueHeader(item, index, draggable, completed, expanded, editing) {
@@ -151,6 +190,29 @@ function renderQueueItem(item, index, app) {
       ${completed ? renderUsageSummary(item) : ''}
     </div>
   `;
+}
+
+function renderCompletedArchive(items, app, indexById) {
+  if (!items.length) return '';
+
+  const level = Math.max(0, Number(state.completedQueueArchiveLevel) || 0);
+  const visibleDays = completedArchiveVisibleDays(level);
+  const cutoff = Date.now() - (visibleDays * DAY_MS);
+  const visible = [];
+  let hiddenCount = 0;
+
+  for (const item of items) {
+    if (queueItemTime(item) >= cutoff) visible.push(item);
+    else hiddenCount += 1;
+  }
+
+  const rendered = visible.map((item) => renderQueueItem(item, indexById.get(item.id) ?? 0, app));
+
+  if (hiddenCount > 0) {
+    rendered.push(renderCompletedArchiveControl(hiddenCount, completedArchiveIncrement(level), visibleDays));
+  }
+
+  return rendered.join('');
 }
 
 function promptTextForState(item, expanded) {
@@ -265,12 +327,19 @@ export function renderQueue() {
     return;
   }
 
+  const indexById = new Map(queue.map((item, index) => [item.id, index]));
+  const completedItems = filteredQueue
+    .filter((item) => item.status === 'completed')
+    .sort((left, right) => queueItemTime(right) - queueItemTime(left) || (indexById.get(left.id) || 0) - (indexById.get(right.id) || 0));
+  const otherItems = filteredQueue.filter((item) => item.status !== 'completed');
+
   const oldRects = queueItemRects(container);
   const activeEditor = captureActiveEditor();
 
-  container.innerHTML = filteredQueue
-    .map((item) => renderQueueItem(item, queue.indexOf(item), app))
-    .join('');
+  container.innerHTML = [
+    renderCompletedArchive(completedItems, app, indexById),
+    otherItems.map((item) => renderQueueItem(item, indexById.get(item.id) ?? 0, app)).join(''),
+  ].join('');
 
   animateQueueItems(container, oldRects);
   processPendingScroll(container, queue);

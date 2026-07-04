@@ -6,6 +6,7 @@ export const state = {
   clientNetwork: { status: 'connecting', message: 'connecting', updatedAt: 0 },
 
   expandedQueueItems: Object.create(null),
+  completedQueueArchiveLevel: 0,
   editingQueueItemId: null,
   editDrafts: Object.create(null),
   savingQueueEdits: Object.create(null),
