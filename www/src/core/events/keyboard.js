@@ -3,6 +3,7 @@ import { state } from '#core/state';
 import { sendComposerNow } from '#features/composer';
 import { cancelQueueEditInDom, saveQueueEdit, toggleQueueItemExpandedInDom } from '#features/queue';
 import { closeConfirm, confirmCurrentAction } from '#ui/confirm';
+import { closeHelp } from '#ui/help';
 import { closeLimitResetModal, confirmLimitReset } from '#ui/limit-reset';
 import { closeScheduleModal } from '#ui/schedule';
 import { setOutputMenuOpen, setQueueMenuOpen } from '#ui/header';
@@ -40,6 +41,12 @@ function handleEscape(event) {
   if (state.confirmAction) {
     event.preventDefault();
     closeConfirm();
+    return;
+  }
+
+  if (state.help.open) {
+    event.preventDefault();
+    closeHelp();
     return;
   }
 

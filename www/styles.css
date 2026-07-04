@@ -1840,6 +1840,83 @@ textarea:focus {
     line-height: 1.45;
 }
 
+.help-modal {
+    width: min(720px, 100%);
+    max-height: min(720px, calc(100vh - 36px));
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.help-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 0;
+}
+
+.help-list {
+    display: grid;
+    gap: 6px;
+    overflow: auto;
+    padding-right: 2px;
+}
+
+.help-command {
+    border: 1px solid var(--border-soft);
+    border-radius: 7px;
+    background: var(--panel2);
+    overflow: hidden;
+}
+
+.help-command-head {
+    width: 100%;
+    display: grid;
+    grid-template-columns: 18px minmax(120px, max-content) minmax(0, 1fr) max-content;
+    align-items: center;
+    gap: 10px;
+    min-height: 42px;
+    padding: 8px 10px;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+    text-align: left;
+}
+
+.help-command-head:hover {
+    background: var(--hover);
+}
+
+.help-command-head code {
+    color: var(--accent);
+    font-weight: 750;
+    white-space: nowrap;
+}
+
+.help-command-head span:not(.icon) {
+    min-width: 0;
+    color: var(--text);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.help-command-head em {
+    color: var(--muted);
+    font-size: 12px;
+    font-style: normal;
+    white-space: nowrap;
+}
+
+.help-command-details {
+    margin: 0;
+    padding: 0 10px 10px 38px;
+    color: var(--muted);
+    line-height: 1.45;
+}
+
 .shutdown-overlay {
     position: fixed;
     inset: 0;

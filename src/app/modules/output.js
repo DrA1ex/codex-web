@@ -26,6 +26,33 @@ module.exports = {
     return groupId ? this.outputGroups.find((group) => group.id === groupId) || null : null;
   },
 
+  outputGroupForTurnId(turnId) {
+    if (!turnId) return null;
+    return this.outputGroups.find((group) => (
+      group.turnId === turnId || (Array.isArray(group.turnIds) && group.turnIds.includes(turnId))
+    )) || null;
+  },
+
+  outputGroupForQueueItemId(queueItemId) {
+    if (!queueItemId) return null;
+    return this.outputGroups.find((group) => group.queueItemId === queueItemId && group.status === 'active') || null;
+  },
+
+  useOutputGroup(groupId) {
+    const group = this.outputGroupForId(groupId);
+    if (!group) return null;
+    this.currentOutputGroupId = group.id;
+    return group;
+  },
+
+  addTurnToOutputGroup(group, turnId) {
+    if (!group || !turnId) return group || null;
+    if (!Array.isArray(group.turnIds)) group.turnIds = [];
+    if (!group.turnIds.includes(turnId)) group.turnIds.push(turnId);
+    group.turnId = turnId;
+    return group;
+  },
+
   currentOutputMeta(extra = {}) {
     const group = this.outputGroupForId(this.currentOutputGroupId);
     if (!group) return { ...extra };
@@ -50,6 +77,7 @@ module.exports = {
       turnId: null,
       title: this.outputGroupTitle(item),
       promptText: item.text,
+      turnIds: [],
       status: 'active',
       summary: 'Running...',
       summaryText: '',
@@ -68,6 +96,7 @@ module.exports = {
     const group = this.outputGroupForId(this.currentOutputGroupId);
     if (!group) return null;
     Object.assign(group, fields);
+    if (fields && fields.turnId) this.addTurnToOutputGroup(group, fields.turnId);
     return group;
   },
 

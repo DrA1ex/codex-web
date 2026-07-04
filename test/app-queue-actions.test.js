@@ -32,6 +32,19 @@ test('addPrompt normalizes CRLF text, executes immediate commands, and queues qu
   assert.equal(app.lastScheduledDelay, 200);
 });
 
+test('help command returns structured command reference', async () => {
+  const app = makeAppWithQueue([]);
+
+  const result = await app.executeCommand('/help');
+
+  assert.equal(result.ok, true);
+  assert.equal(result.clearComposer, true);
+  assert.ok(Array.isArray(result.help.commands));
+  assert.ok(result.help.commands.some((entry) => entry.command === '/think <text>' && /active prompt/i.test(entry.short)));
+  assert.ok(result.help.commands.some((entry) => entry.command === '/think! <text>' && /interrupt/i.test(entry.short)));
+  assert.ok(result.help.commands.some((entry) => entry.command === '/compact' && /Compact/i.test(entry.short)));
+});
+
 test('reorderQueueItem reorders only pending slots and preserves non-pending positions', async () => {
   const running = item('running', 'sent');
   const first = item('first');

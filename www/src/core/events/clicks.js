@@ -9,6 +9,7 @@ import {
   toggleQueueItemExpandedInDom,
 } from '#features/queue';
 import { closeConfirm, confirmCurrentAction } from '#ui/confirm';
+import { closeHelp, toggleHelpCommand } from '#ui/help';
 import {
   closeLimitResetModal,
   confirmLimitReset,
@@ -53,6 +54,7 @@ const CLICK_TARGET_SELECTOR = [
   '[data-output-tool]',
   '[data-output-group]',
   '[data-force-steer]',
+  '[data-help-command]',
   '[data-toggle-prompt]',
   '#statusNotice',
 ].join(',');
@@ -81,6 +83,7 @@ const BUTTON_ACTIONS = {
   stopBtn: stopServer,
   confirmCancelBtn: closeConfirm,
   confirmYesBtn: confirmCurrentAction,
+  helpCloseBtn: closeHelp,
   limitResetOpenBtn: openLimitResetModal,
   limitResetCancelBtn: closeLimitResetModal,
   limitResetConfirmBtn: confirmLimitReset,
@@ -119,12 +122,20 @@ function runClickAction(target, event) {
     handleOutputToolToggle(target) ||
     handleOutputGroupToggle(target) ||
     handleForceSteer(target) ||
+    handleHelpCommand(target) ||
     handleStatusNotice(target) ||
     handleMobileCollapse(target) ||
     handleButton(target) ||
     handleSessionAction(target) ||
     handleApprovalAction(target) ||
     handleQueueItemAction(target);
+}
+
+function handleHelpCommand(target) {
+  const index = target?.dataset?.helpCommand;
+  if (index === undefined) return false;
+  toggleHelpCommand(index);
+  return true;
 }
 
 function handleForceSteer(target) {

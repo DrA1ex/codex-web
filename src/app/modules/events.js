@@ -57,7 +57,15 @@ module.exports = {
     }
     if (method === 'turn/started') {
       const turn = params.turn || params;
-      this.currentTurnId = turn.id || turn.turnId || this.currentTurnId;
+      const turnId = turn.id || turn.turnId || this.currentTurnId;
+      if (this.forceSteer?.outputGroupId && turnId !== this.forceSteer.originalTurnId) {
+        this.useOutputGroup(this.forceSteer.outputGroupId);
+        if (!this.forceSteer.replacementTurnId) this.forceSteer.replacementTurnId = turnId;
+      } else {
+        const group = this.outputGroupForTurnId(turnId);
+        if (group) this.useOutputGroup(group.id);
+      }
+      this.currentTurnId = turnId;
       this.updateCurrentOutputGroup({ turnId: this.currentTurnId || null, status: 'active' });
       this.debug.lastTurnId = this.currentTurnId;
       this.turnStarted = true;
@@ -75,18 +83,23 @@ module.exports = {
     if (method === 'turn/completed' || method === 'turn/failed') {
       const turn = params.turn || params;
       const eventTurnId = turn.id || turn.turnId || params.turnId || null;
+      const status = turn.status || (method === 'turn/failed' ? 'failed' : 'completed');
+      const errMessage = turn?.error?.message || params?.error?.message || null;
       if (
         method === 'turn/failed'
         && this.forceSteer
-        && eventTurnId
-        && eventTurnId === this.forceSteer.originalTurnId
+        && (
+          (eventTurnId && eventTurnId === this.forceSteer.originalTurnId)
+          || (!eventTurnId && (!this.forceSteer.replacementTurnId || /interrupt|cancel/i.test(errMessage || status)))
+        )
       ) {
+        if (this.forceSteer.outputGroupId) this.useOutputGroup(this.forceSteer.outputGroupId);
         this.appendOutput('[steer] Original turn interrupted', 'system');
         this.broadcastAll();
         return;
       }
-      const status = turn.status || (method === 'turn/failed' ? 'failed' : 'completed');
-      const errMessage = turn?.error?.message || params?.error?.message || null;
+      const group = this.outputGroupForTurnId(eventTurnId);
+      if (group) this.useOutputGroup(group.id);
       this.turnCompletionSeen = true;
       this.turnCompletionStatus = status;
       const item = this.currentItem();

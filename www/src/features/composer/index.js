@@ -2,6 +2,7 @@ import { state } from '#core/state';
 import { api, getState, isNetworkError } from '#core/api';
 import { setButtonState } from '#ui/header';
 import { openConfirm } from '#ui/confirm';
+import { openHelp } from '#ui/help';
 import { requestQueueScroll } from '#features/queue';
 
 function applyComposerResponse(response) {
@@ -10,6 +11,12 @@ function applyComposerResponse(response) {
 
   if (response.clearComposer) composer.value = '';
   if (response.composerText !== undefined) composer.value = response.composerText;
+}
+
+function handleComposerResponse(response) {
+  if (response.help?.commands) openHelp(response.help.commands);
+  applyComposerResponse(response);
+  if (response.message) alert(response.message);
 }
 
 function handleComposerError(error) {
@@ -34,8 +41,7 @@ export async function addQueue() {
   if (!response) return;
 
   if (response.item?.id) requestQueueScroll(response.item.id, '', true);
-  applyComposerResponse(response);
-  if (response.message) alert(response.message);
+  handleComposerResponse(response);
   updateCounter();
   getState().catch(handleComposerError);
 }
@@ -57,8 +63,7 @@ export async function sendComposerNow() {
     return;
   }
 
-  applyComposerResponse(response);
-  if (response.message) alert(response.message);
+  handleComposerResponse(response);
   updateCounter();
   getState().catch(handleComposerError);
 }

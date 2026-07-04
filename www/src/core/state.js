@@ -30,6 +30,11 @@ export const state = {
   previousNoticeSnapshot: null,
 
   confirmAction: null,
+  help: {
+    open: false,
+    commands: [],
+  },
+  expandedHelpCommands: Object.create(null),
   limitReset: {
     open: false,
     loading: false,

@@ -12,6 +12,7 @@ const {
   parseExactCommand,
   parseQueuedCommand,
 } = require('../../queue');
+const { commandHelpPayload } = require('../commands');
 
 module.exports = {
   async addPrompt(text) {
@@ -84,7 +85,7 @@ module.exports = {
       case '/pause': this.pause(); return { ok: true, clearComposer: true };
       case '/resume': this.resume(); return { ok: true, clearComposer: true };
       case '/quit': await this.shutdown('quit command'); return { ok: true, clearComposer: true };
-      case '/help': return { ok: true, message: '/think <text> steers the active prompt. /think! <text> interrupts and sends a correction. /compact can be queued. Immediate commands: /send, /undo, /clear, /pause, /resume, /quit, /approve, /approve-session, /decline, /cancel' };
+      case '/help': return { ok: true, clearComposer: true, help: { commands: commandHelpPayload() } };
       case '/approve': await this.respondApproval('accept'); return { ok: true, clearComposer: true };
       case '/approve-session': await this.respondApproval('accept-for-session'); return { ok: true, clearComposer: true };
       case '/decline': await this.respondApproval('decline'); return { ok: true, clearComposer: true };

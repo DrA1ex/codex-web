@@ -104,11 +104,17 @@ module.exports = {
 
     const item = activeItemOrNull(this);
     const originalTurnId = this.currentTurnId;
+    const group = this.outputGroupForId(this.currentOutputGroupId) || this.outputGroupForQueueItemId(item?.id);
+    if (group) {
+      this.currentOutputGroupId = group.id;
+      this.addTurnToOutputGroup(group, originalTurnId);
+    }
     const continueQueue = !this.currentManualSend || this.manualSendContinueQueue;
     this.forceSteer = {
       queueItemId: item?.id || null,
       originalTurnId,
       replacementTurnId: null,
+      outputGroupId: group?.id || null,
       text,
       continueQueue,
       interruptedAt: nowIso(),
@@ -140,6 +146,7 @@ module.exports = {
       this.currentTurnId = replacementTurnId;
       this.debug.lastTurnId = replacementTurnId;
       this.forceSteer.replacementTurnId = replacementTurnId;
+      if (this.forceSteer.outputGroupId) this.useOutputGroup(this.forceSteer.outputGroupId);
       if (item) await this.recordQueueItemTurn(item, replacementTurnId);
       this.updateCurrentOutputGroup({ turnId: replacementTurnId, status: 'active' });
     }

@@ -244,6 +244,34 @@ test('force steering attaches replacement turn to the same queue item', async ()
   assert.ok(app.output.some((entry) => /\[steer] Follow-up prompt sent/.test(entry.text)));
 });
 
+test('force steering keeps replacement output in the original output group when interrupt event has no turn id', async () => {
+  const active = item('active', 'sent');
+  const app = makeAppWithQueue([active]);
+  app.rateLimits = { status: 'available', buckets: [], resetAt: null };
+  app.app.state = 'streaming';
+  app.currentItemId = 'active';
+  app.currentTurnId = 'turn-a';
+  const group = app.createOutputGroupForItem(active);
+  app.rpc = {
+    request: async (method) => {
+      if (method === 'turn/start') return { turn: { id: 'turn-b' } };
+      return {};
+    },
+  };
+
+  await app.sendComposerNow('/think! replacement correction');
+  app.handleNotification('turn/failed', { turn: { status: 'failed', error: { message: 'interrupted' } } });
+  app.handleNotification('item/started', { item: { type: 'agentMessage', text: 'working after replacement' } });
+  app.handleNotification('turn/completed', { turn: { id: 'turn-b', status: 'completed' } });
+
+  assert.equal(active.status, 'completed');
+  assert.equal(app.outputGroups[0].id, group.id);
+  assert.equal(app.outputGroups[0].status, 'completed');
+  assert.deepEqual(app.outputGroups[0].turnIds, ['turn-a', 'turn-b']);
+  assert.ok(app.output.every((entry) => entry.groupId === group.id));
+  assert.ok(app.output.some((entry) => /Original turn interrupted/.test(entry.text)));
+});
+
 test('sendItemNow keeps active prompt above pending item when queue is already processing', async () => {
   const active = item('active', 'sent');
   const first = item('first');
