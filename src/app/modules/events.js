@@ -16,6 +16,39 @@ const {
 } = require('../../codex/policies');
 const { nowIso, safeJson, truncate, asArray, maskSecrets } = require('../../shared/utils');
 
+function forceSteerInterruptedRecord(ctx, turnId, method, status, errMessage) {
+  if (turnId && ctx.intentionalInterrupts?.has(turnId)) {
+    return { turnId, record: ctx.intentionalInterrupts.get(turnId) };
+  }
+
+  if (
+    !turnId
+    && method === 'turn/failed'
+    && ctx.forceSteer
+    && (!ctx.forceSteer.replacementTurnId || /interrupt|cancel/i.test(errMessage || status || ''))
+  ) {
+    return {
+      turnId: null,
+      record: {
+        queueItemId: ctx.forceSteer.queueItemId || null,
+        outputGroupId: ctx.forceSteer.outputGroupId || null,
+        handled: false,
+      },
+    };
+  }
+
+  return null;
+}
+
+function markOutputGroupActive(ctx, groupId) {
+  const group = groupId ? ctx.useOutputGroup(groupId) : null;
+  if (!group) return null;
+  group.status = 'active';
+  group.finishedAt = null;
+  group.summary = 'Running...';
+  return group;
+}
+
 module.exports = {
   handleNotification(method, params) {
     this.eventLog('debug', `notify ${method} ${safeJson(maskSecrets(params)).slice(0, 1000)}`);
@@ -64,13 +97,14 @@ module.exports = {
         this.forceSteer?.outputGroupId
         && turnId
         && turnId !== this.forceSteer.originalTurnId
+        && !(this.forceSteer.interruptedTurnIds || []).includes(turnId)
         && (
           turnId === this.forceSteer.replacementTurnId
           || (!this.forceSteer.replacementTurnId && this.forceSteer.awaitingReplacementTurn)
         )
       );
       if (isForceSteerReplacement) {
-        this.useOutputGroup(this.forceSteer.outputGroupId);
+        markOutputGroupActive(this, this.forceSteer.outputGroupId);
         if (!this.forceSteer.replacementTurnId) this.forceSteer.replacementTurnId = turnId;
         this.forceSteer.awaitingReplacementTurn = false;
       } else {
@@ -98,17 +132,17 @@ module.exports = {
       const eventTurnId = turn.id || turn.turnId || params.turnId || null;
       const status = turn.status || (method === 'turn/failed' ? 'failed' : 'completed');
       const errMessage = turn?.error?.message || params?.error?.message || null;
-      if (
-        method === 'turn/failed'
-        && this.forceSteer
-        && (
-          (eventTurnId && eventTurnId === this.forceSteer.originalTurnId)
-          || (!eventTurnId && (!this.forceSteer.replacementTurnId || /interrupt|cancel/i.test(errMessage || status)))
-        )
-      ) {
-        if (this.forceSteer.outputGroupId) this.useOutputGroup(this.forceSteer.outputGroupId);
-        this.appendOutput('[steer] Original turn interrupted', 'system');
-        if (!this.forceSteer.replacementTurnId && !this.forceSteer.awaitingReplacementTurn) {
+      const interrupted = forceSteerInterruptedRecord(this, eventTurnId, method, status, errMessage);
+      if (interrupted) {
+        markOutputGroupActive(this, interrupted.record.outputGroupId || this.forceSteer?.outputGroupId);
+        if (!interrupted.record.handled) {
+          this.appendOutput('[steer] Original turn interrupted', 'system');
+          interrupted.record.handled = true;
+          if (interrupted.turnId && this.intentionalInterrupts?.has(interrupted.turnId)) {
+            this.intentionalInterrupts.set(interrupted.turnId, interrupted.record);
+          }
+        }
+        if (this.forceSteer && !this.forceSteer.replacementTurnId && !this.forceSteer.awaitingReplacementTurn) {
           this.forceSteer = null;
         }
         this.broadcastAll();

@@ -292,6 +292,71 @@ test('force steering keeps replacement output in the original output group when 
   assert.ok(app.output.some((entry) => /Original turn interrupted/.test(entry.text)));
 });
 
+test('force steering ignores completed original turn and waits for replacement completion', async () => {
+  const active = item('active', 'sent');
+  const app = makeAppWithQueue([active]);
+  app.rateLimits = { status: 'available', buckets: [], resetAt: null };
+  app.app.state = 'streaming';
+  app.currentItemId = 'active';
+  app.currentTurnId = 'turn-a';
+  const group = app.createOutputGroupForItem(active);
+  app.rpc = {
+    request: async (method) => {
+      if (method === 'turn/start') return { turn: { id: 'turn-b' } };
+      return {};
+    },
+  };
+
+  await app.sendComposerNow('/think! replacement correction');
+  app.handleNotification('turn/completed', { turn: { id: 'turn-a', status: 'completed' } });
+
+  assert.equal(active.status, 'sent');
+  assert.equal(app.currentTurnId, 'turn-b');
+  assert.equal(app.outputGroups[0].id, group.id);
+  assert.equal(app.outputGroups[0].status, 'active');
+
+  app.handleNotification('item/started', { item: { type: 'agentMessage', text: 'working after replacement' } });
+  app.handleNotification('turn/completed', { turn: { id: 'turn-b', status: 'completed' } });
+
+  assert.equal(active.status, 'completed');
+  assert.equal(app.outputGroups[0].status, 'completed');
+  assert.deepEqual(app.outputGroups[0].turnIds, ['turn-a', 'turn-b']);
+  assert.ok(app.output.every((entry) => entry.groupId === group.id));
+});
+
+test('force steering can chain multiple replacements in the same output group', async () => {
+  const active = item('active', 'sent');
+  const app = makeAppWithQueue([active]);
+  const replacementIds = ['turn-b', 'turn-c'];
+  app.rateLimits = { status: 'available', buckets: [], resetAt: null };
+  app.app.state = 'streaming';
+  app.currentItemId = 'active';
+  app.currentTurnId = 'turn-a';
+  const group = app.createOutputGroupForItem(active);
+  app.rpc = {
+    request: async (method) => {
+      if (method === 'turn/start') return { turn: { id: replacementIds.shift() } };
+      return {};
+    },
+  };
+
+  await app.sendComposerNow('/think! first correction');
+  app.handleNotification('turn/completed', { turn: { id: 'turn-a', status: 'completed' } });
+  assert.equal(active.status, 'sent');
+  assert.equal(app.currentTurnId, 'turn-b');
+
+  await app.sendComposerNow('/think! second correction');
+  app.handleNotification('turn/completed', { turn: { id: 'turn-b', status: 'completed' } });
+  app.handleNotification('item/started', { item: { type: 'agentMessage', text: 'working after second replacement' } });
+  app.handleNotification('turn/completed', { turn: { id: 'turn-c', status: 'completed' } });
+
+  assert.equal(active.status, 'completed');
+  assert.equal(app.outputGroups[0].id, group.id);
+  assert.equal(app.outputGroups[0].status, 'completed');
+  assert.deepEqual(app.outputGroups[0].turnIds, ['turn-a', 'turn-b', 'turn-c']);
+  assert.ok(app.output.every((entry) => entry.groupId === group.id));
+});
+
 test('sendItemNow keeps active prompt above pending item when queue is already processing', async () => {
   const active = item('active', 'sent');
   const first = item('first');

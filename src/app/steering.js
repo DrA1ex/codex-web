@@ -110,11 +110,28 @@ module.exports = {
       this.addTurnToOutputGroup(group, originalTurnId);
     }
     const continueQueue = !this.currentManualSend || this.manualSendContinueQueue;
+    const previousForceSteer = this.forceSteer && (
+      this.forceSteer.queueItemId === item?.id
+      || this.forceSteer.outputGroupId === group?.id
+    ) ? this.forceSteer : null;
+    const interruptedTurnIds = [
+      ...(previousForceSteer?.interruptedTurnIds || []),
+      originalTurnId,
+    ].filter(Boolean).filter((turnId, index, ids) => ids.indexOf(turnId) === index);
+    if (originalTurnId) {
+      this.intentionalInterrupts.set(originalTurnId, {
+        queueItemId: item?.id || null,
+        outputGroupId: group?.id || null,
+        createdAt: nowIso(),
+        handled: false,
+      });
+    }
     this.forceSteer = {
       queueItemId: item?.id || null,
       originalTurnId,
       replacementTurnId: null,
-      awaitingReplacementTurn: false,
+      interruptedTurnIds,
+      awaitingReplacementTurn: limitsAvailable(this),
       outputGroupId: group?.id || null,
       text,
       continueQueue,
@@ -125,6 +142,7 @@ module.exports = {
     await this.rpc.request('turn/interrupt', { threadId: this.app.sessionId, turnId: originalTurnId }, 3000);
 
     if (!limitsAvailable(this)) {
+      this.forceSteer.awaitingReplacementTurn = false;
       if (item) {
         item.status = 'interrupted';
         item.finishedAt = nowIso();

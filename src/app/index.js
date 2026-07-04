@@ -67,6 +67,7 @@ class CodexLimitWatchApp {
     this.turnCompletionSeen = false;
     this.turnCompletionStatus = null;
     this.forceSteer = null;
+    this.intentionalInterrupts = new Map();
     this.lastComposerText = '';
 
     this.sessionsLoaded = false;
