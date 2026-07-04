@@ -1413,6 +1413,21 @@ textarea:focus {
     color: var(--output-system);
 }
 
+.out-line.user-note .out-label {
+    color: var(--accent);
+}
+
+.out-line.user-note .out-body {
+    color: var(--output-body-strong);
+}
+
+.out-inline-action {
+    justify-self: start;
+    min-height: 28px;
+    padding: 4px 10px;
+    font-size: 12px;
+}
+
 .out-line.prompt .out-label {
     color: var(--output-accent);
 }

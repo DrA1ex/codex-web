@@ -74,6 +74,17 @@ module.exports = {
     }
     if (method === 'turn/completed' || method === 'turn/failed') {
       const turn = params.turn || params;
+      const eventTurnId = turn.id || turn.turnId || params.turnId || null;
+      if (
+        method === 'turn/failed'
+        && this.forceSteer
+        && eventTurnId
+        && eventTurnId === this.forceSteer.originalTurnId
+      ) {
+        this.appendOutput('[steer] Original turn interrupted', 'system');
+        this.broadcastAll();
+        return;
+      }
       const status = turn.status || (method === 'turn/failed' ? 'failed' : 'completed');
       const errMessage = turn?.error?.message || params?.error?.message || null;
       this.turnCompletionSeen = true;
@@ -90,6 +101,9 @@ module.exports = {
       this.finishCurrentOutputGroup(status === 'completed' ? 'completed' : 'failed', errMessage);
       this.tryReadSession().then(() => this.broadcastAll()).catch((err) => this.debugLog('refresh session title failed', err.message));
       if (this.currentTurnResolve) this.currentTurnResolve();
+      if (this.forceSteer?.replacementTurnId && eventTurnId === this.forceSteer.replacementTurnId) {
+        this.forceSteer = null;
+      }
       if (status !== 'completed') this.pause('Auto-send paused after turn failure. Type /resume after reviewing the error.');
       return;
     }

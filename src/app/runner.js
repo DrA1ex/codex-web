@@ -4,5 +4,6 @@ module.exports = {
   ...require('./lifecycle'),
   ...require('./queue-processing'),
   ...require('./prompt-sender'),
+  ...require('./steering'),
   ...require('./usage'),
 };

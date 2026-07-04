@@ -46,7 +46,7 @@ function normalizeQueueItem(item) {
   return item;
 }
 function countQueue(queue) {
-  const counts = { total: queue.length, pending: 0, sending: 0, sent: 0, completed: 0, failed: 0, paused: 0, unknown: 0, cancelled: 0 };
+  const counts = { total: queue.length, pending: 0, sending: 0, sent: 0, completed: 0, failed: 0, paused: 0, unknown: 0, cancelled: 0, interrupted: 0 };
   for (const item of queue) {
     if (item.status === 'next') counts.pending += 1;
     else counts[item.status] = (counts[item.status] || 0) + 1;
@@ -107,7 +107,7 @@ function updateQueueItemData(queue, body) {
   const item = queue.find((i) => i.id === body.id);
   if (!item) throw new Error('Queue item not found');
   if (body.action === 'edit') {
-    if (!['pending', 'next', 'failed', 'unknown', 'cancelled'].includes(item.status)) throw new Error('Only pending/failed/unknown/cancelled items can be edited');
+    if (!['pending', 'next', 'failed', 'unknown', 'cancelled', 'interrupted'].includes(item.status)) throw new Error('Only pending/failed/unknown/cancelled/interrupted items can be edited');
     item.text = String(body.text || '');
     item.status = 'pending';
     item.error = null;
@@ -177,6 +177,27 @@ function parseQueuedCommand(text) {
   const trimmed = String(text || '').trim();
   return QUEUED_COMMANDS.has(trimmed) ? trimmed : null;
 }
+function parseSteerCommand(text) {
+  const trimmed = String(text || '').trim();
+  const match = trimmed.match(/^(\/think!?)(?:\s+([\s\S]*))?$/);
+  if (!match) return null;
+
+  const command = match[1];
+  const mode = command === '/think!' ? 'force' : 'soft';
+  const body = String(match[2] || '').trim();
+  if (!body) {
+    return {
+      ok: false,
+      command,
+      mode,
+      message: command === '/think!'
+        ? '/think! needs a follow-up prompt.'
+        : '/think needs a note to send to the active prompt.',
+    };
+  }
+
+  return { ok: true, command, mode, text: body };
+}
 
 module.exports = {
   makeQueueItem,
@@ -194,4 +215,5 @@ module.exports = {
   reorderPendingItem,
   parseExactCommand,
   parseQueuedCommand,
+  parseSteerCommand,
 };

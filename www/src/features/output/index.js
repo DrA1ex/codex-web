@@ -18,6 +18,7 @@ const OUTPUT_LABELS = {
   event: 'Event',
   delta: 'Assistant',
   'context-delta': 'Context',
+  'user-note': 'User note',
 };
 
 const BLOCK_OUTPUT_TYPES = new Set([
@@ -189,11 +190,15 @@ function renderOutputLine(line) {
   const body = BLOCK_OUTPUT_TYPES.has(type)
     ? `<pre class="out-body">${esc(meta.body)}</pre>`
     : `<span class="out-body">${esc(meta.body)}</span>`;
+  const action = type === 'user-note' && line.steer?.forceAvailable
+    ? `<button type="button" class="out-inline-action" data-force-steer="${esc(line.id || '')}">Force send</button>`
+    : '';
 
   return `
     <div class="out-line ${esc(type)}">
       <span class="out-label">${esc(meta.label)}</span>
       ${body}
+      ${action}
     </div>
   `;
 }

@@ -160,4 +160,26 @@ export function interruptPrompt() {
   );
 }
 
+export function forceSteerNote(text) {
+  const status = state.snap?.rateLimits?.status || 'unknown';
+  if (status !== 'available') {
+    openConfirm(
+      'force-steer',
+      'Interrupt active prompt?',
+      'The active prompt may not be able to continue after interruption because rate limits are currently unavailable. The current queue item will be marked as interrupted, and the correction may remain pending until limits are available.',
+      'Interrupt anyway',
+      true,
+      { text },
+    );
+    return;
+  }
+
+  api('/api/control/steer-force', { text })
+    .then((response) => {
+      if (response.message) alert(response.message);
+      getState().catch(reportError);
+    })
+    .catch(reportError);
+}
+
 export { addQueue };

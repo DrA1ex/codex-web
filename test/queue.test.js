@@ -18,6 +18,7 @@ const {
   reorderPendingItem,
   parseExactCommand,
   parseQueuedCommand,
+  parseSteerCommand,
 } = require('../src/queue');
 const { item } = require('./helpers');
 
@@ -55,6 +56,7 @@ test('queue items are normalized, ordered, and counted', () => {
     paused: 0,
     unknown: 0,
     cancelled: 0,
+    interrupted: 0,
     custom: 1,
   });
 });
@@ -71,6 +73,35 @@ test('standalone commands are parsed exactly', () => {
   const compact = makeQueueItem('/compact');
   assert.equal(compact.kind, 'command');
   assert.equal(compact.command, '/compact');
+});
+
+test('active prompt steering commands parse payloads and reject empty bodies', () => {
+  assert.deepEqual(parseSteerCommand('/think focus on queue state'), {
+    ok: true,
+    command: '/think',
+    mode: 'soft',
+    text: 'focus on queue state',
+  });
+  assert.deepEqual(parseSteerCommand(' /think!  interrupt and fix it  '), {
+    ok: true,
+    command: '/think!',
+    mode: 'force',
+    text: 'interrupt and fix it',
+  });
+  assert.deepEqual(parseSteerCommand('/think'), {
+    ok: false,
+    command: '/think',
+    mode: 'soft',
+    message: '/think needs a note to send to the active prompt.',
+  });
+  assert.deepEqual(parseSteerCommand('/think!   '), {
+    ok: false,
+    command: '/think!',
+    mode: 'force',
+    message: '/think! needs a follow-up prompt.',
+  });
+  assert.equal(parseSteerCommand('/pause'), null);
+  assert.equal(parseSteerCommand('hello'), null);
 });
 
 test('queue data helpers move, undo, clear, edit, duplicate, retry, and remove safely', () => {

@@ -1,11 +1,15 @@
 import { state } from '#core/state';
-import { api, isNetworkError } from '#core/api';
+import { api, getState, isNetworkError } from '#core/api';
 import { esc } from '#utils/format';
 import { byId, setHidden } from '#utils/dom';
 
 const CONFIRM_ACTIONS = {
   interrupt: () => api('/api/control/interrupt').then((result) => {
     if (result.message) alert(result.message);
+  }),
+  'force-steer': ({ text }) => api('/api/control/steer-force', { text }).then((result) => {
+    if (result.message) alert(result.message);
+    return getState();
   }),
   stop: () => api('/api/control/stop'),
   remove: ({ id }) => api('/api/queue/remove', { id }),

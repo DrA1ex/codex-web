@@ -8,6 +8,7 @@ const {
   normalizeQueueItem,
   parseExactCommand,
   parseQueuedCommand,
+  parseSteerCommand,
 } = require('../queue');
 const {
   waitForAvailableLimits,
@@ -151,6 +152,14 @@ module.exports = {
     const trimmed = normalizedText.trim();
 
     if (!trimmed) return { ok: false, message: 'Prompt is empty' };
+
+    const steerCommand = parseSteerCommand(trimmed);
+    if (steerCommand) {
+      if (!steerCommand.ok) return { ok: false, message: steerCommand.message };
+      return steerCommand.mode === 'force'
+        ? await this.forceSteerActivePrompt(steerCommand.text)
+        : await this.steerActivePrompt(steerCommand.text);
+    }
 
     const command = parseExactCommand(trimmed);
     if (command) return await this.executeCommand(command);

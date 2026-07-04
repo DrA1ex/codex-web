@@ -103,6 +103,147 @@ test('sendComposerNow queues compact command instead of executing it immediately
   assert.equal(app.lastScheduledDelay, 200);
 });
 
+test('sendComposerNow steers active turn without changing queue', async () => {
+  const active = item('active', 'sent');
+  const pending = item('pending');
+  const app = makeAppWithQueue([active, pending]);
+  const requests = [];
+  app.app.state = 'streaming';
+  app.currentItemId = 'active';
+  app.currentTurnId = 'turn-active';
+  app.createOutputGroupForItem(active);
+  app.rpc = { request: async (...args) => { requests.push(args); return {}; } };
+
+  const result = await app.sendComposerNow('/think focus on the queue-state bug');
+
+  assert.deepEqual(result, { ok: true, clearComposer: true });
+  assert.deepEqual(requests, [[
+    'turn/steer',
+    {
+      threadId: app.app.sessionId,
+      expectedTurnId: 'turn-active',
+      input: [{ type: 'text', text: 'focus on the queue-state bug' }],
+    },
+    3000,
+  ]]);
+  assert.deepEqual(app.queue.map((queueItem) => [queueItem.id, queueItem.status]), [
+    ['active', 'sent'],
+    ['pending', 'pending'],
+  ]);
+  const note = app.output.find((entry) => entry.type === 'user-note');
+  assert.match(note?.text || '', /focus on the queue-state bug/);
+  assert.equal(note?.groupId, app.currentOutputGroupId);
+});
+
+test('sendComposerNow rejects steering when there is no active turn', async () => {
+  const app = makeAppWithQueue([]);
+  app.rpc = { request: async () => { throw new Error('should not send'); } };
+
+  const result = await app.sendComposerNow('/think note');
+
+  assert.equal(result.ok, false);
+  assert.match(result.message, /No active turn/);
+  assert.equal(app.queue.length, 0);
+});
+
+test('sendComposerNow keeps not-steerable note visible without failing active item', async () => {
+  const active = item('active', 'sent');
+  const app = makeAppWithQueue([active]);
+  const err = new Error('turn is not steerable right now');
+  err.code = 'activeTurnNotSteerable';
+  app.app.state = 'streaming';
+  app.currentItemId = 'active';
+  app.currentTurnId = 'turn-active';
+  app.createOutputGroupForItem(active);
+  app.rpc = { request: async () => { throw err; } };
+
+  const result = await app.sendComposerNow('/think wait for tool result');
+
+  assert.equal(result.ok, false);
+  assert.equal(result.steerForceAvailable, true);
+  assert.equal(active.status, 'sent');
+  assert.equal(app.app.state, 'streaming');
+  const note = app.output.find((entry) => entry.type === 'user-note');
+  assert.match(note?.text || '', /Status: not steerable/);
+  assert.equal(note?.steer?.forceAvailable, true);
+});
+
+test('force steering requires confirmation when limits are unavailable', async () => {
+  const active = item('active', 'sent');
+  const app = makeAppWithQueue([active]);
+  app.rateLimits = { status: 'limited', buckets: [], resetAt: null };
+  app.app.state = 'streaming';
+  app.currentItemId = 'active';
+  app.currentTurnId = 'turn-active';
+  app.rpc = { request: async () => { throw new Error('should not interrupt before confirmation'); } };
+
+  const result = await app.sendComposerNow('/think! force correction');
+
+  assert.equal(result.ok, false);
+  assert.equal(result.needsConfirmation, true);
+  assert.equal(result.confirmAction, 'force-steer');
+  assert.equal(active.status, 'sent');
+  assert.equal(app.currentTurnId, 'turn-active');
+});
+
+test('confirmed force steering with unavailable limits marks active item interrupted and queues correction', async () => {
+  const active = item('active', 'sent');
+  const app = makeAppWithQueue([active]);
+  const requests = [];
+  let resolved = false;
+  app.rateLimits = { status: 'limited', buckets: [], resetAt: null };
+  app.app.state = 'streaming';
+  app.currentItemId = 'active';
+  app.currentTurnId = 'turn-active';
+  app.currentTurnResolve = () => { resolved = true; };
+  app.rpc = { request: async (...args) => { requests.push(args); return {}; } };
+
+  const result = await app.forceSteerActivePrompt('queued correction', { confirmed: true });
+  app.handleNotification('turn/failed', { turn: { id: 'turn-active', status: 'failed', error: { message: 'interrupted' } } });
+
+  assert.equal(result.ok, true);
+  assert.equal(active.status, 'interrupted');
+  assert.equal(active.error, null);
+  assert.equal(app.queue.at(-1).text, 'queued correction');
+  assert.equal(app.queue.at(-1).status, 'pending');
+  assert.equal(resolved, true);
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0][0], 'turn/interrupt');
+  assert.ok(app.output.some((entry) => /\[steer] Original turn interrupted/.test(entry.text)));
+});
+
+test('force steering attaches replacement turn to the same queue item', async () => {
+  const active = item('active', 'sent');
+  const app = makeAppWithQueue([active]);
+  const requests = [];
+  app.rateLimits = { status: 'available', buckets: [], resetAt: null };
+  app.app.state = 'streaming';
+  app.currentItemId = 'active';
+  app.currentTurnId = 'turn-a';
+  app.createOutputGroupForItem(active);
+  app.rpc = {
+    request: async (method, params, timeout) => {
+      requests.push([method, params, timeout]);
+      if (method === 'turn/start') return { turn: { id: 'turn-b' } };
+      return {};
+    },
+  };
+
+  const result = await app.sendComposerNow('/think! replacement correction');
+  app.handleNotification('turn/failed', { turn: { id: 'turn-a', status: 'failed', error: { message: 'interrupted' } } });
+  app.handleNotification('turn/completed', { turn: { id: 'turn-b', status: 'completed' } });
+
+  assert.deepEqual(result, { ok: true, clearComposer: true });
+  assert.equal(active.status, 'completed');
+  assert.equal(active.usage?.turnId, 'turn-b');
+  assert.equal(app.currentTurnId, 'turn-b');
+  assert.equal(app.app.state, 'streaming');
+  assert.equal(requests[0][0], 'turn/interrupt');
+  assert.equal(requests[1][0], 'turn/start');
+  assert.equal(requests[1][1].input[0].text, 'replacement correction');
+  assert.ok(app.output.some((entry) => /\[steer] Follow-up prompt sent/.test(entry.text)));
+});
+
 test('sendItemNow keeps active prompt above pending item when queue is already processing', async () => {
   const active = item('active', 'sent');
   const first = item('first');

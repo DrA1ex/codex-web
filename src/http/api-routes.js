@@ -52,6 +52,7 @@ const POST_ROUTES = new Map([
     return { ok: true };
   }],
   ['/api/control/interrupt', (app) => app.interruptCurrentTurn()],
+  ['/api/control/steer-force', (app, body) => app.forceSteerActivePrompt(String(body.text || ''), { confirmed: true })],
   ['/api/control/pause', (app) => {
     app.pause();
     return { ok: true };

@@ -26,6 +26,7 @@ import {
   confirmRemoveQueueItem,
   copyVisibleOutput,
   copyVisibleOutputFromMenu,
+  forceSteerNote,
   interruptPrompt,
   post,
   reportError,
@@ -51,6 +52,7 @@ const CLICK_TARGET_SELECTOR = [
   '[data-output-diff]',
   '[data-output-tool]',
   '[data-output-group]',
+  '[data-force-steer]',
   '[data-toggle-prompt]',
   '#statusNotice',
 ].join(',');
@@ -116,12 +118,23 @@ function runClickAction(target, event) {
     handleOutputDiffToggle(target) ||
     handleOutputToolToggle(target) ||
     handleOutputGroupToggle(target) ||
+    handleForceSteer(target) ||
     handleStatusNotice(target) ||
     handleMobileCollapse(target) ||
     handleButton(target) ||
     handleSessionAction(target) ||
     handleApprovalAction(target) ||
     handleQueueItemAction(target);
+}
+
+function handleForceSteer(target) {
+  const id = target?.dataset?.forceSteer;
+  if (!id) return false;
+  const entry = (state.snap?.output || []).find((line) => line.id === id);
+  const text = entry?.steer?.text || '';
+  if (!text) return true;
+  forceSteerNote(text);
+  return true;
 }
 
 function delayMobileMenuAction(target, event) {

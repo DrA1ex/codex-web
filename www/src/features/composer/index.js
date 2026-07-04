@@ -1,6 +1,7 @@
 import { state } from '#core/state';
 import { api, getState, isNetworkError } from '#core/api';
 import { setButtonState } from '#ui/header';
+import { openConfirm } from '#ui/confirm';
 import { requestQueueScroll } from '#features/queue';
 
 function applyComposerResponse(response) {
@@ -42,6 +43,19 @@ export async function addQueue() {
 export async function sendComposerNow() {
   const response = await api('/api/queue/send-composer', { text: state.composer?.value || '' }).catch(handleComposerError);
   if (!response) return;
+
+  if (response.needsConfirmation && response.confirmAction === 'force-steer') {
+    openConfirm(
+      'force-steer',
+      'Interrupt active prompt?',
+      response.message,
+      'Interrupt anyway',
+      true,
+      { text: response.text || state.composer?.value || '' },
+    );
+    updateCounter();
+    return;
+  }
 
   applyComposerResponse(response);
   if (response.message) alert(response.message);
