@@ -148,7 +148,7 @@
     --output-reasoning: var(--warn);
     --output-plan: var(--ok-soft);
     --output-prompt-bg: color-mix(in srgb, var(--panel3) 72%, transparent);
-    --output-card-bg: color-mix(in srgb, var(--panel3) 86%, transparent);
+    --output-card-bg: color-mix(in srgb, var(--panel3) 30%, transparent);
     --output-toggle-hover-bg: color-mix(in srgb, var(--panel3) 52%, transparent);
     --output-detail-bg: color-mix(in srgb, var(--mix-shadow) 24%, transparent);
     --output-diff-add-text: var(--ok-strong);
@@ -216,6 +216,7 @@
     --button-inset-shadow: none;
     --button-primary-text: color-mix(in srgb, var(--accent) 62%, var(--palette-black));
     --code: color-mix(in srgb, var(--bg) 82%, transparent);
+    --output-card-bg: color-mix(in srgb, var(--panel3) 70%, transparent);
 }
 
 * {
