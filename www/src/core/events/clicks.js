@@ -132,7 +132,8 @@ function runClickAction(target, event) {
 }
 
 function handleHelpCommand(target) {
-  const index = target?.dataset?.helpCommand;
+  const commandButton = target?.closest?.('[data-help-command]');
+  const index = commandButton?.dataset?.helpCommand;
   if (index === undefined) return false;
   toggleHelpCommand(index);
   return true;

@@ -5,6 +5,7 @@ import { byId, setHidden } from '#utils/dom';
 export function openHelp(commands = []) {
   state.help.open = true;
   state.help.commands = Array.isArray(commands) ? commands : [];
+  state.expandedHelpCommands = Object.create(null);
   renderHelpModal();
 }
 
@@ -14,7 +15,9 @@ export function closeHelp() {
 }
 
 export function toggleHelpCommand(index) {
-  state.expandedHelpCommands[index] = !state.expandedHelpCommands[index];
+  const command = state.help.commands?.[Number(index)] || null;
+  const key = helpCommandKey(command, index);
+  state.expandedHelpCommands[key] = !state.expandedHelpCommands[key];
   renderHelpModal();
 }
 
@@ -44,7 +47,8 @@ export function renderHelpModal() {
 }
 
 function renderCommand(command, index) {
-  const expanded = Boolean(state.expandedHelpCommands[index]);
+  const key = helpCommandKey(command, index);
+  const expanded = Boolean(state.expandedHelpCommands[key]);
   const detailsId = `helpCommandDetails${index}`;
   return `
     <section class="help-command ${expanded ? 'expanded' : ''}">
@@ -61,9 +65,10 @@ function renderCommand(command, index) {
 
 function renderCommandDetails(command, detailsId) {
   const examples = Array.isArray(command.examples) ? command.examples.filter(Boolean) : [];
+  const details = command.details || command.description || 'No extended description is available for this command.';
   return `
     <div id="${detailsId}" class="help-command-details">
-      <p>${esc(command.details || '')}</p>
+      <p>${esc(details)}</p>
       ${examples.length ? `
         <div class="help-examples">
           <span>Examples</span>
@@ -72,4 +77,8 @@ function renderCommandDetails(command, detailsId) {
       ` : ''}
     </div>
   `;
+}
+
+function helpCommandKey(command, fallback) {
+  return String(command?.command || fallback || '');
 }
