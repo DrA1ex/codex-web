@@ -179,6 +179,28 @@ module.exports = {
     return entry;
   },
 
+
+  appendCommandFeedback(command) {
+    const payload = command || {};
+    const entry = {
+      id: randomId(5),
+      ts: nowIso(),
+      type: 'command',
+      command: {
+        status: payload.status || 'info',
+        title: payload.title || (payload.status === 'error' ? 'Command error' : 'Command'),
+        raw: String(payload.raw || ''),
+        message: String(payload.message || ''),
+        usage: String(payload.usage || ''),
+      },
+      ...this.currentOutputMeta(),
+    };
+    this.output.push(entry);
+    this.trimOutput();
+    this.broadcastOutput();
+    return entry;
+  },
+
   commandItemId(item) {
     return item && (item.id || item.itemId || item.callId || item.toolCallId || item.executionId || null);
   },

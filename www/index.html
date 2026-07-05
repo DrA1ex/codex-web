@@ -50,7 +50,12 @@
 </main>
 <section class="composer">
   <div class="composer-title">Composer</div>
-  <textarea id="composer" spellcheck="false" placeholder="Write a prompt or command. Cmd+Enter/Ctrl+Enter sends when idle. Try /think, /think!, /compact, or /help."></textarea>
+  <div class="composer-input-wrap">
+    <textarea id="composer" spellcheck="false" placeholder="Write a prompt or command. Cmd+Enter/Ctrl+Enter sends when idle. Try /think, /think!, /compact, or /help."></textarea>
+    <div id="composerGhost" class="composer-ghost" aria-hidden="true"></div>
+    <div id="composerArgHint" class="composer-arg-hint" aria-hidden="true"></div>
+  </div>
+  <div id="composerCommandStack" class="composer-command-stack" aria-hidden="true"></div>
   <div class="composer-row">
     <div class="composer-actions">
       <button id="addBtn" class="primary"><span class="icon icon-add" aria-hidden="true"></span>Add to queue</button>

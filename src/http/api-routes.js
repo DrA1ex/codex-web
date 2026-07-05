@@ -1,7 +1,10 @@
 'use strict';
 
+const { commandMetadataPayload } = require('../app/commands');
+
 const GET_ROUTES = new Map([
   ['/api/state', (app) => app.snapshot()],
+  ['/api/commands', () => ({ commands: commandMetadataPayload() })],
 ]);
 
 const POST_ROUTES = new Map([

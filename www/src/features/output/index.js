@@ -19,6 +19,7 @@ const OUTPUT_LABELS = {
   delta: 'Assistant',
   'context-delta': 'Context',
   'user-note': 'User note',
+  command: 'Command',
 };
 
 const BLOCK_OUTPUT_TYPES = new Set([
@@ -47,6 +48,28 @@ function outputLabel(type, text) {
   }
 
   return { label, body };
+}
+
+
+function renderCommandFeedbackLine(line) {
+  const command = line.command || {};
+  const status = command.status || 'info';
+  const title = command.title || (status === 'error' ? 'Command error' : 'Command');
+  const raw = command.raw || '';
+  const message = command.message || '';
+  const usage = command.usage || '';
+  return `
+    <div class="out-line command">
+      <div class="out-command-card ${esc(status)}">
+        <div class="out-command-head">
+          <span>${esc(title)}</span>
+          ${raw ? `<code>${esc(raw)}</code>` : ''}
+        </div>
+        ${message ? `<pre class="out-command-message">${esc(message)}</pre>` : ''}
+        ${usage ? `<div class="out-command-usage">Usage: <code>${esc(usage)}</code></div>` : ''}
+      </div>
+    </div>
+  `;
 }
 
 function renderDiffLine(line, meta) {
@@ -184,6 +207,7 @@ function renderOutputLine(line) {
   const type = line.type || 'text';
   const meta = outputLabel(type, line.text);
 
+  if (type === 'command') return renderCommandFeedbackLine(line);
   if (type === 'diff') return renderDiffLine(line, meta);
   if (type === 'tool' && line.tool?.kind === 'command') return renderCommandToolLine(line);
 

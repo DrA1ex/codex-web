@@ -1,6 +1,6 @@
-import {state} from '#core/state';
-import {esc} from '#utils/format';
-import {byId, setHidden} from '#utils/dom';
+import { state } from '#core/state';
+import { esc } from '#utils/format';
+import { byId, setHidden } from '#utils/dom';
 
 export function openHelp(commands = []) {
   state.help.open = true;
@@ -15,10 +15,14 @@ export function closeHelp() {
 }
 
 export function toggleHelpCommand(index) {
-  const command = state.help.commands?.[Number(index)] || null;
+  const command = flattenedCommands()[Number(index)] || null;
   const key = helpCommandKey(command, index);
   state.expandedHelpCommands[key] = !state.expandedHelpCommands[key];
   renderHelpModal();
+}
+
+function flattenedCommands() {
+  return state.help.commands || [];
 }
 
 export function renderHelpModal() {
@@ -31,7 +35,7 @@ export function renderHelpModal() {
     return;
   }
 
-  const commands = state.help.commands || [];
+  const commands = flattenedCommands();
   setHidden(box, false);
   box.innerHTML = `
     <div class="confirm-modal help-modal" role="dialog" aria-modal="true" aria-labelledby="helpTitle">
@@ -40,23 +44,42 @@ export function renderHelpModal() {
         <button id="helpCloseBtn" class="icon-only" title="Close command help"><span class="icon icon-close" aria-hidden="true"></span></button>
       </div>
       <div class="help-list">
-        ${commands.map(renderCommand).join('')}
+        ${renderCommandGroups(commands)}
       </div>
     </div>
   `;
+}
+
+function renderCommandGroups(commands) {
+  const groups = new Map();
+  commands.forEach((command, index) => {
+    const category = command.category || command.kind || 'Commands';
+    const bucket = groups.get(category) || [];
+    bucket.push({ command, index });
+    groups.set(category, bucket);
+  });
+  return [...groups.entries()].map(([category, items]) => `
+    <section class="help-category">
+      <h3>${esc(category)}</h3>
+      ${items.map(({ command, index }) => renderCommand(command, index)).join('')}
+    </section>
+  `).join('');
 }
 
 function renderCommand(command, index) {
   const key = helpCommandKey(command, index);
   const expanded = Boolean(state.expandedHelpCommands[key]);
   const detailsId = `helpCommandDetails${index}`;
+  const label = command.command || `${command.name || ''}${command.argumentHint ? ` ${command.argumentHint}` : ''}`;
+  const short = command.short || command.shortDescription || '';
+  const execution = command.execution || '';
   return `
     <section id="helpCommand${index}" class="help-command ${expanded ? 'expanded' : ''}">
       <button type="button" class="help-command-head" data-help-command="${index}" aria-expanded="${expanded ? 'true' : 'false'}" aria-controls="${detailsId}">
         <span class="icon icon-chevron-${expanded ? 'up' : 'down'}" aria-hidden="true"></span>
-        <b class="help-command-name">${esc(command.command || '')}</b>
-        <span>${esc(command.short || '')}</span>
-        ${command.kind ? `<em>${esc(command.kind)}</em>` : ''}
+        <b class="help-command-name">${esc(label)}</b>
+        <span>${esc(short)}</span>
+        ${execution ? `<em>${esc(execution)}</em>` : ''}
       </button>
       ${expanded ? renderCommandDetails(command, detailsId) : ''}
     </section>
@@ -80,5 +103,5 @@ function renderCommandDetails(command, detailsId) {
 }
 
 function helpCommandKey(command, fallback) {
-  return String(command?.command || fallback || '');
+  return String(command?.command || command?.name || fallback || '');
 }

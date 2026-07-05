@@ -116,3 +116,10 @@ export async function getState() {
   });
   return stateUpdater ? stateUpdater(snapshot) : snapshot;
 }
+
+
+export async function getCommandMetadata() {
+  return fetchJson('/api/commands', {
+    headers: { 'x-codex-limit-watch-token': state.token },
+  });
+}

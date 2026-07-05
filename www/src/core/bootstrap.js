@@ -9,7 +9,7 @@ import {
 } from '#core/api';
 import { attachEventHandlers } from '#core/events';
 import { sectionKey, update } from '#core/renderer';
-import { updateCounter } from '#features/composer';
+import { initComposerUi, loadComposerCommands, updateCounter } from '#features/composer';
 import { renderOutput } from '#features/output';
 import { renderApproval } from '#ui/approval';
 import { renderHeader } from '#ui/header';
@@ -90,7 +90,9 @@ export function startApp() {
   setStateUpdater(update);
   setNetworkStatusRenderer(renderHeader);
   attachEventHandlers();
+  initComposerUi();
   updateCounter();
+  loadComposerCommands();
   refreshLiveLabels();
   attachEventStream();
   refreshStateSilently();

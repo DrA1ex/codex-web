@@ -1,10 +1,10 @@
 'use strict';
 
 const { nowIso, randomId, lineCount, previewOf } = require('../shared/utils');
+const { isQueuedCommandName } = require('../app/commands');
+const { parseComposerCommand } = require('../app/command-parser');
 
 const PENDING_LIKE_STATUSES = new Set(['pending', 'next']);
-const IMMEDIATE_COMMANDS = new Set(['/send', '/undo', '/clear', '/pause', '/resume', '/quit', '/help', '/approve', '/approve-session', '/decline', '/cancel']);
-const QUEUED_COMMANDS = new Set(['/compact']);
 
 function isPendingLikeStatus(status) {
   return PENDING_LIKE_STATUSES.has(status);
@@ -171,21 +171,24 @@ function reorderPendingItem(queue, id, body = {}) {
 }
 function parseExactCommand(text) {
   const trimmed = String(text || '').trim();
-  return IMMEDIATE_COMMANDS.has(trimmed) ? trimmed : null;
+  const parsed = parseComposerCommand(trimmed);
+  if (!parsed || !parsed.ok || parsed.execution === 'queued') return null;
+  return parsed.raw === parsed.command ? parsed.command : null;
 }
 function parseQueuedCommand(text) {
   const trimmed = String(text || '').trim();
-  return QUEUED_COMMANDS.has(trimmed) ? trimmed : null;
+  const parsed = parseComposerCommand(trimmed);
+  if (!parsed || !parsed.ok || !isQueuedCommandName(parsed.command)) return null;
+  return parsed.raw === parsed.command ? parsed.command : null;
 }
 function parseSteerCommand(text) {
   const trimmed = String(text || '').trim();
-  const match = trimmed.match(/^(\/think!?)(?:\s+([\s\S]*))?$/);
-  if (!match) return null;
+  const parsed = parseComposerCommand(trimmed);
+  if (!parsed || (parsed.ok && !['/think', '/think!'].includes(parsed.command)) || (!parsed.ok && !['/think', '/think!'].includes(parsed.command))) return null;
 
-  const command = match[1];
+  const command = parsed.command;
   const mode = command === '/think!' ? 'force' : 'soft';
-  const body = String(match[2] || '').trim();
-  if (!body) {
+  if (!parsed.ok) {
     return {
       ok: false,
       command,
@@ -196,7 +199,7 @@ function parseSteerCommand(text) {
     };
   }
 
-  return { ok: true, command, mode, text: body };
+  return { ok: true, command, mode, text: parsed.args.text };
 }
 
 module.exports = {

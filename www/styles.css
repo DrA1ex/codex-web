@@ -2932,3 +2932,216 @@ pre {
         font-size: 20px;
     }
 }
+
+/* Composer command UX */
+.composer {
+    --composer-line-height: 20px;
+    --composer-min-height: 44px;
+    --composer-max-height: calc(var(--composer-line-height) * 8 + 22px);
+}
+
+.composer-input-wrap {
+    position: relative;
+}
+
+.composer textarea {
+    min-height: var(--composer-min-height);
+    max-height: var(--composer-max-height);
+    overflow-y: auto;
+    resize: none;
+    line-height: var(--composer-line-height);
+    padding-bottom: 34px;
+}
+
+.composer-ghost {
+    position: absolute;
+    pointer-events: none;
+    z-index: 2;
+    font: inherit;
+    line-height: var(--composer-line-height);
+}
+
+.composer-ghost {
+    color: var(--muted);
+    opacity: 0;
+    white-space: pre;
+}
+
+.composer-ghost.visible {
+    opacity: 0.72;
+    pointer-events: auto;
+    cursor: pointer;
+}
+
+.composer-command-stack {
+    display: none;
+    position: fixed;
+    z-index: 45;
+    flex-direction: column;
+    gap: 3px;
+    min-width: 160px;
+    overflow-y: auto;
+    padding: 7px;
+    border: 1px solid var(--border-soft);
+    border-radius: 8px;
+    background: var(--surface-popover);
+    box-shadow: var(--shadow-popover);
+    backdrop-filter: blur(10px);
+    font-size: 12px;
+    line-height: 1.35;
+}
+
+.composer-command-stack.visible {
+    display: flex;
+    pointer-events: auto;
+}
+
+.composer-command-stack button {
+    justify-content: flex-start;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--muted);
+    box-shadow: none;
+    padding: 4px 7px;
+    text-align: left;
+    cursor: pointer;
+    font: inherit;
+    min-height: 0;
+    width: 100%;
+    max-width: 100%;
+}
+
+.composer-command-stack button:hover {
+    background: var(--surface-popover-hover);
+    color: var(--text);
+}
+
+.composer-command-stack button.active {
+    background: color-mix(in srgb, var(--accent) 16%, transparent);
+    color: var(--text);
+}
+
+.composer-arg-hint {
+    position: absolute;
+    left: 13px;
+    right: 13px;
+    bottom: 8px;
+    z-index: 2;
+    min-height: 18px;
+    color: var(--muted);
+    font-size: 12px;
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    flex-wrap: wrap;
+    pointer-events: none;
+    line-height: 1.35;
+}
+
+.composer-arg-hint code {
+    color: var(--text);
+    font: inherit;
+}
+
+.composer-command-mode {
+    display: inline-flex;
+    align-items: center;
+    min-height: 18px;
+    padding: 1px 7px;
+    border: 1px solid color-mix(in srgb, var(--accent) 26%, transparent);
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--accent) 10%, transparent);
+    color: var(--accent-strong);
+    font-weight: 700;
+}
+
+.composer-arg-hint.missing {
+    animation: composer-hint-blink 450ms ease-in-out 1;
+}
+
+.composer-caret-probe {
+    position: fixed;
+    left: -10000px;
+    top: -10000px;
+    visibility: hidden;
+    overflow-wrap: break-word;
+    white-space: pre-wrap;
+}
+
+@keyframes composer-hint-blink {
+    0%, 100% { transform: translateX(0); opacity: 0.72; }
+    25% { transform: translateX(-3px); opacity: 1; }
+    50% { transform: translateX(3px); opacity: 1; }
+    75% { transform: translateX(-2px); opacity: 1; }
+}
+
+.out-command-card {
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 10px 12px;
+    background: var(--surface-card);
+}
+
+.out-command-card.error {
+    border-color: var(--danger);
+}
+
+.out-command-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 6px;
+    font-weight: 700;
+}
+
+.out-command-head code,
+.out-command-usage code {
+    color: var(--muted);
+    font: inherit;
+}
+
+.out-command-message {
+    margin: 0;
+    white-space: pre-wrap;
+    font: inherit;
+}
+
+.out-command-usage {
+    margin-top: 7px;
+    color: var(--muted);
+    font-size: 12px;
+}
+
+.help-category h3 {
+    margin: 14px 0 8px;
+    color: var(--muted);
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+}
+
+@media (max-width: 720px) {
+    .composer {
+        --composer-max-height: calc(var(--composer-line-height) * 5 + 22px);
+    }
+
+    .composer-command-stack button {
+        min-height: 38px;
+        padding: 8px 10px;
+    }
+}
+
+@media (orientation: portrait) and (max-width: 860px) {
+    .composer-command-stack {
+        min-width: 220px;
+        padding: 8px;
+        font-size: 15px;
+        gap: 4px;
+    }
+
+    .composer-command-stack button {
+        min-height: 44px;
+        padding: 10px 12px;
+    }
+}

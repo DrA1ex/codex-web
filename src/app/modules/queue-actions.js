@@ -3,16 +3,18 @@
 const {
   isPendingLikeStatus,
   makeQueueItem,
+  normalizeQueueOrder,
+  movePendingToNext: movePendingToNextItem,
   undoLastPending,
   clearPending: clearPendingItems,
   clearCompleted: clearCompletedItems,
   updateQueueItemData,
   removeQueueItem: removeQueueItemData,
   reorderPendingItem,
-  parseExactCommand,
   parseQueuedCommand,
 } = require('../../queue');
 const { commandHelpPayload } = require('../commands');
+const { parseComposerCommand } = require('../command-parser');
 
 const COMPLETED_ARCHIVE_INITIAL_COUNT = 10;
 const COMPLETED_ARCHIVE_PAGE_SIZE = 50;
@@ -27,6 +29,74 @@ function completedQueueEntries(queue) {
     .map((item, index) => ({ item, index, time: queueItemTime(item) }))
     .filter((entry) => entry.item.status === 'completed')
     .sort((left, right) => left.time - right.time || left.index - right.index);
+}
+
+
+function commandRaw(parsed, fallback) {
+  return parsed?.raw || fallback || parsed?.command || '';
+}
+
+function commandFeedback(ctx, payload) {
+  if (typeof ctx.appendCommandFeedback === 'function') return ctx.appendCommandFeedback(payload);
+  return ctx.appendOutput(`[${payload.title || 'Command'}] ${payload.raw || ''}\n${payload.message || ''}`, payload.status === 'error' ? 'error' : 'system');
+}
+
+function commandErrorResponse(ctx, parsed, raw) {
+  commandFeedback(ctx, {
+    status: 'error',
+    title: 'Command error',
+    raw: commandRaw(parsed, raw),
+    message: parsed?.message || 'Invalid command.',
+    usage: parsed?.usage || '',
+  });
+  ctx.broadcastAll();
+  return { ok: false, clearComposer: false, commandError: true };
+}
+
+function commandSuccess(ctx, parsed, message, status = 'success') {
+  commandFeedback(ctx, {
+    status,
+    title: status === 'error' ? 'Command error' : 'Command',
+    raw: commandRaw(parsed),
+    message,
+  });
+}
+
+function queuePreview(item) {
+  const preview = String(item?.preview || item?.text || '').replace(/\s+/g, ' ').trim();
+  if (!preview) return '(empty prompt)';
+  return preview.length > 80 ? `${preview.slice(0, 77)}...` : preview;
+}
+
+function pendingListText(queue) {
+  const pending = queue.filter((item) => isPendingLikeStatus(item.status));
+  if (!pending.length) return 'No pending items.';
+
+  const [next, ...rest] = pending;
+  const lines = [];
+  if (next) {
+    lines.push('Next:');
+    lines.push(`#${next.id} — ${queuePreview(next)}`);
+  }
+  if (rest.length) {
+    lines.push('');
+    lines.push('Pending:');
+    for (const item of rest) lines.push(`#${item.id} — ${queuePreview(item)}`);
+  }
+  return lines.join('\n');
+}
+
+function alreadyNext(queue, item, currentItemId) {
+  const ordered = normalizeQueueOrder(queue);
+  const from = ordered.findIndex((candidate) => candidate.id === item.id);
+  if (from < 0) return false;
+  const runningIndex = ordered.findIndex((candidate) => (
+    candidate.id === currentItemId || candidate.status === 'sending' || candidate.status === 'sent'
+  ));
+  if (runningIndex >= 0) return from === runningIndex + 1;
+
+  const firstPendingIndex = ordered.findIndex((candidate) => isPendingLikeStatus(candidate.status));
+  return from === firstPendingIndex;
 }
 
 function completedQueuePage(queue, before = null, limit = COMPLETED_ARCHIVE_INITIAL_COUNT) {
@@ -67,12 +137,18 @@ function completedQueuePage(queue, before = null, limit = COMPLETED_ARCHIVE_INIT
 
 module.exports = {
   async addPrompt(text) {
-    const trimmed = String(text || '').trim();
+    const normalized = String(text || '').replace(/\r\n/g, '\n');
+    const trimmed = normalized.trim();
     if (!trimmed) return { ok: false, message: 'Prompt is empty' };
-    const command = parseExactCommand(trimmed);
-    if (command) return await this.executeCommand(command);
+
+    const parsed = parseComposerCommand(trimmed);
+    if (parsed) {
+      if (!parsed.ok) return commandErrorResponse(this, parsed, trimmed);
+      if (parsed.execution !== 'queued') return await this.executeCommand(Object.keys(parsed.args || {}).length ? parsed : parsed.command);
+    }
+
     const queuedCommand = parseQueuedCommand(trimmed);
-    const item = makeQueueItem(String(text).replace(/\r\n/g, '\n'));
+    const item = makeQueueItem(normalized);
     this.queue.push(item);
     await this.saveQueue();
     this.app.state = this.app.state === 'done' ? 'watching' : this.app.state;
@@ -127,22 +203,120 @@ module.exports = {
     return { ok: true };
   },
 
-  async executeCommand(command) {
-    switch (command) {
-      case '/send':
-        return { ok: false, message: 'Type a prompt and press Cmd+Enter or click Add to queue. /send is accepted only as a standalone command, so there is no prompt body to enqueue.' };
-      case '/undo': return await this.undoLast();
-      case '/clear': await this.clearPending(); return { ok: true, clearComposer: true };
-      case '/pause': this.pause(); return { ok: true, clearComposer: true };
-      case '/resume': this.resume(); return { ok: true, clearComposer: true };
-      case '/quit': await this.shutdown('quit command'); return { ok: true, clearComposer: true };
-      case '/help': return { ok: true, clearComposer: true, help: { commands: commandHelpPayload() } };
-      case '/approve': await this.respondApproval('accept'); return { ok: true, clearComposer: true };
-      case '/approve-session': await this.respondApproval('accept-for-session'); return { ok: true, clearComposer: true };
-      case '/decline': await this.respondApproval('decline'); return { ok: true, clearComposer: true };
-      case '/cancel': await this.respondApproval('cancel'); return { ok: true, clearComposer: true };
-      default: return { ok: false, message: `Unknown command: ${command}` };
+  async executeCommand(commandOrParsed) {
+    const parsed = typeof commandOrParsed === 'string'
+      ? parseComposerCommand(commandOrParsed)
+      : commandOrParsed;
+
+    if (!parsed) return { ok: false, message: 'Not a command.' };
+    if (!parsed.ok) return commandErrorResponse(this, parsed, commandOrParsed);
+
+    try {
+      switch (parsed.command) {
+        case '/pending': return await this.executePendingCommand(parsed);
+        case '/send': return await this.executeSendCommand(parsed);
+        case '/next': return await this.executeNextCommand(parsed);
+        case '/schedule': return await this.executeScheduleCommand(parsed);
+        case '/stop': return await this.executeStopCommand(parsed);
+        case '/think': return await this.steerActivePrompt(parsed.args.text);
+        case '/think!': return await this.forceSteerActivePrompt(parsed.args.text);
+        case '/undo': return await this.undoLast();
+        case '/clear': await this.clearPending(); return { ok: true, clearComposer: true };
+        case '/pause': this.pause(); return { ok: true, clearComposer: true };
+        case '/resume': this.resume(); return { ok: true, clearComposer: true };
+        case '/quit': await this.shutdown('quit command'); return { ok: true, clearComposer: true };
+        case '/help': return { ok: true, clearComposer: true, help: { commands: commandHelpPayload() } };
+        case '/approve': await this.respondApproval('accept'); return { ok: true, clearComposer: true };
+        case '/approve-session': await this.respondApproval('accept-for-session'); return { ok: true, clearComposer: true };
+        case '/decline': await this.respondApproval('decline'); return { ok: true, clearComposer: true };
+        case '/cancel': await this.respondApproval('cancel'); return { ok: true, clearComposer: true };
+        default:
+          return commandErrorResponse(this, { ...parsed, message: `Unknown command: ${parsed.command}`, usage: 'Type /help to see available commands.' });
+      }
+    } catch (error) {
+      commandFeedback(this, {
+        status: 'error',
+        title: 'Command error',
+        raw: commandRaw(parsed),
+        message: error.message || String(error),
+      });
+      this.broadcastAll();
+      return { ok: false, clearComposer: false, commandError: true };
     }
+  },
+
+  async executePendingCommand(parsed) {
+    commandSuccess(this, parsed, pendingListText(this.queue), 'info');
+    this.broadcastAll();
+    return { ok: true, clearComposer: true };
+  },
+
+  async executeSendCommand(parsed) {
+    const id = parsed.args.id;
+    const item = this.queue.find((candidate) => candidate.id === id);
+    if (!item) return commandErrorResponse(this, { ...parsed, message: `Queue item not found: ${id}` });
+    if (!isPendingLikeStatus(item.status)) return commandErrorResponse(this, { ...parsed, message: 'Only pending queue items can be sent.' });
+
+    const result = await this.sendItemNow(item);
+    commandSuccess(this, parsed, `Send requested for #${id}.`);
+    this.broadcastAll();
+    return { ok: true, clearComposer: true, item: result?.item || item };
+  },
+
+  async executeNextCommand(parsed) {
+    const id = parsed.args.id;
+    const item = this.queue.find((candidate) => candidate.id === id);
+    if (!item) return commandErrorResponse(this, { ...parsed, message: `Queue item not found: ${id}` });
+    if (!isPendingLikeStatus(item.status)) return commandErrorResponse(this, { ...parsed, message: 'Only pending queue items can be moved next.' });
+    if (alreadyNext(this.queue, item, this.currentItemId)) return commandErrorResponse(this, { ...parsed, message: `#${id} is already next.` });
+
+    const result = movePendingToNextItem(this.queue, item, this.currentItemId);
+    this.queue = result.queue;
+    await this.saveQueue();
+    commandSuccess(this, parsed, `Moved #${id} next.`);
+    this.broadcastAll();
+    return { ok: true, clearComposer: true, item: result.item };
+  },
+
+  async executeStopCommand(parsed) {
+    const result = await this.interruptCurrentTurn();
+    if (!result.ok) {
+      commandSuccess(this, parsed, 'Nothing is running.', 'info');
+      this.broadcastAll();
+      return { ok: true, clearComposer: true };
+    }
+    commandSuccess(this, parsed, 'Interrupt requested.');
+    this.broadcastAll();
+    return { ok: true, clearComposer: true };
+  },
+
+  async executeScheduleCommand(parsed) {
+    const schedule = parsed.args.schedule;
+    if (schedule.action === 'open') {
+      if (!this.canScheduleQueue()) {
+        return commandErrorResponse(this, {
+          ...parsed,
+          message: 'Queue can be scheduled only when it is paused, scheduled, or waiting for limits.',
+        });
+      }
+      if (!this.queue.some((i) => isPendingLikeStatus(i.status))) {
+        return commandErrorResponse(this, {
+          ...parsed,
+          message: 'Queue has no pending prompts to schedule.',
+        });
+      }
+      return { ok: true, clearComposer: true, openScheduleModal: true };
+    }
+    if (schedule.action === 'reset') {
+      await this.resetQueueSchedule();
+      commandSuccess(this, parsed, 'Schedule cleared.');
+      this.broadcastAll();
+      return { ok: true, clearComposer: true };
+    }
+    await this.setQueueSchedule(schedule.scheduledRunAt);
+    commandSuccess(this, parsed, `Scheduled for ${new Date(schedule.scheduledRunAt).toLocaleString()}.`);
+    this.broadcastAll();
+    return { ok: true, clearComposer: true, scheduledRunAt: schedule.scheduledRunAt };
   },
 
   async undoLast() {

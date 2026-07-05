@@ -6,10 +6,10 @@ const {
   makeQueueItem,
   isPendingLikeStatus,
   normalizeQueueItem,
-  parseExactCommand,
   parseQueuedCommand,
   parseSteerCommand,
 } = require('../queue');
+const { parseComposerCommand } = require('./command-parser');
 const {
   waitForAvailableLimits,
   setWaitingForLimits,
@@ -162,8 +162,11 @@ module.exports = {
         : await this.steerActivePrompt(steerCommand.text);
     }
 
-    const command = parseExactCommand(trimmed);
-    if (command) return await this.executeCommand(command);
+    const parsed = parseComposerCommand(trimmed);
+    if (parsed) {
+      if (!parsed.ok) return await this.executeCommand(parsed);
+      if (parsed.execution !== 'queued') return await this.executeCommand(Object.keys(parsed.args || {}).length ? parsed : parsed.command);
+    }
     const queuedCommand = parseQueuedCommand(trimmed);
     if (!this.app.sessionId) throw new Error('No Codex session selected');
 

@@ -1,6 +1,6 @@
 import { api, isNetworkError } from '#core/api';
 import { state } from '#core/state';
-import { sendComposerNow } from '#features/composer';
+import { handleComposerKeydown, sendComposerNow } from '#features/composer';
 import { cancelQueueEditInDom, saveQueueEdit, toggleQueueItemExpandedInDom } from '#features/queue';
 import { closeConfirm, confirmCurrentAction } from '#ui/confirm';
 import { closeHelp } from '#ui/help';
@@ -114,6 +114,7 @@ export function attachKeyboardHandlers() {
 
   if (state.composer) {
     state.composer.addEventListener('keydown', (event) => {
+      if (handleComposerKeydown(event)) return;
       if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
         event.preventDefault();
         sendComposerNow();
