@@ -162,8 +162,14 @@ test('sendComposerNow rejects steering when there is no active turn', async () =
   const result = await app.sendComposerNow('/think note');
 
   assert.equal(result.ok, false);
+  assert.equal(result.commandError, true);
   assert.match(result.message, /No active turn/);
   assert.equal(app.queue.length, 0);
+  const command = app.output.at(-1);
+  assert.equal(command.type, 'command');
+  assert.equal(command.command.status, 'error');
+  assert.equal(command.command.raw, '/think note');
+  assert.match(command.command.message, /No active turn/);
 });
 
 test('sendComposerNow keeps not-steerable note visible without failing active item', async () => {

@@ -43,15 +43,16 @@ function commandFeedback(ctx, payload) {
 
 function commandErrorResponse(ctx, parsed, raw) {
   const meta = commandByName(parsed?.command);
+  const message = parsed?.message || 'Invalid command.';
   commandFeedback(ctx, {
     status: 'error',
     title: 'Command error',
     raw: commandRaw(parsed, raw),
-    message: commandHelpMessage(meta, parsed?.message || 'Invalid command.'),
+    message: commandHelpMessage(meta, message),
     usage: parsed?.usage || '',
   });
   ctx.broadcastAll();
-  return { ok: false, clearComposer: false, commandError: true };
+  return { ok: false, clearComposer: false, commandError: true, message };
 }
 
 function commandSuccess(ctx, parsed, message, status = 'success') {
@@ -253,8 +254,8 @@ module.exports = {
         case '/sandbox': return await this.executeSandboxCommand(parsed);
         case '/approval': return await this.executeApprovalCommand(parsed);
         case '/stop': return await this.executeStopCommand(parsed);
-        case '/think': return await this.steerActivePrompt(parsed.args.text);
-        case '/think!': return await this.forceSteerActivePrompt(parsed.args.text);
+        case '/think': return await this.executeThinkCommand(parsed);
+        case '/think!': return await this.executeThinkCommand(parsed);
         case '/undo': return await this.undoLast();
         case '/clear': await this.clearPending(); return { ok: true, clearComposer: true };
         case '/pause': this.pause(); return { ok: true, clearComposer: true };
@@ -325,6 +326,25 @@ module.exports = {
     commandSuccess(this, parsed, 'Interrupt requested.');
     this.broadcastAll();
     return { ok: true, clearComposer: true };
+  },
+
+  async executeThinkCommand(parsed) {
+    const result = parsed.command === '/think!'
+      ? await this.forceSteerActivePrompt(parsed.args.text)
+      : await this.steerActivePrompt(parsed.args.text);
+
+    if (result?.ok || result?.needsConfirmation) return result;
+
+    const errorResponse = commandErrorResponse(this, {
+      ...parsed,
+      message: result?.message || 'Active prompt steering failed.',
+      usage: commandUsage(commandByName(parsed.command)),
+    });
+    if (result?.steerForceAvailable) {
+      errorResponse.steerForceAvailable = true;
+      errorResponse.text = result.text || parsed.args.text;
+    }
+    return errorResponse;
   },
 
   async executeScheduleCommand(parsed) {

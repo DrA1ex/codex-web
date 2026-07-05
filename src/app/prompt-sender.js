@@ -7,7 +7,6 @@ const {
   isPendingLikeStatus,
   normalizeQueueItem,
   parseQueuedCommand,
-  parseSteerCommand,
 } = require('../queue');
 const { parseComposerCommand } = require('./command-parser');
 const {
@@ -153,14 +152,6 @@ module.exports = {
     const trimmed = normalizedText.trim();
 
     if (!trimmed) return { ok: false, message: 'Prompt is empty' };
-
-    const steerCommand = parseSteerCommand(trimmed);
-    if (steerCommand) {
-      if (!steerCommand.ok) return { ok: false, message: steerCommand.message };
-      return steerCommand.mode === 'force'
-        ? await this.forceSteerActivePrompt(steerCommand.text)
-        : await this.steerActivePrompt(steerCommand.text);
-    }
 
     const parsed = parseComposerCommand(trimmed);
     if (parsed) {

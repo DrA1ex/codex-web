@@ -37,6 +37,7 @@ function handleComposerResponse(response) {
   if (response.help?.commands) openHelp(response.help.commands);
   if (response.openScheduleModal) openScheduleModal();
   applyComposerResponse(response);
+  if (response.commandError) blinkArgumentHint();
   if (response.message && !response.commandError) openMessage('Composer', response.message);
 }
 
