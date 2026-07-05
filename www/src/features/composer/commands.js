@@ -79,9 +79,7 @@ function getCommandDisplayArgumentHint(command, currentText = '') {
 
   const text = String(currentText || '').trim();
   if (!text) return hint;
-  if (text.startsWith(command.name)) {
-    return text.slice(command.name.length).trim() ? '' : hint;
-  }
+  if (text.startsWith(command.name)) return hint;
 
   const firstToken = text.split(/\s+/, 1)[0];
   return command.name.startsWith(firstToken) ? hint : '';

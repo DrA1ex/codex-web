@@ -176,9 +176,10 @@ function ghostParts(command, suggest, text) {
   if (!command) return { commandSuffix: '', argumentHint: '' };
   const commandSuffix = suggest.open && command === activeCommandMatch(suggest) ? suggest.suffix || '' : '';
   const argumentHint = argumentHintForGhost(command, text);
+  const needsArgumentSpacer = Boolean(commandSuffix) || !/\s$/.test(String(text || ''));
   return {
     commandSuffix,
-    argumentHint: argumentHint ? `${commandSuffix || /\s$/.test(String(text || '')) ? '' : ' '}${argumentHint}` : '',
+    argumentHint: argumentHint ? `${needsArgumentSpacer ? ' ' : ''}${argumentHint}` : '',
   };
 }
 
@@ -281,8 +282,8 @@ function renderGhost() {
 
   if (inlineGhost.commandSuffix || inlineGhost.argumentHint) {
     ghost.innerHTML = renderGhostParts(inlineGhost);
-    ghost.style.left = `${coords.left}px`;
-    ghost.style.top = `${coords.top}px`;
+    ghost.style.left = `${coords.left + 2}px`;
+    ghost.style.top = `${coords.top - 1.5}px`;
     ghost.classList.add('visible');
   }
 
