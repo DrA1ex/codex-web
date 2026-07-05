@@ -63,7 +63,8 @@ export function autosizeComposer() {
   if (!composer) return;
   const style = window.getComputedStyle(composer);
   const minHeight = Number.parseFloat(style.minHeight) || 0;
-  const maxHeight = Number.parseFloat(style.maxHeight) || Number.POSITIVE_INFINITY;
+  const rawMaxHeight = Number.parseFloat(style.maxHeight) || Number.POSITIVE_INFINITY;
+  const maxHeight = Math.max(rawMaxHeight, minHeight);
   composer.style.height = 'auto';
   const nextHeight = clamp(composer.scrollHeight, minHeight, maxHeight);
   composer.style.height = `${nextHeight}px`;

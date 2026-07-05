@@ -3158,6 +3158,11 @@ pre {
 }
 
 @media (orientation: portrait) and (max-width: 860px) {
+    .composer {
+        --composer-min-height: clamp(130px, 22dvh, 220px);
+        --composer-max-height: max(var(--composer-min-height), 34dvh);
+    }
+
     .composer-command-stack {
         min-width: 220px;
         padding: 8px;
