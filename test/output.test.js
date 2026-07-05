@@ -138,6 +138,27 @@ test('anonymous command output fallback stays inside the current output group', 
   assert.equal(app.currentOutputGroupId, second.id);
 });
 
+test('appendCommandFeedback stores structured command output', () => {
+  const app = makeAppWithQueue([]);
+  app.appendCommandFeedback({
+    status: 'error',
+    title: 'Command error',
+    raw: '/schedule nonsense',
+    message: 'Invalid schedule value.',
+    usage: '/schedule 10m | /schedule reset',
+  });
+
+  assert.equal(app.output.length, 1);
+  assert.equal(app.output[0].type, 'command');
+  assert.deepEqual(app.output[0].command, {
+    status: 'error',
+    title: 'Command error',
+    raw: '/schedule nonsense',
+    message: 'Invalid schedule value.',
+    usage: '/schedule 10m | /schedule reset',
+  });
+});
+
 test('clearOutput clears diff and command tracking maps', () => {
   const app = makeAppWithQueue([]);
   app.appendCommandOutput({ id: 'cmd-1', command: 'echo hi' });

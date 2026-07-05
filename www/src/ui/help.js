@@ -17,17 +17,19 @@ export function closeHelp() {
 export function toggleHelpCommand(index) {
   const command = flattenedCommands()[Number(index)] || null;
   const key = helpCommandKey(command, index);
-  state.expandedHelpCommands[key] = !state.expandedHelpCommands[key];
-  renderHelpModal();
+  const expanded = !state.expandedHelpCommands[key];
+  state.expandedHelpCommands[key] = expanded;
+  renderHelpModal({ focusCommandIndex: expanded ? Number(index) : null });
 }
 
 function flattenedCommands() {
   return state.help.commands || [];
 }
 
-export function renderHelpModal() {
+export function renderHelpModal(options = {}) {
   const box = byId('helpBox');
   if (!box) return;
+  const previousScrollTop = box.querySelector('.help-list')?.scrollTop || 0;
 
   if (!state.help.open) {
     setHidden(box, true);
@@ -48,6 +50,35 @@ export function renderHelpModal() {
       </div>
     </div>
   `;
+
+  const list = box.querySelector('.help-list');
+  if (list) list.scrollTop = previousScrollTop;
+  if (Number.isInteger(options.focusCommandIndex)) {
+    window.requestAnimationFrame(() => keepHelpCommandVisible(options.focusCommandIndex));
+  }
+}
+
+function keepHelpCommandVisible(index) {
+  const list = byId('helpBox')?.querySelector('.help-list');
+  const item = byId(`helpCommand${index}`);
+  if (!list || !item) return;
+
+  const listRect = list.getBoundingClientRect();
+  const itemRect = item.getBoundingClientRect();
+  const margin = 8;
+
+  if (itemRect.height > list.clientHeight) {
+    const head = item.querySelector('.help-command-head') || item;
+    const headRect = head.getBoundingClientRect();
+    list.scrollTop += headRect.top - listRect.top - margin;
+    return;
+  }
+
+  if (itemRect.top < listRect.top + margin) {
+    list.scrollTop -= listRect.top + margin - itemRect.top;
+  } else if (itemRect.bottom > listRect.bottom - margin) {
+    list.scrollTop += itemRect.bottom - (listRect.bottom - margin);
+  }
 }
 
 function renderCommandGroups(commands) {

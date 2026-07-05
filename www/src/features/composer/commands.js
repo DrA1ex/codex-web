@@ -105,14 +105,13 @@ export function hasRequiredArguments(command, text) {
 export function buildSuggestState(text, caretIndex, commandMetadata, previous = {}) {
   const value = String(text || '');
   if (value.includes('\n') && value.trim()) {
-    const command = commandForInput(value, commandMetadata);
     return {
       open: false,
       matches: [],
       activeIndex: 0,
       prefix: '',
       suffix: '',
-      argumentHint: getArgumentHint(command, value),
+      argumentHint: '',
       argumentMissing: false,
     };
   }

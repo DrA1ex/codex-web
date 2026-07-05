@@ -16,6 +16,15 @@ test('/pending writes a command output block', async () => {
   assert.match(last.command.message, /#abc123/);
 });
 
+test('/pending handles an empty queue cleanly', async () => {
+  const app = makeAppWithQueue([]);
+  const result = await app.executeCommand('/pending');
+  assert.equal(result.ok, true);
+  assert.equal(app.output.at(-1).type, 'command');
+  assert.equal(app.output.at(-1).command.status, 'info');
+  assert.match(app.output.at(-1).command.message, /No pending items/);
+});
+
 test('/next moves a pending item without starting or resuming queue processing', async () => {
   const app = makeAppWithQueue([item('active', 'sent'), item('first'), item('second')]);
   app.currentItemId = 'active';
@@ -25,6 +34,16 @@ test('/next moves a pending item without starting or resuming queue processing',
   assert.equal(app.app.state, 'paused');
   assert.equal(app.lastScheduledDelay, undefined);
   assert.deepEqual(app.queue.map((entry) => entry.id), ['active', 'second', 'first']);
+});
+
+test('/next moves an idle pending item to the first pending position without sending', async () => {
+  const app = makeAppWithQueue([item('first'), item('second'), item('third')]);
+  app.app.state = 'paused';
+  const result = await app.executeCommand('/next third');
+  assert.equal(result.ok, true);
+  assert.equal(app.app.state, 'paused');
+  assert.equal(app.lastScheduledDelay, undefined);
+  assert.deepEqual(app.queue.map((entry) => entry.id), ['third', 'first', 'second']);
 });
 
 test('/next rejects already next and non-pending items', async () => {
@@ -37,6 +56,10 @@ test('/next rejects already next and non-pending items', async () => {
   result = await app.executeCommand('/next done');
   assert.equal(result.ok, false);
   assert.match(app.output.at(-1).command.message, /pending/i);
+
+  result = await app.executeCommand('/next missing');
+  assert.equal(result.ok, false);
+  assert.match(app.output.at(-1).command.message, /not found/i);
 });
 
 test('/send <id> uses sendItemNow path', async () => {
@@ -62,6 +85,20 @@ test('/send <id> while running moves the item to next through the real send path
   assert.deepEqual(app.queue.map((entry) => entry.id), ['active', 'target', 'other']);
 });
 
+test('/send <id> reports command errors for missing and non-pending items', async () => {
+  const app = makeAppWithQueue([item('done', 'completed')]);
+  let result = await app.executeCommand('/send missing');
+  assert.equal(result.ok, false);
+  assert.equal(app.output.at(-1).type, 'command');
+  assert.equal(app.output.at(-1).command.status, 'error');
+  assert.match(app.output.at(-1).command.message, /not found/i);
+
+  result = await app.executeCommand('/send done');
+  assert.equal(result.ok, false);
+  assert.equal(app.output.at(-1).command.status, 'error');
+  assert.match(app.output.at(-1).command.message, /pending/i);
+});
+
 test('/stop calls prompt interrupt and no-active stop writes an info block', async () => {
   const app = makeAppWithQueue([]);
   let called = false;
@@ -75,6 +112,18 @@ test('/stop calls prompt interrupt and no-active stop writes an info block', asy
   result = await app.executeCommand('/stop');
   assert.equal(result.ok, true);
   assert.equal(app.output.at(-1).command.status, 'info');
+});
+
+test('/quit shuts down the server and does not use prompt interruption', async () => {
+  const app = makeAppWithQueue([]);
+  let shutdownReason = null;
+  let interrupted = false;
+  app.shutdown = async (reason) => { shutdownReason = reason; };
+  app.interruptCurrentTurn = async () => { interrupted = true; return { ok: true }; };
+  const result = await app.executeCommand('/quit');
+  assert.equal(result.ok, true);
+  assert.equal(shutdownReason, 'quit command');
+  assert.equal(interrupted, false);
 });
 
 test('/schedule reset clears schedule and /schedule without args requests the modal', async () => {
@@ -107,4 +156,17 @@ test('/schedule duration sets queue schedule', async () => {
   assert.equal(result.ok, true);
   assert.ok(app.app.scheduledRunAt);
   assert.equal(app.app.state, 'scheduled');
+});
+
+test('/schedule invalid values write command error output', async () => {
+  const app = makeAppWithQueue([item('pending')]);
+  app.app.state = 'paused';
+  const result = await app.executeCommand('/schedule nonsense');
+  assert.equal(result.ok, false);
+  const command = app.output.at(-1).command;
+  assert.equal(app.output.at(-1).type, 'command');
+  assert.equal(command.status, 'error');
+  assert.equal(command.raw, '/schedule nonsense');
+  assert.match(command.message, /Invalid schedule value/);
+  assert.match(command.usage, /\/schedule/);
 });
