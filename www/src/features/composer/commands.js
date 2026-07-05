@@ -63,7 +63,7 @@ export function commandHintText(command, currentText = '') {
 
 export function commandHintParts(command, currentText = '') {
   if (!command) return '';
-  const hint = getArgumentHint(command, currentText);
+  const hint = getCommandDisplayArgumentHint(command, currentText);
   const commandText = `${command.name}${hint ? ` ${hint}` : ''}`;
   const behavior = commandBehaviorHint(command, currentText);
   return {
@@ -71,6 +71,20 @@ export function commandHintParts(command, currentText = '') {
     command: commandText,
     description: command.shortDescription || '',
   };
+}
+
+function getCommandDisplayArgumentHint(command, currentText = '') {
+  const hint = command?.displayArgumentHint || command?.argumentHint || '';
+  if (!hint) return '';
+
+  const text = String(currentText || '').trim();
+  if (!text) return hint;
+  if (text.startsWith(command.name)) {
+    return text.slice(command.name.length).trim() ? '' : hint;
+  }
+
+  const firstToken = text.split(/\s+/, 1)[0];
+  return command.name.startsWith(firstToken) ? hint : '';
 }
 
 function commandBehaviorHint(command, currentText = '') {

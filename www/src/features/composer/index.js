@@ -12,7 +12,6 @@ import {
   commandHintParts,
   commandForInput,
   cycleCommandMatch,
-  getArgumentHint,
   hasRequiredArguments,
   isCommandNameComplete,
 } from './commands.js';
@@ -62,8 +61,12 @@ export function updateCounter() {
 export function autosizeComposer() {
   const composer = state.composer;
   if (!composer) return;
+  const style = window.getComputedStyle(composer);
+  const minHeight = Number.parseFloat(style.minHeight) || 0;
+  const maxHeight = Number.parseFloat(style.maxHeight) || Number.POSITIVE_INFINITY;
   composer.style.height = 'auto';
-  composer.style.height = `${composer.scrollHeight}px`;
+  const nextHeight = clamp(composer.scrollHeight, minHeight, maxHeight);
+  composer.style.height = `${nextHeight}px`;
   renderGhost();
 }
 
@@ -116,7 +119,7 @@ function ensureCaretProbe() {
 
 function copyTextareaMetrics(source, target) {
   const style = window.getComputedStyle(source);
-  for (const name of ['font', 'fontSize', 'fontWeight', 'fontFamily', 'lineHeight', 'letterSpacing', 'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft', 'borderLeftWidth', 'borderTopWidth', 'whiteSpace', 'wordBreak']) {
+  for (const name of ['font', 'fontSize', 'fontWeight', 'fontFamily', 'lineHeight', 'letterSpacing', 'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft', 'whiteSpace', 'wordBreak']) {
     target.style[name] = style[name];
   }
   target.style.width = `${source.clientWidth}px`;
@@ -153,10 +156,30 @@ function commandStackMatches(suggest) {
   return suggest.matches.filter((command) => command?.name);
 }
 
-function argumentGhostText(command, text) {
-  const hint = getArgumentHint(command, text);
-  if (!hint) return '';
-  return /\s$/.test(String(text || '')) ? hint : ` ${hint}`;
+function commandRest(command, text) {
+  if (!command?.name) return '';
+  const value = String(text || '');
+  if (!value.startsWith(command.name)) return '';
+  return value.slice(command.name.length);
+}
+
+function hasRealArgument(command, text) {
+  return commandRest(command, text).trim().length > 0;
+}
+
+function argumentHintForGhost(command, text) {
+  if (!command?.argumentHint || hasRealArgument(command, text)) return '';
+  return command.displayArgumentHint || command.argumentHint;
+}
+
+function ghostParts(command, suggest, text) {
+  if (!command) return { commandSuffix: '', argumentHint: '' };
+  const commandSuffix = suggest.open && command === activeCommandMatch(suggest) ? suggest.suffix || '' : '';
+  const argumentHint = argumentHintForGhost(command, text);
+  return {
+    commandSuffix,
+    argumentHint: argumentHint ? `${commandSuffix || /\s$/.test(String(text || '')) ? '' : ' '}${argumentHint}` : '',
+  };
 }
 
 function esc(value) {
@@ -177,6 +200,13 @@ function renderCommandHint(command, text) {
     parts.command ? `<code>${esc(parts.command)}</code>` : '',
     parts.description ? `<span>${esc(parts.description)}</span>` : '',
   ].filter(Boolean).join(' ');
+}
+
+function renderGhostParts(parts) {
+  return [
+    parts.commandSuffix ? `<span>${esc(parts.commandSuffix)}</span>` : '',
+    parts.argumentHint ? `<span class="composer-ghost-arg">${esc(parts.argumentHint)}</span>` : '',
+  ].filter(Boolean).join('');
 }
 
 function hasDismissibleAutocomplete() {
@@ -247,10 +277,10 @@ function renderGhost() {
   const suggestionsAllowed = !isMultilineCommandSuppressed(composer.value)
     && composer.value !== state.composerSuggestDismissedText;
   const command = suggestionsAllowed ? (active || commandForInput(composer.value, state.composerCommands)) : null;
-  const inlineHint = argumentGhostText(command, composer.value);
+  const inlineGhost = ghostParts(command, suggest, composer.value);
 
-  if ((suggest.open && active && suggest.suffix) || inlineHint) {
-    ghost.textContent = suggest.open && active && suggest.suffix ? suggest.suffix : inlineHint;
+  if (inlineGhost.commandSuffix || inlineGhost.argumentHint) {
+    ghost.innerHTML = renderGhostParts(inlineGhost);
     ghost.style.left = `${coords.left}px`;
     ghost.style.top = `${coords.top}px`;
     ghost.classList.add('visible');

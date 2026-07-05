@@ -2959,6 +2959,7 @@ pre {
     z-index: 2;
     font: inherit;
     line-height: var(--composer-line-height);
+    transform: translateY(1px);
 }
 
 .composer-ghost {
@@ -2971,6 +2972,11 @@ pre {
     opacity: 0.72;
     pointer-events: auto;
     cursor: pointer;
+}
+
+.composer-ghost-arg {
+    color: var(--muted);
+    opacity: 0.8;
 }
 
 .composer-command-stack {
@@ -3024,9 +3030,9 @@ pre {
 
 .composer-arg-hint {
     position: absolute;
-    left: 13px;
-    right: 13px;
-    bottom: 8px;
+    left: 17px;
+    right: 17px;
+    bottom: 9px;
     z-index: 2;
     min-height: 18px;
     color: var(--muted);
@@ -3045,15 +3051,10 @@ pre {
 }
 
 .composer-command-mode {
-    display: inline-flex;
-    align-items: center;
-    min-height: 18px;
-    padding: 1px 7px;
-    border: 1px solid color-mix(in srgb, var(--accent) 26%, transparent);
-    border-radius: 999px;
-    background: color-mix(in srgb, var(--accent) 10%, transparent);
+    display: inline;
+    padding: 0;
     color: var(--accent-strong);
-    font-weight: 700;
+    font-weight: 800;
 }
 
 .composer-arg-hint.missing {
