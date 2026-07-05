@@ -9,6 +9,9 @@ const {
   isKnownEffort,
 } = require('../../codex/models');
 
+const SANDBOX_OPTIONS = new Set(['read-only', 'workspace-write', 'danger-full-access']);
+const APPROVAL_POLICY_OPTIONS = new Set(['on-request', 'never', 'untrusted', 'on-failure']);
+
 function catalogMeta(catalog) {
   return {
     source: catalog.source,
@@ -137,5 +140,31 @@ module.exports = {
     this.broadcastAll();
 
     return { ok: true, theme: value };
+  },
+
+  async setSandbox(sandbox) {
+    const value = String(sandbox || '').trim();
+    if (!SANDBOX_OPTIONS.has(value)) throw new Error(`Unsupported sandbox mode: ${value || '(empty)'}`);
+
+    this.opts.sandbox = value;
+    this.app.sandbox = value;
+    await this.saveSettings();
+    this.appendOutput(`[config] sandbox ${value}`, 'system');
+    this.broadcastAll();
+
+    return { ok: true, sandbox: value };
+  },
+
+  async setApprovalPolicy(approvalPolicy) {
+    const value = String(approvalPolicy || '').trim();
+    if (!APPROVAL_POLICY_OPTIONS.has(value)) throw new Error(`Unsupported approval policy: ${value || '(empty)'}`);
+
+    this.opts.approvalPolicy = value;
+    this.app.approvalPolicy = value;
+    await this.saveSettings();
+    this.appendOutput(`[config] approval ${value}`, 'system');
+    this.broadcastAll();
+
+    return { ok: true, approvalPolicy: value };
   },
 };

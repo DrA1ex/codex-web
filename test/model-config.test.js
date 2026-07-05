@@ -113,3 +113,20 @@ test('setModel and setEffort validate app-server selections and persist state', 
   assert.equal(app.app.theme, 'light');
   assert.deepEqual(await app.setTheme('unknown'), { ok: true, theme: 'dark' });
 });
+
+test('setSandbox and setApprovalPolicy validate and persist settings', async () => {
+  const app = makeAppWithQueue([]);
+  let saved = 0;
+  app.saveSettings = async () => { saved += 1; };
+
+  await assert.rejects(() => app.setSandbox('bad'), /Unsupported sandbox/);
+  assert.deepEqual(await app.setSandbox('read-only'), { ok: true, sandbox: 'read-only' });
+  assert.equal(app.opts.sandbox, 'read-only');
+  assert.equal(app.app.sandbox, 'read-only');
+
+  await assert.rejects(() => app.setApprovalPolicy('bad'), /Unsupported approval/);
+  assert.deepEqual(await app.setApprovalPolicy('never'), { ok: true, approvalPolicy: 'never' });
+  assert.equal(app.opts.approvalPolicy, 'never');
+  assert.equal(app.app.approvalPolicy, 'never');
+  assert.equal(saved, 2);
+});

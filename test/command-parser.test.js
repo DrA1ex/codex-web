@@ -24,6 +24,10 @@ test('parseComposerCommand parses slash commands with arguments', () => {
   assert.equal(ok('/next abc123').args.id, 'abc123');
   assert.equal(ok('/pending').command, '/pending');
   assert.equal(ok('/stop').command, '/stop');
+  assert.equal(ok('/sandbox').args.value, '');
+  assert.equal(ok('/sandbox read-only').args.value, 'read-only');
+  assert.equal(ok('/approval').args.value, '');
+  assert.equal(ok('/approval never').args.value, 'never');
   assert.equal(ok('/schedule').args.schedule.action, 'open');
   assert.equal(ok('/schedule reset').args.schedule.action, 'reset');
   assert.equal(ok('/schedule 10m').args.schedule.action, 'set');

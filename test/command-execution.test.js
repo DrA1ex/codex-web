@@ -87,7 +87,15 @@ test('/send <id> while running moves the item to next through the real send path
 
 test('/send <id> reports command errors for missing and non-pending items', async () => {
   const app = makeAppWithQueue([item('done', 'completed')]);
-  let result = await app.executeCommand('/send missing');
+  let result = await app.executeCommand('/send');
+  assert.equal(result.ok, false);
+  assert.equal(result.clearComposer, false);
+  assert.equal(app.output.at(-1).command.status, 'error');
+  assert.match(app.output.at(-1).command.message, /Missing argument/);
+  assert.match(app.output.at(-1).command.message, /Send button/);
+  assert.match(app.output.at(-1).command.usage, /\/send <id>/);
+
+  result = await app.executeCommand('/send missing');
   assert.equal(result.ok, false);
   assert.equal(app.output.at(-1).type, 'command');
   assert.equal(app.output.at(-1).command.status, 'error');
@@ -169,4 +177,53 @@ test('/schedule invalid values write command error output', async () => {
   assert.equal(command.raw, '/schedule nonsense');
   assert.match(command.message, /Invalid schedule value/);
   assert.match(command.usage, /\/schedule/);
+});
+
+test('/sandbox and /approval without args print usage and keep composer text', async () => {
+  const app = makeAppWithQueue([]);
+
+  let result = await app.executeCommand('/sandbox');
+  assert.equal(result.ok, true);
+  assert.equal(result.clearComposer, false);
+  assert.equal(app.output.at(-1).type, 'command');
+  assert.equal(app.output.at(-1).command.status, 'info');
+  assert.match(app.output.at(-1).command.message, /Current sandbox/);
+  assert.match(app.output.at(-1).command.message, /workspace-write/);
+  assert.match(app.output.at(-1).command.message, /read-only/);
+
+  result = await app.executeCommand('/approval');
+  assert.equal(result.ok, true);
+  assert.equal(result.clearComposer, false);
+  assert.match(app.output.at(-1).command.message, /Current approval policy/);
+  assert.match(app.output.at(-1).command.message, /on-request/);
+  assert.match(app.output.at(-1).command.message, /on-failure/);
+});
+
+test('/sandbox and /approval update config and reject unsupported values with options', async () => {
+  const app = makeAppWithQueue([]);
+  let saved = 0;
+  app.saveSettings = async () => { saved += 1; };
+
+  let result = await app.executeCommand('/sandbox read-only');
+  assert.equal(result.ok, true);
+  assert.equal(app.opts.sandbox, 'read-only');
+  assert.equal(app.app.sandbox, 'read-only');
+
+  result = await app.executeCommand('/approval never');
+  assert.equal(result.ok, true);
+  assert.equal(app.opts.approvalPolicy, 'never');
+  assert.equal(app.app.approvalPolicy, 'never');
+  assert.equal(saved, 2);
+
+  result = await app.executeCommand('/sandbox nowhere');
+  assert.equal(result.ok, false);
+  assert.equal(result.clearComposer, false);
+  assert.match(app.output.at(-1).command.message, /Unsupported sandbox/);
+  assert.match(app.output.at(-1).command.message, /danger-full-access/);
+
+  result = await app.executeCommand('/approval maybe');
+  assert.equal(result.ok, false);
+  assert.equal(result.clearComposer, false);
+  assert.match(app.output.at(-1).command.message, /Unsupported approval/);
+  assert.match(app.output.at(-1).command.message, /untrusted/);
 });

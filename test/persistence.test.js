@@ -146,6 +146,10 @@ test('settings and state files are saved and loaded', async () => {
   app.settingsPath = path.join(dir, 'settings.json');
   app.statePath = path.join(dir, 'state.json');
   app.app.theme = 'light';
+  app.opts.sandbox = 'read-only';
+  app.app.sandbox = 'read-only';
+  app.opts.approvalPolicy = 'never';
+  app.app.approvalPolicy = 'never';
   app.app.scheduledRunAt = '2026-01-01T00:00:00.000Z';
   app.saveSettings = CodexLimitWatchApp.prototype.saveSettings.bind(app);
   app.saveState = CodexLimitWatchApp.prototype.saveState.bind(app);
@@ -157,6 +161,10 @@ test('settings and state files are saved and loaded', async () => {
   loaded.settingsPath = app.settingsPath;
   await loaded.loadSettings();
   assert.equal(loaded.app.theme, 'light');
+  assert.equal(loaded.opts.sandbox, 'read-only');
+  assert.equal(loaded.app.sandbox, 'read-only');
+  assert.equal(loaded.opts.approvalPolicy, 'never');
+  assert.equal(loaded.app.approvalPolicy, 'never');
 
   const state = JSON.parse(await fsp.readFile(app.statePath, 'utf8'));
   assert.equal(state.sessionId, 'session');

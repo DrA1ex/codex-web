@@ -13,7 +13,7 @@ const {
   reorderPendingItem,
   parseQueuedCommand,
 } = require('../../queue');
-const { commandHelpPayload } = require('../commands');
+const { commandByName, commandHelpPayload } = require('../commands');
 const { parseComposerCommand } = require('../command-parser');
 
 const COMPLETED_ARCHIVE_INITIAL_COUNT = 10;
@@ -42,11 +42,12 @@ function commandFeedback(ctx, payload) {
 }
 
 function commandErrorResponse(ctx, parsed, raw) {
+  const meta = commandByName(parsed?.command);
   commandFeedback(ctx, {
     status: 'error',
     title: 'Command error',
     raw: commandRaw(parsed, raw),
-    message: parsed?.message || 'Invalid command.',
+    message: commandHelpMessage(meta, parsed?.message || 'Invalid command.'),
     usage: parsed?.usage || '',
   });
   ctx.broadcastAll();
@@ -60,6 +61,38 @@ function commandSuccess(ctx, parsed, message, status = 'success') {
     raw: commandRaw(parsed),
     message,
   });
+}
+
+function commandHelpMessage(meta, lead) {
+  const lines = [];
+  if (lead) lines.push(lead);
+  if (meta?.details) {
+    if (lines.length) lines.push('');
+    lines.push(meta.details);
+  }
+  if (meta?.options?.length) {
+    if (lines.length) lines.push('');
+    lines.push(`Options: ${meta.options.join(', ')}`);
+  }
+  return lines.join('\n');
+}
+
+function commandUsage(meta) {
+  if (!meta) return '';
+  return `${meta.name}${meta.argumentHint ? ` ${meta.argumentHint}` : ''}`;
+}
+
+function commandInfoResponse(ctx, parsed, message) {
+  const meta = commandByName(parsed?.command);
+  commandFeedback(ctx, {
+    status: 'info',
+    title: 'Command',
+    raw: commandRaw(parsed),
+    message,
+    usage: commandUsage(meta),
+  });
+  ctx.broadcastAll();
+  return { ok: true, clearComposer: false, commandInfo: true };
 }
 
 function queuePreview(item) {
@@ -217,6 +250,8 @@ module.exports = {
         case '/send': return await this.executeSendCommand(parsed);
         case '/next': return await this.executeNextCommand(parsed);
         case '/schedule': return await this.executeScheduleCommand(parsed);
+        case '/sandbox': return await this.executeSandboxCommand(parsed);
+        case '/approval': return await this.executeApprovalCommand(parsed);
         case '/stop': return await this.executeStopCommand(parsed);
         case '/think': return await this.steerActivePrompt(parsed.args.text);
         case '/think!': return await this.forceSteerActivePrompt(parsed.args.text);
@@ -234,11 +269,13 @@ module.exports = {
           return commandErrorResponse(this, { ...parsed, message: `Unknown command: ${parsed.command}`, usage: 'Type /help to see available commands.' });
       }
     } catch (error) {
+      const meta = commandByName(parsed?.command);
       commandFeedback(this, {
         status: 'error',
         title: 'Command error',
         raw: commandRaw(parsed),
-        message: error.message || String(error),
+        message: commandHelpMessage(meta, error.message || String(error)),
+        usage: commandUsage(meta),
       });
       this.broadcastAll();
       return { ok: false, clearComposer: false, commandError: true };
@@ -317,6 +354,40 @@ module.exports = {
     commandSuccess(this, parsed, `Scheduled for ${new Date(schedule.scheduledRunAt).toLocaleString()}.`);
     this.broadcastAll();
     return { ok: true, clearComposer: true, scheduledRunAt: schedule.scheduledRunAt };
+  },
+
+  async executeSandboxCommand(parsed) {
+    const value = parsed.args.value;
+    const meta = commandByName('/sandbox');
+    if (!value) {
+      return commandInfoResponse(
+        this,
+        parsed,
+        commandHelpMessage(meta, `Current sandbox: ${this.opts.sandbox || this.app.sandbox || 'unknown'}`),
+      );
+    }
+
+    await this.setSandbox(value);
+    commandSuccess(this, parsed, `Sandbox set to ${value}.`);
+    this.broadcastAll();
+    return { ok: true, clearComposer: true, sandbox: value };
+  },
+
+  async executeApprovalCommand(parsed) {
+    const value = parsed.args.value;
+    const meta = commandByName('/approval');
+    if (!value) {
+      return commandInfoResponse(
+        this,
+        parsed,
+        commandHelpMessage(meta, `Current approval policy: ${this.opts.approvalPolicy || this.app.approvalPolicy || 'unknown'}`),
+      );
+    }
+
+    await this.setApprovalPolicy(value);
+    commandSuccess(this, parsed, `Approval policy set to ${value}.`);
+    this.broadcastAll();
+    return { ok: true, clearComposer: true, approvalPolicy: value };
   },
 
   async undoLast() {

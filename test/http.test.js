@@ -138,6 +138,17 @@ test('resolveApiRoute dispatches GET/POST handlers and reports 404/405', async (
   response = await resolveApiRoute(app, { method: 'POST' }, '/api/output/clear', {});
   assert.equal(response.status, 200);
   assert.deepEqual(app.output, []);
+
+  app.setSandbox = async (sandbox) => ({ ok: true, sandbox });
+  app.setApprovalPolicy = async (approvalPolicy) => ({ ok: true, approvalPolicy });
+
+  response = await resolveApiRoute(app, { method: 'POST' }, '/api/config/sandbox', { sandbox: 'read-only' });
+  assert.equal(response.status, 200);
+  assert.deepEqual(response.body, { ok: true, sandbox: 'read-only' });
+
+  response = await resolveApiRoute(app, { method: 'POST' }, '/api/config/approval', { approvalPolicy: 'never' });
+  assert.equal(response.status, 200);
+  assert.deepEqual(response.body, { ok: true, approvalPolicy: 'never' });
 });
 
 test('resolveApiRoute exposes rate-limit reset request endpoint', async () => {

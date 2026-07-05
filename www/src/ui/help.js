@@ -118,7 +118,7 @@ function renderCommand(command, index) {
 }
 
 function renderCommandDetails(command, detailsId) {
-  const examples = Array.isArray(command.examples) ? command.examples.filter(Boolean) : [];
+  const examples = helpExamples(command);
   const details = command.details || command.description || 'No extended description is available for this command.';
   return `
     <div id="${detailsId}" class="help-command-details">
@@ -131,6 +131,16 @@ function renderCommandDetails(command, detailsId) {
       ` : ''}
     </div>
   `;
+}
+
+function helpExamples(command) {
+  const examples = Array.isArray(command.examples) ? command.examples.filter(Boolean) : [];
+  const bareCommand = String(command.name || command.command || '').split(/\s+/, 1)[0];
+  const commandLabel = String(command.command || command.name || '');
+  return examples.filter((example) => {
+    const value = String(example || '').trim();
+    return value && value !== bareCommand && value !== commandLabel;
+  });
 }
 
 function helpCommandKey(command, fallback) {

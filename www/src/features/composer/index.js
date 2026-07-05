@@ -381,8 +381,7 @@ export function handleComposerKeydown(event) {
   if (command) {
     event.preventDefault();
     if (!hasRequiredArguments(command, state.composer.value)) {
-      ensureArgumentSpace(command);
-      blinkArgumentHint();
+      sendComposerNow();
       return true;
     }
     sendComposerNow();

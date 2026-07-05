@@ -226,12 +226,25 @@ module.exports = {
     try {
       const data = JSON.parse(await fsp.readFile(this.settingsPath, 'utf8'));
       if (data.theme === 'light' || data.theme === 'dark') this.app.theme = data.theme;
+      if (['read-only', 'workspace-write', 'danger-full-access'].includes(data.sandbox)) {
+        this.opts.sandbox = data.sandbox;
+        this.app.sandbox = data.sandbox;
+      }
+      if (['on-request', 'never', 'untrusted', 'on-failure'].includes(data.approvalPolicy)) {
+        this.opts.approvalPolicy = data.approvalPolicy;
+        this.app.approvalPolicy = data.approvalPolicy;
+      }
     } catch (_) {}
   },
 
   async saveSettings() {
     if (!this.settingsPath) return;
-    const data = { theme: this.app.theme || 'dark', updatedAt: nowIso() };
+    const data = {
+      theme: this.app.theme || 'dark',
+      sandbox: this.opts.sandbox || this.app.sandbox || 'workspace-write',
+      approvalPolicy: this.opts.approvalPolicy || this.app.approvalPolicy || 'on-request',
+      updatedAt: nowIso(),
+    };
     const tmp = this.settingsPath + '.tmp';
     await fsp.writeFile(tmp, JSON.stringify(data, null, 2));
     await fsp.rename(tmp, this.settingsPath);

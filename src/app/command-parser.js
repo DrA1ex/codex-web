@@ -129,6 +129,8 @@ function parseComposerCommand(text, options = {}) {
     const parsedSchedule = parseScheduleArgument(split.rest, options);
     if (!parsedSchedule.ok) return commandError('/schedule', split.raw, parsedSchedule.errorCode, parsedSchedule.message, parsedSchedule.usage);
     args.schedule = parsedSchedule.schedule;
+  } else if (split.command === '/sandbox' || split.command === '/approval') {
+    args.value = split.rest || '';
   } else if (split.rest) {
     return commandError(split.command, split.raw, 'unexpected_arg', `${split.command} does not accept arguments.`, usageFor(split.command));
   }
