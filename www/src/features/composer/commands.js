@@ -168,6 +168,34 @@ function getOptionMatches(command, prefix = '') {
     }));
 }
 
+function shortPreview(value, limit = 96) {
+  const text = String(value || '').replace(/\s+/g, ' ').trim();
+  if (text.length <= limit) return text;
+  return `${text.slice(0, Math.max(0, limit - 1)).trimEnd()}...`;
+}
+
+function getQueueIdMatches(command, prefix = '', queueItems = []) {
+  if (!['/send', '/next'].includes(command?.name)) return [];
+  const raw = String(prefix || '');
+  return (queueItems || [])
+    .filter((item) => ['pending', 'next'].includes(item?.status))
+    .filter((item) => String(item?.id || '').startsWith(raw))
+    .map((item) => ({
+      type: 'option',
+      value: String(item.id),
+      completion: String(item.id),
+      label: String(item.id),
+      description: shortPreview(item.text) || `Queue item ${item.id}`,
+      command,
+    }));
+}
+
+function getArgumentMatches(command, prefix = '', context = {}) {
+  const optionMatches = getOptionMatches(command, prefix);
+  if (optionMatches.length || command?.options?.length) return optionMatches;
+  return getQueueIdMatches(command, prefix, context.queueItems || []);
+}
+
 function selectedOptionForText(command, value) {
   if (!command?.options?.length) return null;
   const commandToken = commandTokenForText(value);
@@ -178,7 +206,7 @@ function selectedOptionForText(command, value) {
   return getOptionMatches(command, argument).find((option) => option.value === argument) || null;
 }
 
-export function buildSuggestState(text, caretIndex, commandMetadata, previous = {}) {
+export function buildSuggestState(text, caretIndex, commandMetadata, previous = {}, context = {}) {
   const value = String(text || '');
   if (value.includes('\n') && value.trim()) {
     return emptySuggestState({ text: value });
@@ -192,7 +220,7 @@ export function buildSuggestState(text, caretIndex, commandMetadata, previous = 
   const hasCommandSpace = /\s/.test(value.slice(commandToken.length, commandToken.length + 1));
   const command = commandMetadata.find((entry) => entry.name === commandToken) || null;
 
-  if (hasCommandSpace && command?.options?.length) {
+  if (hasCommandSpace && command) {
     const rest = value.slice(commandToken.length);
     const leading = rest.match(/^\s*/)?.[0] || '';
     const argumentText = rest.slice(leading.length);
@@ -208,7 +236,7 @@ export function buildSuggestState(text, caretIndex, commandMetadata, previous = 
       });
     }
 
-    const matches = getOptionMatches(command, argument);
+    const matches = getArgumentMatches(command, argument, context);
     if (!matches.length) {
       return emptySuggestState({
         text: value,

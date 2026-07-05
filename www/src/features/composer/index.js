@@ -101,7 +101,13 @@ function updateAutocomplete() {
     return;
   }
 
-  state.composerSuggest = buildSuggestState(composer.value, composer.selectionStart || 0, state.composerCommands, state.composerSuggest);
+  state.composerSuggest = buildSuggestState(
+    composer.value,
+    composer.selectionStart || 0,
+    state.composerCommands,
+    state.composerSuggest,
+    { queueItems: state.snap?.queue || [] },
+  );
   renderGhost();
 }
 
