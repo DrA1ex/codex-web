@@ -1,14 +1,14 @@
-import { api, getState, isNetworkError } from '#core/api';
+import { api, getState, isNetworkError, writeOutputError } from '#core/api';
 import { state } from '#core/state';
 import { addQueue, updateCounter } from '#features/composer';
 import { clearQueueScrollRequest, renderQueue, requestQueueScroll } from '#features/queue';
-import { openConfirm } from '#ui/confirm';
+import { openConfirm, openMessage } from '#ui/confirm';
 import { closeScheduleModal, scheduleInputIso } from '#ui/schedule';
 import { setOutputMenuOpen, setQueueMenuOpen } from '#ui/header';
 
 export function reportError(error) {
   if (isNetworkError(error)) return;
-  alert(error.message);
+  writeOutputError(error);
 }
 
 export function post(path, body) {
@@ -29,7 +29,7 @@ export function closeQueueMenuIfOutside(target) {
 export function saveSchedule() {
   const scheduledRunAt = scheduleInputIso();
   if (!scheduledRunAt) {
-    alert('Select a valid time.');
+    openMessage('Schedule', 'Select a valid time.', 'warning');
     return;
   }
 
@@ -46,7 +46,7 @@ export function undoQueue() {
   api('/api/queue/undo')
     .then((response) => {
       if (state.composer && response.composerText !== undefined) state.composer.value = response.composerText;
-      if (response.message) alert(response.message);
+      if (response.message) openMessage('Queue', response.message);
       updateCounter();
     })
     .catch(reportError);
@@ -81,7 +81,13 @@ export function clearOutputFromMenu() {
 
 export function clearPendingQueue() {
   setQueueMenuOpen(false);
-  if (confirm('Clear all pending prompts?')) post('/api/queue/clear');
+  openConfirm(
+    'clear-pending',
+    'Clear pending prompts?',
+    'This will permanently remove all pending prompts from the queue. This cannot be undone.',
+    'Yes, clear pending',
+    true,
+  );
 }
 
 export function clearCompletedQueue() {
@@ -234,7 +240,7 @@ export function forceSteerNote(text) {
 
   api('/api/control/steer-force', { text })
     .then((response) => {
-      if (response.message) alert(response.message);
+      if (response.message) openMessage('Interrupt', response.message);
       getState().catch(reportError);
     })
     .catch(reportError);

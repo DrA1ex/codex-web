@@ -1,5 +1,5 @@
 import { state } from '#core/state';
-import { api, getState, isNetworkError } from '#core/api';
+import { api, getState, isNetworkError, writeOutputError } from '#core/api';
 import { renderQueue, renderQueueItemById } from './render.js';
 import { cancelQueueEdit, queueEditText, setQueueEditDraft, startQueueEdit } from './editor.js';
 
@@ -59,12 +59,12 @@ export async function saveQueueEdit(id) {
 
     renderQueue();
     getState().catch((error) => {
-      if (!isNetworkError(error)) alert(error.message);
+      if (!isNetworkError(error)) writeOutputError(error);
     });
   } catch (error) {
     delete state.savingQueueEdits[id];
     state.editDrafts[id] = text;
     if (!renderQueueItemById(id, { restoreEditor: true })) renderQueue();
-    if (!isNetworkError(error)) alert(error.message);
+    if (!isNetworkError(error)) writeOutputError(error);
   }
 }

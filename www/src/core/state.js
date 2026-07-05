@@ -39,6 +39,7 @@ export const state = {
   previousNoticeSnapshot: null,
 
   confirmAction: null,
+  modalMessage: null,
   help: {
     open: false,
     commands: [],

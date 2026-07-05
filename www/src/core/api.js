@@ -110,6 +110,12 @@ export async function api(path, body = {}) {
   });
 }
 
+export function writeOutputError(errorOrMessage) {
+  const message = String(errorOrMessage?.message || errorOrMessage || '').trim();
+  if (!message) return Promise.resolve(null);
+  return api('/api/output/error', { message }).catch(() => null);
+}
+
 export async function getState() {
   const snapshot = await fetchJson('/api/state', {
     headers: { 'x-codex-limit-watch-token': state.token },

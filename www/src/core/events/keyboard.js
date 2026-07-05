@@ -1,4 +1,4 @@
-import { api, isNetworkError } from '#core/api';
+import { api, isNetworkError, writeOutputError } from '#core/api';
 import { state } from '#core/state';
 import { handleComposerKeydown, sendComposerNow } from '#features/composer';
 import { cancelQueueEditInDom, saveQueueEdit, toggleQueueItemExpandedInDom } from '#features/queue';
@@ -11,7 +11,7 @@ import { saveSchedule } from './actions.js';
 
 function reportError(error) {
   if (isNetworkError(error)) return;
-  alert(error.message);
+  writeOutputError(error);
 }
 
 function queueMenuIsOpen() {
@@ -38,7 +38,7 @@ function handleEscape(event) {
     return;
   }
 
-  if (state.confirmAction) {
+  if (state.confirmAction || state.modalMessage) {
     event.preventDefault();
     closeConfirm();
     return;
@@ -91,9 +91,10 @@ export function attachKeyboardHandlers() {
       return;
     }
 
-    if (state.confirmAction && event.key === 'Enter') {
+    if ((state.confirmAction || state.modalMessage) && event.key === 'Enter') {
       event.preventDefault();
-      confirmCurrentAction();
+      if (state.confirmAction) confirmCurrentAction();
+      else closeConfirm();
       return;
     }
 

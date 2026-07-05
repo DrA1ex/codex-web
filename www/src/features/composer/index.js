@@ -1,7 +1,7 @@
 import { state } from '#core/state';
-import { api, getCommandMetadata, getState, isNetworkError } from '#core/api';
+import { api, getCommandMetadata, getState, isNetworkError, writeOutputError } from '#core/api';
 import { setButtonState } from '#ui/header';
-import { openConfirm } from '#ui/confirm';
+import { openConfirm, openMessage } from '#ui/confirm';
 import { openHelp } from '#ui/help';
 import { openScheduleModal } from '#ui/schedule';
 import { requestQueueScroll } from '#features/queue';
@@ -35,12 +35,12 @@ function handleComposerResponse(response) {
   if (response.help?.commands) openHelp(response.help.commands);
   if (response.openScheduleModal) openScheduleModal();
   applyComposerResponse(response);
-  if (response.message && !response.commandError) alert(response.message);
+  if (response.message && !response.commandError) openMessage('Composer', response.message);
 }
 
 function handleComposerError(error) {
   if (isNetworkError(error)) return;
-  alert(error.message);
+  writeOutputError(error);
 }
 
 export function updateCounter() {

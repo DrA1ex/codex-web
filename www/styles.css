@@ -1858,6 +1858,30 @@ textarea:focus {
     line-height: 1.45;
 }
 
+.message-modal.info {
+    border-color: var(--accent);
+}
+
+.message-modal.warning {
+    border-color: var(--warn);
+}
+
+.message-modal.error {
+    border-color: var(--danger);
+}
+
+.message-modal.info .confirm-head {
+    color: var(--accent);
+}
+
+.message-modal.warning .confirm-head {
+    color: var(--warn);
+}
+
+.message-modal.error .confirm-head {
+    color: var(--danger);
+}
+
 .help-modal {
     width: min(720px, 100%);
     height: auto;

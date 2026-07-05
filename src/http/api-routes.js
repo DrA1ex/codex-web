@@ -79,6 +79,10 @@ const POST_ROUTES = new Map([
     app.clearOutput();
     return { ok: true };
   }],
+  ['/api/output/error', (app, body) => {
+    app.appendOutput(`[error] ${String(body.message || 'Unknown error')}`, 'error');
+    return { ok: true };
+  }],
 ]);
 
 async function resolveApiRoute(app, req, route, body) {
