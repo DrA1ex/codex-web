@@ -252,6 +252,10 @@ export function buildSuggestState(text, caretIndex, commandMetadata, previous = 
   const active = matches[activeIndex];
   const suffix = active.name.slice(commandToken.length);
   const open = Boolean(suffix || matches.length > 1);
+  const rest = value.slice(commandToken.length);
+  const anchorIndex = active.name === commandToken && /^\s*$/.test(rest)
+    ? value.length
+    : commandToken.length;
 
   return emptySuggestState({
     text: value,
@@ -263,7 +267,7 @@ export function buildSuggestState(text, caretIndex, commandMetadata, previous = 
     argumentHint: suffix ? '' : getArgumentHint(active, text),
     mode: 'command',
     command: active,
-    anchorIndex: commandToken.length,
+    anchorIndex,
     selectedOption: command ? selectedOptionForText(command, value) : null,
   });
 }
