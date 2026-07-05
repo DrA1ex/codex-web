@@ -27,6 +27,35 @@ function completedArchiveVisibleDays(level) {
   return 21 * (3 ** (level - 3));
 }
 
+function completedVisibleCount(items, visibleDays) {
+  const cutoff = Date.now() - (visibleDays * DAY_MS);
+  return items.filter((item) => queueItemTime(item) >= cutoff).length;
+}
+
+function completedArchiveDisplayLevel(items, level) {
+  if (level <= 0 || !items.length) return Math.max(0, level);
+
+  const previousCount = completedVisibleCount(items, completedArchiveVisibleDays(level - 1));
+  if (previousCount >= items.length) return level;
+  let candidate = level;
+  while (candidate < level + 12 && completedVisibleCount(items, completedArchiveVisibleDays(candidate)) === previousCount) {
+    candidate += 1;
+  }
+  return candidate;
+}
+
+function nextCompletedArchiveLevel(items, level, hasMore) {
+  if (!items.length) return level + 1;
+
+  const currentCount = completedVisibleCount(items, completedArchiveVisibleDays(level));
+  if (currentCount >= items.length && hasMore) return level + 1;
+  let candidate = level + 1;
+  while (candidate < level + 13 && completedVisibleCount(items, completedArchiveVisibleDays(candidate)) === currentCount) {
+    candidate += 1;
+  }
+  return candidate;
+}
+
 function queueItemTime(item) {
   const time = new Date(item?.finishedAt || item?.createdAt || 0).getTime();
   return Number.isFinite(time) ? time : 0;
@@ -88,12 +117,13 @@ function dayLabel(days) {
   return days === 1 ? '1 day' : `${days} days`;
 }
 
-function renderCompletedArchiveControl(hiddenCount, nextVisibleDays, visibleDays, hasMore, loading) {
+function renderCompletedArchiveControl(hiddenCount, nextLevel, visibleDays, hasMore, loading) {
+  const nextVisibleDays = completedArchiveVisibleDays(nextLevel);
   const windowLabel = visibleDays === 1 ? '24h' : dayLabel(visibleDays);
   const hiddenLabel = hiddenCount === 1 ? '1 completed prompt' : `${hiddenCount} completed prompts`;
   const showMoreLabel = loading ? 'Loading...' : `Show more (${dayLabel(nextVisibleDays)})`;
   const button = hiddenCount > 0 || hasMore
-    ? `<button type="button" data-completed-archive-more="1"${loading ? ' disabled' : ''} title="Show completed prompts older than ${esc(windowLabel)}">
+    ? `<button type="button" data-completed-archive-more="1" data-completed-archive-level="${esc(nextLevel)}"${loading ? ' disabled' : ''} title="Show completed prompts older than ${esc(windowLabel)}">
           ${icon('chevron-down')}${esc(showMoreLabel)}
         </button>`
     : '';
@@ -219,10 +249,12 @@ function renderQueueItem(item, index, app) {
 function renderCompletedArchive(items, app, indexById) {
   if (!items.length) return '';
 
-  const level = Math.max(0, Number(state.completedQueueArchiveLevel) || 0);
+  const requestedLevel = Math.max(0, Number(state.completedQueueArchiveLevel) || 0);
+  const level = completedArchiveDisplayLevel(items, requestedLevel);
   const hasMore = Boolean(state.completedArchiveCache?.hasMore);
   const loading = Boolean(state.completedArchiveCache?.loading);
   const visibleDays = completedArchiveVisibleDays(level);
+  const nextLevel = nextCompletedArchiveLevel(items, level, hasMore);
   const cutoff = Date.now() - (visibleDays * DAY_MS);
   const visible = [];
   let hiddenCount = 0;
@@ -236,7 +268,7 @@ function renderCompletedArchive(items, app, indexById) {
   const rendered = [];
 
   if (hiddenCount > 0 || hasMore) {
-    rendered.push(renderCompletedArchiveControl(hiddenCount, completedArchiveVisibleDays(level + 1), visibleDays, hasMore, loading));
+    rendered.push(renderCompletedArchiveControl(hiddenCount, nextLevel, visibleDays, hasMore, loading));
   }
 
   if (!visible.length && fallbackVisible.length) {

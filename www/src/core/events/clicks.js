@@ -145,7 +145,10 @@ function handleCompletedArchiveMore(target) {
   const control = target?.closest?.('[data-completed-archive-more]');
   if (!control) return false;
 
-  state.completedQueueArchiveLevel += 1;
+  const targetLevel = Number(control.dataset.completedArchiveLevel);
+  state.completedQueueArchiveLevel = Number.isFinite(targetLevel)
+    ? Math.max(0, targetLevel)
+    : state.completedQueueArchiveLevel + 1;
   loadCompletedArchiveMore().catch(reportError);
   renderQueue();
   return true;
