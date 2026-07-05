@@ -24,6 +24,16 @@ test('rate limits normalize available, limited, and unknown responses', () => {
   assert.equal(available.buckets[0].windows[0].remainingPercent, 75);
   assert.deepEqual(available.resetCredits, { availableCount: 3, expiresAt: null });
 
+  const remainingOnly = normalizeRateLimits({
+    rateLimits: {
+      limitId: 'codex',
+      primary: { remainingPercent: 0, windowDurationMins: 300 },
+      secondary: { remaining_percent: 12, windowDurationMins: 10080 },
+    },
+  });
+  assert.equal(remainingOnly.buckets[0].windows[0].remainingPercent, 0);
+  assert.equal(remainingOnly.buckets[0].windows[1].remainingPercent, 12);
+
   const limited = normalizeRateLimits({
     rateLimitsByLimitId: {
       weekly: {
@@ -49,6 +59,11 @@ test('rate-limit reset request is required, delayed, short-lived, and consumes a
   const app = makeAppWithQueue([]);
   app.nowMs = () => now;
   app.rateLimits = normalizeRateLimits({
+    rateLimits: {
+      limitId: 'codex',
+      primary: { remainingPercent: 0, windowDurationMins: 300 },
+      secondary: { remainingPercent: 55, windowDurationMins: 10080 },
+    },
     rateLimitResetCredits: { availableCount: 2, expiresAt: 1_700_003_600 },
   });
   app.rpc = {
@@ -89,6 +104,11 @@ test('rate-limit reset requests expire after one minute and can be requested aga
   const app = makeAppWithQueue([]);
   app.nowMs = () => now;
   app.rateLimits = normalizeRateLimits({
+    rateLimits: {
+      limitId: 'codex',
+      primary: { usedPercent: 100, windowDurationMins: 300 },
+      secondary: { usedPercent: 5, windowDurationMins: 10080 },
+    },
     rateLimitResetCredits: { availableCount: 1, expiresAt: 1_700_003_600 },
   });
 
@@ -100,6 +120,39 @@ test('rate-limit reset requests expire after one minute and can be requested aga
 
   const second = app.requestLimitReset().resetRequest;
   assert.notEqual(second.requestId, first.requestId);
+});
+
+test('rate-limit reset requires reset credit and exhausted 5h or weekly window', () => {
+  const app = makeAppWithQueue([]);
+  app.rateLimits = normalizeRateLimits({
+    rateLimits: {
+      limitId: 'codex',
+      primary: { usedPercent: 25, windowDurationMins: 300 },
+      secondary: { usedPercent: 40, windowDurationMins: 10080 },
+    },
+    rateLimitResetCredits: { availableCount: 1 },
+  });
+  assert.throws(() => app.requestLimitReset(), /No rate-limit reset/);
+
+  app.rateLimits = normalizeRateLimits({
+    rateLimits: {
+      limitId: 'codex',
+      primary: { usedPercent: 100, windowDurationMins: 300 },
+      secondary: { usedPercent: 40, windowDurationMins: 10080 },
+    },
+    rateLimitResetCredits: { availableCount: 0 },
+  });
+  assert.throws(() => app.requestLimitReset(), /No rate-limit reset/);
+
+  app.rateLimits = normalizeRateLimits({
+    rateLimits: {
+      limitId: 'codex',
+      primary: { usedPercent: 20, windowDurationMins: 300 },
+      secondary: { remainingPercent: 0, windowDurationMins: 10080 },
+    },
+    rateLimitResetCredits: { availableCount: 1 },
+  });
+  assert.equal(app.requestLimitReset().ok, true);
 });
 
 test('failed rate-limit refresh preserves stale known limits but marks empty state refreshing', () => {

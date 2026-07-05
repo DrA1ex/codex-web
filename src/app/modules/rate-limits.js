@@ -30,8 +30,36 @@ function resetCreditInfo(rateLimits) {
   };
 }
 
+function limitWindowRemaining(windowInfo = {}) {
+  const remaining = Number(windowInfo.remainingPercent);
+  if (Number.isFinite(remaining)) return Math.max(0, remaining);
+  const used = Number(windowInfo.usedPercent);
+  return Number.isFinite(used) ? Math.max(0, 100 - used) : null;
+}
+
+function resettableLimitWindow(windowInfo = {}) {
+  const duration = Number(windowInfo.windowDurationMins || 0);
+  const name = String(windowInfo.name || '').toLowerCase();
+  return duration === 300
+    || duration === 10080
+    || name === 'primary'
+    || name === 'secondary'
+    || name === '5h'
+    || name === 'weekly';
+}
+
+function hasExhaustedResettableLimit(rateLimits) {
+  for (const bucket of rateLimits?.buckets || []) {
+    for (const windowInfo of bucket.windows || []) {
+      const remaining = limitWindowRemaining(windowInfo);
+      if (resettableLimitWindow(windowInfo) && remaining !== null && remaining <= 0) return true;
+    }
+  }
+  return false;
+}
+
 function hasEmptyLimitsWithResetCredit(rateLimits) {
-  return !rateLimits?.buckets?.length && resetCreditInfo(rateLimits).availableCount > 0;
+  return resetCreditInfo(rateLimits).availableCount > 0 && hasExhaustedResettableLimit(rateLimits);
 }
 
 function publicResetRequest(request, now = Date.now()) {

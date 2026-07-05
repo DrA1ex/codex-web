@@ -100,20 +100,6 @@ Queue data is the most important local data.
 
 Always check `git status --short` before editing. This repo may have user changes in progress; do not revert unrelated edits.
 
-## Current Known Work / Next Feature
-
-Next planned feature: active prompt steering.
-
-Proposed behavior:
-
-- `/think <text>` sends a native `turn/steer` to the active turn with `expectedTurnId`.
-- The steering note should appear inside the current output group as a user note.
-- It must not create a queue item and must not mark the active queue item failed.
-- `/think! <text>` is the force path: interrupt the active turn, mark the current item `cancelled` or `interrupted` rather than `failed`, then send/queue the correction according to current limits and queue state.
-- If `turn/steer` fails with `activeTurnNotSteerable`, preserve the note in UI and offer force-send instead of silently dropping it.
-
-There is an existing `/api/control/interrupt` route, but it currently pauses and relies on the normal failure path. The steering work needs a distinct interrupt reason so user-forced correction does not look like a prompt error.
-
 ## Development
 
 Validation:

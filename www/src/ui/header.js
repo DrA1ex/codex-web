@@ -395,9 +395,30 @@ function resetCreditCount(rateLimits) {
   return Number(rateLimits?.resetCredits?.availableCount || 0) || 0;
 }
 
+function resettableLimitWindow(windowInfo = {}) {
+  const duration = Number(windowInfo.windowDurationMins || 0);
+  const name = String(windowInfo.name || '').toLowerCase();
+  return duration === 300
+    || duration === 10_080
+    || name === 'primary'
+    || name === 'secondary'
+    || name === '5h'
+    || name === 'weekly';
+}
+
+function hasExhaustedResettableLimit(rateLimits) {
+  for (const bucket of rateLimits?.buckets || []) {
+    for (const windowInfo of windowsForBucket(bucket)) {
+      const remaining = limitWindowRemaining(windowInfo);
+      if (resettableLimitWindow(windowInfo) && remaining != null && remaining <= 0) return true;
+    }
+  }
+  return false;
+}
+
 function limitResetButton(rateLimits) {
   const count = resetCreditCount(rateLimits);
-  return count > 0
+  return count > 0 && hasExhaustedResettableLimit(rateLimits)
     ? `<div class="limit-reset-action"><button id="limitResetOpenBtn" type="button">Use limit Reset</button></div>`
     : '';
 }
@@ -406,7 +427,7 @@ function limitsCollapseButton() {
   return '<button id="limitsCollapseBtn" class="mobile-collapse-btn icon-only" title="Collapse limits" aria-expanded="true"><span class="icon icon-chevron-up" aria-hidden="true"></span></button>';
 }
 
-function renderLimitCard(bucket, showRefreshStatus = false, showCollapseButton = false) {
+function renderLimitCard(bucket, showRefreshStatus = false, showCollapseButton = false, footer = '') {
   const windows = windowsForBucket(bucket);
   const collapsedIndex = collapsedLimitWindowIndex(windows);
   return `
@@ -417,6 +438,7 @@ function renderLimitCard(bucket, showRefreshStatus = false, showCollapseButton =
         ${showCollapseButton ? limitsCollapseButton() : ''}
       </div>
       ${windows.map((windowInfo, index) => renderLimitWindow(windowInfo, { collapsedPrimary: index === collapsedIndex })).join('')}
+      ${footer}
     </div>
   `;
 }
@@ -429,8 +451,10 @@ export function renderLimitStats() {
   const buckets = rateLimits.buckets || [];
   const isRefreshing = rateLimits.refreshing === true;
 
+  const resetButton = limitResetButton(rateLimits);
+
   element.innerHTML = buckets.length
-    ? buckets.map((bucket, index) => renderLimitCard(bucket, index === 0 && isRefreshing, index === 0)).join('')
+    ? buckets.map((bucket, index) => renderLimitCard(bucket, index === 0 && isRefreshing, index === 0, index === 0 ? resetButton : '')).join('')
     : `<div class="limit-card muted"><div class="limit-card-head"><span>Limits</span>${rateLimitsRefreshStatus(isRefreshing)}${limitsCollapseButton()}</div><p>Rate-limit data unavailable.</p>${limitResetButton(rateLimits)}</div>`;
 }
 

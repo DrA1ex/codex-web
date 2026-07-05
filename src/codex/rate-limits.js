@@ -68,14 +68,17 @@ function normalizeRateLimits(result) {
   const by = root.rateLimitsByLimitId || (root.rateLimits ? { [root.rateLimits.limitId || 'default']: root.rateLimits } : {});
   function normalizeWindow(w, fallbackName) {
     if (!w) return null;
-    const usedPercent = Number(w.usedPercent ?? NaN);
+    const usedPercent = Number(w.usedPercent ?? w.used_percent ?? w.percentUsed ?? NaN);
+    const remainingPercent = Number(w.remainingPercent ?? w.remaining_percent ?? w.percentRemaining ?? NaN);
     const windowDurationMins = Number(w.windowDurationMins || 0) || null;
     const resetsAt = Number(w.resetsAt || 0) || null;
-    if (!Number.isFinite(usedPercent) && !windowDurationMins && !resetsAt) return null;
+    if (!Number.isFinite(usedPercent) && !Number.isFinite(remainingPercent) && !windowDurationMins && !resetsAt) return null;
     return {
       name: fallbackName,
       usedPercent: Number.isFinite(usedPercent) ? usedPercent : null,
-      remainingPercent: Number.isFinite(usedPercent) ? Math.max(0, 100 - usedPercent) : null,
+      remainingPercent: Number.isFinite(remainingPercent)
+        ? Math.max(0, remainingPercent)
+        : (Number.isFinite(usedPercent) ? Math.max(0, 100 - usedPercent) : null),
       windowDurationMins,
       resetsAt,
     };
