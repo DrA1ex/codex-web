@@ -30,6 +30,7 @@ import {
   forceSteerNote,
   interruptPrompt,
   loadCompletedArchiveMore,
+  loadPreviousOutputGroup,
   post,
   reportError,
   queueItemById,
@@ -54,6 +55,7 @@ const CLICK_TARGET_SELECTOR = [
   '[data-output-diff]',
   '[data-output-tool]',
   '[data-output-group]',
+  '[data-output-history-more]',
   '[data-force-steer]',
   '[data-help-command]',
   '[data-toggle-prompt]',
@@ -122,6 +124,7 @@ function runClickAction(target, event) {
     handleOutputDiffToggle(target) ||
     handleOutputToolToggle(target) ||
     handleOutputGroupToggle(target) ||
+    handleOutputHistoryMore(target) ||
     handleCompletedArchiveMore(target) ||
     handleForceSteer(target) ||
     handleHelpCommand(target) ||
@@ -233,6 +236,13 @@ function handleOutputGroupToggle(target) {
 
   state.expandedOutputGroups[toggle.dataset.outputGroup] = !state.expandedOutputGroups[toggle.dataset.outputGroup];
   renderOutput();
+  return true;
+}
+
+function handleOutputHistoryMore(target) {
+  const control = target.closest?.('[data-output-history-more]');
+  if (!control || control.disabled) return false;
+  loadPreviousOutputGroup().catch(reportError);
   return true;
 }
 

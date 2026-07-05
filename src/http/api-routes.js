@@ -81,6 +81,7 @@ const POST_ROUTES = new Map([
     app.clearOutput();
     return { ok: true };
   }],
+  ['/api/output/history/previous', (app) => app.loadPreviousOutputGroup()],
   ['/api/output/error', (app, body) => {
     app.appendOutput(`[error] ${String(body.message || 'Unknown error')}`, 'error');
     return { ok: true };

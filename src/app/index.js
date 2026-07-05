@@ -79,6 +79,7 @@ class CodexLimitWatchApp {
     this.queue = [];
     this.output = [];
     this.outputGroups = [];
+    this.outputHistory = { sessionId: null, hasMore: false, loadedTurnIds: new Set() };
     this.currentOutputGroupId = null;
     this.lastDiffOutputText = null;
     this.currentDiffOutputId = null;

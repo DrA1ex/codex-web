@@ -139,6 +139,12 @@ test('resolveApiRoute dispatches GET/POST handlers and reports 404/405', async (
   assert.equal(response.status, 200);
   assert.deepEqual(app.output, []);
 
+  app.loadPreviousOutputGroup = async () => ({ ok: true, loaded: false, hasMore: false });
+
+  response = await resolveApiRoute(app, { method: 'POST' }, '/api/output/history/previous', {});
+  assert.equal(response.status, 200);
+  assert.deepEqual(response.body, { ok: true, loaded: false, hasMore: false });
+
   app.setSandbox = async (sandbox) => ({ ok: true, sandbox });
   app.setApprovalPolicy = async (approvalPolicy) => ({ ok: true, approvalPolicy });
 

@@ -1,6 +1,7 @@
 import { api, getState, isNetworkError, writeOutputError } from '#core/api';
 import { state } from '#core/state';
 import { addQueue, updateCounter } from '#features/composer';
+import { renderOutput } from '#features/output';
 import { clearQueueScrollRequest, renderQueue, requestQueueScroll } from '#features/queue';
 import { openConfirm, openMessage } from '#ui/confirm';
 import { closeScheduleModal, scheduleInputIso } from '#ui/schedule';
@@ -77,6 +78,33 @@ export function copyVisibleOutputFromMenu() {
 export function clearOutputFromMenu() {
   setOutputMenuOpen(false);
   post('/api/output/clear');
+}
+
+export async function loadPreviousOutputGroup() {
+  const history = state.snap?.outputHistory || {};
+  if (state.outputHistoryLoading || !history.hasMore) return;
+
+  state.outputHistoryLoading = true;
+  renderOutput();
+
+  try {
+    const response = await api('/api/output/history/previous');
+    if (state.snap) {
+      state.snap.outputHistory = {
+        ...(state.snap.outputHistory || {}),
+        hasMore: Boolean(response?.hasMore),
+      };
+    }
+    await getState().catch(reportError);
+    window.requestAnimationFrame(() => {
+      if (state.outputEl) state.outputEl.scrollTop = 0;
+    });
+  } catch (error) {
+    reportError(error);
+  } finally {
+    state.outputHistoryLoading = false;
+    renderOutput();
+  }
 }
 
 export function clearPendingQueue() {

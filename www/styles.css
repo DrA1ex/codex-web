@@ -1314,6 +1314,36 @@ textarea:focus {
     border-color: var(--danger-soft);
 }
 
+.out-history-control {
+    margin: 0 0 10px;
+}
+
+.out-history-control button {
+    width: 100%;
+    min-height: 38px;
+    display: grid;
+    grid-template-columns: 8px auto;
+    gap: 10px;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid var(--border-soft);
+    border-radius: 8px;
+    background: var(--output-card-bg);
+    color: var(--output-body-strong);
+    box-shadow: none;
+    font-weight: 750;
+}
+
+.out-history-control button:hover:not(:disabled) {
+    border-color: var(--border);
+    background: var(--output-toggle-hover-bg);
+}
+
+.out-history-control button:disabled {
+    opacity: 0.82;
+    cursor: wait;
+}
+
 .out-group-head {
     width: 100%;
     min-width: 0;
@@ -1332,6 +1362,18 @@ textarea:focus {
 
 .out-group-head:hover {
     background: var(--panel2);
+}
+
+.out-group-head.is-static {
+    cursor: default;
+}
+
+.out-group-head.is-static:hover {
+    background: var(--output-toggle-hover-bg);
+}
+
+.out-group-activity {
+    justify-self: center;
 }
 
 .out-group-chevron {

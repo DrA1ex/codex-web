@@ -195,6 +195,81 @@ test('output groups stamp entries and summarize completed prompts', () => {
   assert.ok(app.output.every((entry) => entry.queueItemId === 'item-1'));
 });
 
+test('loadPreviousOutputGroup prepends one session turn and tracks remaining history', async () => {
+  const app = makeAppWithQueue([]);
+  const readResult = {
+    thread: {
+      turns: [
+        {
+          id: 'turn-old',
+          items: [
+            { type: 'userMessage', content: [{ type: 'text', text: 'Old prompt' }] },
+            { type: 'agentMessage', content: [{ type: 'text', text: 'Old answer' }] },
+          ],
+        },
+        {
+          id: 'turn-new',
+          items: [
+            { type: 'userMessage', content: [{ type: 'text', text: 'New prompt' }] },
+            { type: 'agentMessage', content: [{ type: 'text', text: 'New answer' }] },
+          ],
+        },
+      ],
+    },
+  };
+  app.rpc.request = async (method, params) => {
+    assert.equal(method, 'thread/read');
+    assert.deepEqual(params, { threadId: 'session', includeTurns: true });
+    return readResult;
+  };
+
+  let response = await app.loadPreviousOutputGroup();
+  assert.deepEqual(response, { ok: true, loaded: true, hasMore: true });
+  assert.equal(app.outputGroups.length, 1);
+  assert.equal(app.outputGroups[0].turnId, 'turn-new');
+  assert.equal(app.outputGroups[0].status, 'completed');
+  assert.match(app.output[0].text, /New prompt/);
+  assert.match(app.output[1].text, /New answer/);
+
+  response = await app.loadPreviousOutputGroup();
+  assert.deepEqual(response, { ok: true, loaded: true, hasMore: false });
+  assert.equal(app.outputGroups.length, 2);
+  assert.equal(app.outputGroups[0].turnId, 'turn-old');
+  assert.equal(app.outputGroups[1].turnId, 'turn-new');
+});
+
+test('loadPreviousOutputGroup skips turns already represented in output groups', async () => {
+  const app = makeAppWithQueue([]);
+  const group = app.createOutputGroupForItem({ id: 'item-1', text: 'Current prompt' });
+  app.addTurnToOutputGroup(group, 'turn-new');
+  app.rpc.request = async () => ({
+    turns: [
+      {
+        id: 'turn-old',
+        messages: [
+          { role: 'user', content: 'Older prompt' },
+          { role: 'assistant', content: 'Older answer' },
+        ],
+      },
+      {
+        id: 'turn-new',
+        messages: [
+          { role: 'user', content: 'Current prompt' },
+          { role: 'assistant', content: 'Current answer' },
+        ],
+      },
+    ],
+  });
+
+  const response = await app.loadPreviousOutputGroup();
+
+  assert.deepEqual(response, { ok: true, loaded: true, hasMore: false });
+  assert.equal(app.outputGroups.length, 2);
+  assert.equal(app.outputGroups[0].turnId, 'turn-old');
+  assert.equal(app.outputGroups[1].id, group.id);
+  assert.equal(app.outputGroups.filter((candidate) => candidate.turnId === 'turn-new').length, 1);
+});
+
 test('trimOutput enforces line and character limits and removes stale command mappings', () => {
   const app = makeAppWithQueue([]);
   for (let i = 0; i < MAX_OUTPUT_LINES + 5; i++) {

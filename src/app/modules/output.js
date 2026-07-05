@@ -1,7 +1,7 @@
 'use strict';
 
 const { MAX_OUTPUT_LINES, MAX_OUTPUT_TOTAL_CHARS } = require('../../shared/config');
-const { nowIso, randomId } = require('../../shared/utils');
+const { nowIso, randomId, asArray, truncate } = require('../../shared/utils');
 const {
   canAppendOutput,
   limitOutputText,
@@ -10,7 +10,7 @@ const {
 
 module.exports = {
   outputPayload() {
-    return { output: this.output, outputGroups: this.outputGroups };
+    return { output: this.output, outputGroups: this.outputGroups, outputHistory: this.outputHistoryPayload() };
   },
 
   broadcastOutput() {
@@ -20,6 +20,28 @@ module.exports = {
   outputGroupTitle(item) {
     const firstLine = String(item?.text || '').trim().split(/\r?\n/).find(Boolean) || `Prompt #${item?.id || '?'}`;
     return firstLine.length > 76 ? `${firstLine.slice(0, 73)}...` : firstLine;
+  },
+
+  ensureOutputHistoryState() {
+    const sessionId = this.app.sessionId || null;
+    if (!this.outputHistory || this.outputHistory.sessionId !== sessionId) {
+      this.outputHistory = {
+        sessionId,
+        hasMore: !!sessionId,
+        loadedTurnIds: new Set(),
+      };
+    }
+    if (!(this.outputHistory.loadedTurnIds instanceof Set)) {
+      this.outputHistory.loadedTurnIds = new Set(this.outputHistory.loadedTurnIds || []);
+    }
+    return this.outputHistory;
+  },
+
+  outputHistoryPayload() {
+    const history = this.ensureOutputHistoryState();
+    return {
+      hasMore: !!(history.sessionId && history.hasMore),
+    };
   },
 
   outputGroupForId(groupId) {
@@ -152,6 +174,189 @@ module.exports = {
     group.turnId = this.currentTurnId || group.turnId || null;
     group.summary = this.summarizeOutputGroup(group, status, errMessage);
     return group;
+  },
+
+  extractHistoryTurns(readResult) {
+    const thread = readResult?.thread || readResult?.session || readResult;
+    return asArray(thread?.turns || readResult?.turns || readResult?.items);
+  },
+
+  textFromContent(content) {
+    if (typeof content === 'string') return content;
+    if (Array.isArray(content)) {
+      return content.map((item) => this.textFromContent(item)).filter(Boolean).join('\n');
+    }
+    if (!content || typeof content !== 'object') return '';
+    return this.textFromContent(content.text)
+      || this.textFromContent(content.value)
+      || this.textFromContent(content.content)
+      || this.textFromContent(content.message)
+      || this.textFromContent(content.output)
+      || '';
+  },
+
+  textFromHistoryItem(item) {
+    if (!item || typeof item !== 'object') return '';
+    return this.textFromContent(item.content)
+      || this.textFromContent(item.text)
+      || this.textFromContent(item.message)
+      || this.textFromContent(item.output)
+      || this.textFromContent(item.delta);
+  },
+
+  historyItemRole(item) {
+    const role = String(item?.role || item?.author?.role || '').toLowerCase();
+    if (role) return role;
+    const type = String(item?.type || item?.kind || '').toLowerCase();
+    if (type.includes('user')) return 'user';
+    if (type.includes('agent') || type.includes('assistant')) return 'assistant';
+    return '';
+  },
+
+  normalizeHistoryTurn(turn, fallbackId) {
+    const items = asArray(turn?.items || turn?.messages || turn?.entries || turn?.events);
+    const promptParts = [];
+    const assistantParts = [];
+
+    for (const item of items) {
+      const role = this.historyItemRole(item);
+      const text = this.textFromHistoryItem(item).trim();
+      if (!text) continue;
+      if (role === 'user') promptParts.push(text);
+      else if (role === 'assistant') assistantParts.push(text);
+    }
+
+    const promptText = promptParts.join('\n\n').trim()
+      || this.textFromContent(turn?.input).trim()
+      || this.textFromContent(turn?.prompt).trim();
+    const assistantText = assistantParts.join('\n\n').trim()
+      || this.textFromContent(turn?.output).trim()
+      || this.textFromContent(turn?.response).trim()
+      || this.textFromContent(turn?.summary).trim();
+
+    if (!promptText && !assistantText) return null;
+
+    const turnId = String(turn?.id || turn?.turnId || fallbackId || randomId(4));
+    const title = this.outputGroupTitle({ id: turnId, text: promptText || assistantText });
+    const summary = assistantText
+      ? truncate(assistantText, 180)
+      : 'Prompt completed.';
+    const timestamp = turn?.completedAt || turn?.finishedAt || turn?.updatedAt || turn?.createdAt || nowIso();
+
+    return {
+      turnId,
+      title,
+      promptText,
+      assistantText,
+      summary,
+      timestamp,
+      model: turn?.model || '',
+      effort: turn?.effort || '',
+    };
+  },
+
+  knownOutputTurnIds() {
+    const ids = new Set();
+    for (const group of this.outputGroups || []) {
+      if (group.turnId) ids.add(String(group.turnId));
+      for (const id of group.turnIds || []) ids.add(String(id));
+    }
+    if (this.currentTurnId) ids.add(String(this.currentTurnId));
+    for (const id of this.ensureOutputHistoryState().loadedTurnIds || []) ids.add(String(id));
+    return ids;
+  },
+
+  prependHistoryOutputGroup(historyTurn) {
+    const groupId = randomId(8);
+    const ts = historyTurn.timestamp || nowIso();
+    const group = {
+      id: groupId,
+      queueItemId: null,
+      turnId: historyTurn.turnId,
+      title: historyTurn.title,
+      promptText: historyTurn.promptText,
+      turnIds: [historyTurn.turnId],
+      status: 'completed',
+      summary: historyTurn.summary,
+      summaryText: historyTurn.summary,
+      summarySource: 'history',
+      startedAt: ts,
+      finishedAt: ts,
+      model: historyTurn.model || '',
+      effort: historyTurn.effort || '',
+      source: 'history',
+    };
+    const entries = [];
+    if (historyTurn.promptText) {
+      entries.push({
+        id: randomId(5),
+        ts,
+        type: 'prompt',
+        text: `[prompt]\n${limitOutputText(historyTurn.promptText)}`,
+        groupId,
+        turnId: historyTurn.turnId,
+        groupRole: 'prompt',
+      });
+    }
+    if (historyTurn.assistantText) {
+      entries.push({
+        id: randomId(5),
+        ts,
+        type: 'delta',
+        text: limitOutputText(historyTurn.assistantText),
+        groupId,
+        turnId: historyTurn.turnId,
+      });
+    }
+
+    this.outputGroups.unshift(group);
+    this.output.unshift(...entries);
+    return group;
+  },
+
+  async loadPreviousOutputGroup() {
+    const history = this.ensureOutputHistoryState();
+    if (!history.sessionId) throw new Error('No Codex session selected');
+    if (!history.hasMore) return { ok: true, loaded: false, hasMore: false };
+
+    const read = await this.rpc.request('thread/read', { threadId: history.sessionId, includeTurns: true }, 8000);
+    const turns = this.extractHistoryTurns(read);
+    const known = this.knownOutputTurnIds();
+    let loaded = null;
+    let loadedIndex = -1;
+
+    for (let index = turns.length - 1; index >= 0; index -= 1) {
+      const turn = turns[index];
+      const turnId = String(turn?.id || turn?.turnId || `index:${index}`);
+      if (known.has(turnId)) continue;
+      const normalized = this.normalizeHistoryTurn(turn, turnId);
+      if (!normalized) {
+        known.add(turnId);
+        history.loadedTurnIds.add(turnId);
+        continue;
+      }
+      loaded = normalized;
+      loadedIndex = index;
+      break;
+    }
+
+    if (!loaded) {
+      history.hasMore = false;
+      this.broadcastAll();
+      return { ok: true, loaded: false, hasMore: false };
+    }
+
+    this.prependHistoryOutputGroup(loaded);
+    history.loadedTurnIds.add(loaded.turnId);
+    known.add(loaded.turnId);
+    history.hasMore = turns.some((turn, index) => {
+      if (index >= loadedIndex) return false;
+      const turnId = String(turn?.id || turn?.turnId || `index:${index}`);
+      return !known.has(turnId) && !!this.normalizeHistoryTurn(turn, turnId);
+    });
+    this.broadcastOutput();
+    this.broadcastAll();
+    return { ok: true, loaded: true, hasMore: history.hasMore };
   },
 
   appendOutput(text, type = 'text', appendToPrevious = false, meta = null) {
@@ -455,6 +660,10 @@ module.exports = {
   clearOutput() {
     this.output = [];
     this.outputGroups = [];
+    if (this.outputHistory) {
+      this.outputHistory.loadedTurnIds = new Set();
+      this.outputHistory.hasMore = !!this.outputHistory.sessionId;
+    }
     this.currentOutputGroupId = null;
     this.lastDiffOutputText = null;
     this.currentDiffOutputId = null;

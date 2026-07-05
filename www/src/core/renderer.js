@@ -105,7 +105,14 @@ export function sectionKey(name, snapshot) {
       completedArchiveCount: state.completedArchiveCache.items.length,
     });
   }
-  if (name === 'output') return stableKey({ output: snapshot?.output, outputGroups: snapshot?.outputGroups });
+  if (name === 'output') {
+    return stableKey({
+      output: snapshot?.output,
+      outputGroups: snapshot?.outputGroups,
+      outputHistory: snapshot?.outputHistory,
+      outputHistoryLoading: state.outputHistoryLoading,
+    });
+  }
   if (name === 'debug') return stableKey(snapshot?.debug);
 
   return '';

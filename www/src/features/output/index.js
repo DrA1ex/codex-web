@@ -144,26 +144,48 @@ function groupMetaLabel(group) {
 }
 
 function renderOutputGroup(group, lines) {
-  const expanded = group.status === 'active' || Boolean(state.expandedOutputGroups[group.id]);
+  const isActive = group.status === 'active';
+  const expanded = isActive || Boolean(state.expandedOutputGroups[group.id]);
   const groupId = esc(group.id || '');
   const status = groupStatusLabel(group);
-  const summary = group.summary || (group.status === 'active' ? 'Running...' : 'Prompt completed.');
+  const summary = group.summary || (isActive ? 'Running...' : 'Prompt completed.');
   const meta = groupMetaLabel(group);
   const body = expanded
     ? `<div class="out-group-body">${lines.map(renderOutputLine).join('')}</div>`
     : `<p class="out-group-summary">${esc(summary)}</p>`;
-
-  return `
-    <section class="out-group ${expanded ? 'expanded' : 'collapsed'} ${esc(group.status || '')}">
-      <button type="button" class="out-group-head" data-output-group="${groupId}" aria-expanded="${expanded ? 'true' : 'false'}">
-        <span class="out-group-chevron icon icon-chevron-${expanded ? 'up' : 'down'}" aria-hidden="true"></span>
+  const headerInner = `
+        ${isActive
+    ? '<i class="out-activity-dot out-group-activity" aria-hidden="true"></i>'
+    : `<span class="out-group-chevron icon icon-chevron-${expanded ? 'up' : 'down'}" aria-hidden="true"></span>`}
         <span class="out-group-title">Prompt</span>
         <strong>${esc(group.title || 'Prompt')}</strong>
         <b class="out-group-status">${esc(status)}</b>
         ${meta ? `<em>${esc(meta)}</em>` : ''}
-      </button>
+  `;
+  const header = isActive
+    ? `<div class="out-group-head is-static" aria-live="polite">${headerInner}</div>`
+    : `<button type="button" class="out-group-head" data-output-group="${groupId}" aria-expanded="${expanded ? 'true' : 'false'}">${headerInner}</button>`;
+
+  return `
+    <section class="out-group ${expanded ? 'expanded' : 'collapsed'} ${esc(group.status || '')}">
+      ${header}
       ${body}
     </section>
+  `;
+}
+
+function renderOutputHistoryControl() {
+  const history = state.snap?.outputHistory || {};
+  const loading = Boolean(state.outputHistoryLoading);
+  if (!loading && !history.hasMore) return '';
+
+  return `
+    <div class="out-history-control">
+      <button type="button" data-output-history-more="1" ${loading ? 'disabled' : ''}>
+        <i class="out-activity-dot ${loading ? '' : 'is-idle'}" aria-hidden="true"></i>
+        <span>${loading ? 'Loading earlier prompt...' : 'Load earlier prompt'}</span>
+      </button>
+    </div>
   `;
 }
 
@@ -257,7 +279,7 @@ export function renderOutput() {
   if (!outputEl) return;
 
   const wasAtBottom = outputIsNearBottom();
-  outputEl.innerHTML = renderGroupedOutput(state.snap?.output || [], state.snap?.outputGroups || []);
+  outputEl.innerHTML = `${renderOutputHistoryControl()}${renderGroupedOutput(state.snap?.output || [], state.snap?.outputGroups || [])}`;
 
   if (wasAtBottom) {
     outputEl.scrollTop = outputEl.scrollHeight;

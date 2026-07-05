@@ -161,6 +161,7 @@ module.exports = {
       completedArchive,
       output: this.output,
       outputGroups: this.outputGroups,
+      outputHistory: this.outputHistoryPayload ? this.outputHistoryPayload() : { hasMore: false },
       rateLimits: this.rateLimits,
       limitResetRequest: this.currentLimitResetRequest ? this.currentLimitResetRequest() : null,
       approval: this.approval,

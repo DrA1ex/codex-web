@@ -52,6 +52,7 @@ function attachEventStream() {
     } else {
       state.snap.output = payload.output || [];
       state.snap.outputGroups = payload.outputGroups || [];
+      state.snap.outputHistory = payload.outputHistory || state.snap.outputHistory || { hasMore: false };
     }
     state.renderKeys.output = sectionKey('output', state.snap);
     renderOutput();
