@@ -66,7 +66,7 @@ export const state = {
   composerCommandStack: null,
   composerArgHint: null,
   composerCommands: [],
-  composerSuggest: { open: false, matches: [], activeIndex: 0, prefix: '', suffix: '', argumentHint: '', argumentMissing: false },
+  composerSuggest: { open: false, matches: [], activeIndex: 0, prefix: '', suffix: '', argumentHint: '', argumentMissing: false, mode: 'command', command: null, anchorIndex: 0 },
   composerSuggestDismissedText: null,
   outputEl: null,
   compactHeaderQuery: null,

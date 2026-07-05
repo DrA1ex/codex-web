@@ -56,6 +56,11 @@ const COMMAND_REGISTRY = [
     autocomplete: true,
     requiresArgs: false,
     options: ['read-only', 'workspace-write', 'danger-full-access'],
+    optionDescriptions: {
+      'read-only': 'Run future turns with read-only filesystem access.',
+      'workspace-write': 'Allow future turns to write inside the workspace.',
+      'danger-full-access': 'Run future turns without normal sandbox filesystem restrictions.',
+    },
   },
   {
     name: '/approval',
@@ -68,6 +73,12 @@ const COMMAND_REGISTRY = [
     autocomplete: true,
     requiresArgs: false,
     options: ['on-request', 'never', 'untrusted', 'on-failure'],
+    optionDescriptions: {
+      'on-request': 'Ask for approval when an action needs elevated permissions.',
+      never: 'Do not ask for approval; run only what current permissions allow.',
+      untrusted: 'Require approval for more actions in an untrusted workflow.',
+      'on-failure': 'Ask for approval only after an action fails under sandbox restrictions.',
+    },
   },
   {
     name: '/compact',

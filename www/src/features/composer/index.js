@@ -11,6 +11,8 @@ import {
   buildSuggestState,
   commandHintParts,
   commandForInput,
+  completionLabel,
+  completionValue,
   cycleCommandMatch,
   hasRequiredArguments,
   isCommandNameComplete,
@@ -81,7 +83,7 @@ export async function loadComposerCommands() {
 
 function hideAutocomplete() {
   state.composerSuggestDismissedText = state.composer?.value ?? '';
-  state.composerSuggest = { open: false, matches: [], activeIndex: 0, prefix: '', suffix: '', argumentHint: '', argumentMissing: false };
+  state.composerSuggest = { open: false, matches: [], activeIndex: 0, prefix: '', suffix: '', argumentHint: '', argumentMissing: false, mode: 'command', command: null, anchorIndex: 0 };
   renderGhost();
 }
 
@@ -94,7 +96,7 @@ function updateAutocomplete() {
   }
 
   if (composer.value === state.composerSuggestDismissedText || isMultilineCommandSuppressed(composer.value)) {
-    state.composerSuggest = { open: false, matches: [], activeIndex: 0, prefix: '', suffix: '', argumentHint: '', argumentMissing: false };
+    state.composerSuggest = { open: false, matches: [], activeIndex: 0, prefix: '', suffix: '', argumentHint: '', argumentMissing: false, mode: 'command', command: null, anchorIndex: composer.value.length };
     renderGhost();
     return;
   }
@@ -126,14 +128,15 @@ function copyTextareaMetrics(source, target) {
   target.style.width = `${source.clientWidth}px`;
 }
 
-function caretCoordinates(textarea) {
+function caretCoordinates(textarea, anchorIndex = null) {
   const probe = ensureCaretProbe();
   copyTextareaMetrics(textarea, probe);
   probe.style.boxSizing = 'border-box';
   probe.style.overflowWrap = 'break-word';
   probe.style.position = 'fixed';
   probe.style.visibility = 'hidden';
-  const text = textarea.value.slice(0, textarea.selectionStart || 0);
+  const offset = Number.isFinite(anchorIndex) ? anchorIndex : textarea.selectionStart || 0;
+  const text = textarea.value.slice(0, offset);
   probe.textContent = text;
   const marker = document.createElement('span');
   marker.textContent = '\u200b';
@@ -152,9 +155,9 @@ function commandLabel(command) {
   return `${command.name}${hint ? ` ${hint}` : ''}`;
 }
 
-function commandStackMatches(suggest) {
+function suggestionStackMatches(suggest) {
   if (!suggest?.open || !suggest.matches?.length) return [];
-  return suggest.matches.filter((command) => command?.name);
+  return suggest.matches.filter((match) => completionValue(match));
 }
 
 function commandRest(command, text) {
@@ -174,8 +177,10 @@ function argumentHintForGhost(command, text) {
 }
 
 function ghostParts(command, suggest, text) {
-  if (!command) return { commandSuffix: '', argumentHint: '' };
-  const commandSuffix = suggest.open && command === activeCommandMatch(suggest) ? suggest.suffix || '' : '';
+  if (!command && suggest?.mode !== 'option') return { commandSuffix: '', argumentHint: '' };
+  const isActive = suggest.open && activeCommandMatch(suggest);
+  const commandSuffix = isActive ? suggest.suffix || '' : '';
+  if (suggest?.mode === 'option') return { commandSuffix, argumentHint: '' };
   const argumentHint = argumentHintForGhost(command, text);
   const needsArgumentSpacer = Boolean(commandSuffix) || !/\s$/.test(String(text || ''));
   return {
@@ -194,8 +199,8 @@ function esc(value) {
   }[char]));
 }
 
-function renderCommandHint(command, text) {
-  const parts = commandHintParts(command, text);
+function renderCommandHint(command, text, option = null) {
+  const parts = commandHintParts(command, text, option);
   if (!parts) return '';
   return [
     parts.behavior ? `<span class="composer-command-mode">${esc(parts.behavior)}</span>` : '',
@@ -274,11 +279,16 @@ function renderGhost() {
 
   const suggest = state.composerSuggest;
   const active = activeCommandMatch(suggest);
-  const coords = caretCoordinates(composer);
+  const coords = caretCoordinates(composer, Number.isFinite(suggest?.anchorIndex) ? suggest.anchorIndex : null);
 
   const suggestionsAllowed = !isMultilineCommandSuppressed(composer.value)
     && composer.value !== state.composerSuggestDismissedText;
-  const command = suggestionsAllowed ? (active || commandForInput(composer.value, state.composerCommands)) : null;
+  const command = suggestionsAllowed
+    ? (suggest.mode === 'option' ? suggest.command : active || commandForInput(composer.value, state.composerCommands))
+    : null;
+  const activeOption = suggestionsAllowed && suggest.mode === 'option'
+    ? active || suggest.selectedOption
+    : suggest.selectedOption;
   const inlineGhost = ghostParts(command, suggest, composer.value);
 
   if (inlineGhost.commandSuffix || inlineGhost.argumentHint) {
@@ -288,17 +298,18 @@ function renderGhost() {
     ghost.classList.add('visible');
   }
 
-  const stackCommands = suggestionsAllowed ? commandStackMatches(suggest) : [];
-  if (stackCommands.length) {
-    stack.innerHTML = stackCommands.map((command, index) => {
+  const stackMatches = suggestionsAllowed ? suggestionStackMatches(suggest) : [];
+  if (stackMatches.length) {
+    stack.innerHTML = stackMatches.map((match, index) => {
       const selected = index === suggest.activeIndex;
-      return `<button type="button" class="${selected ? 'active' : ''}" data-active="${selected ? 'true' : 'false'}" data-command-complete="${esc(command.name)}">${esc(commandLabel(command))}</button>`;
+      const label = suggest.mode === 'option' ? completionLabel(match) : commandLabel(match);
+      return `<button type="button" class="${selected ? 'active' : ''}" data-active="${selected ? 'true' : 'false'}" data-suggest-index="${esc(index)}">${esc(label)}</button>`;
     }).join('');
     positionCommandStack(stack, composer);
     syncCommandStackSelection(stack);
   }
 
-  const hintHtml = renderCommandHint(command, composer.value);
+  const hintHtml = renderCommandHint(command, composer.value, activeOption);
   if (hintHtml) hint.innerHTML = hintHtml;
 }
 
@@ -373,7 +384,7 @@ export function handleComposerKeydown(event) {
   if (event.key !== 'Enter' || event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return false;
 
   const active = activeCommandMatch(state.composerSuggest);
-  if (state.composerSuggest.open && active && !isCommandNameComplete(state.composer.value, active)) {
+  if (state.composerSuggest.open && active && (state.composerSuggest.mode === 'option' || !isCommandNameComplete(state.composer.value, active))) {
     event.preventDefault();
     applyActiveCompletion();
     return true;
@@ -414,12 +425,13 @@ export function initComposerUi() {
     composer.focus();
   });
   state.composerCommandStack?.addEventListener('pointerdown', (event) => {
-    const button = event.target?.closest?.('[data-command-complete]');
+    const button = event.target?.closest?.('[data-suggest-index]');
     if (!button) return;
-    const command = state.composerCommands.find((entry) => entry.name === button.dataset.commandComplete);
-    if (!command) return;
+    const index = Number(button.dataset.suggestIndex);
+    const match = Number.isFinite(index) ? state.composerSuggest.matches[index] : null;
+    if (!match) return;
     event.preventDefault();
-    state.composerSuggest = { ...state.composerSuggest, matches: [command], activeIndex: 0 };
+    state.composerSuggest = { ...state.composerSuggest, matches: [match], activeIndex: 0 };
     applyActiveCompletion();
     composer.focus();
   });

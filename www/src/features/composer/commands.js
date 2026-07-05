@@ -14,6 +14,22 @@ export function currentCommandPrefix(text, caretIndex) {
   return String(text || '').slice(0, caretIndex);
 }
 
+function emptySuggestState(overrides = {}) {
+  return {
+    open: false,
+    matches: [],
+    activeIndex: 0,
+    prefix: '',
+    suffix: '',
+    argumentHint: '',
+    argumentMissing: false,
+    mode: 'command',
+    command: null,
+    anchorIndex: String(overrides.text || '').length,
+    ...overrides,
+  };
+}
+
 export function getCommandMatches(prefix, commandMetadata = []) {
   const raw = String(prefix || '');
   if (!raw.startsWith('/')) return [];
@@ -27,6 +43,14 @@ export function activeCommandMatch(state) {
   return state.matches[((state.activeIndex % state.matches.length) + state.matches.length) % state.matches.length];
 }
 
+export function completionValue(match) {
+  return String(match?.completion || match?.value || match?.name || '');
+}
+
+export function completionLabel(match) {
+  return String(match?.label || completionValue(match));
+}
+
 export function cycleCommandMatch(suggest, direction) {
   if (!suggest?.matches?.length) return suggest;
   const count = suggest.matches.length;
@@ -34,8 +58,17 @@ export function cycleCommandMatch(suggest, direction) {
 }
 
 export function applyCommandCompletion(text, selectedCommand) {
-  if (!selectedCommand?.name) return String(text || '');
+  if (!selectedCommand) return String(text || '');
   const value = String(text || '');
+
+  if (selectedCommand.type === 'option') {
+    const command = selectedCommand.command;
+    const option = completionValue(selectedCommand);
+    if (!command?.name || !option) return value;
+    return `${command.name} ${option}`;
+  }
+
+  if (!selectedCommand?.name) return value;
   const firstSpace = value.search(/\s/);
   const spacer = selectedCommand.requiresArgs ? ' ' : '';
   if (firstSpace < 0) return `${selectedCommand.name}${spacer}`;
@@ -61,15 +94,16 @@ export function commandHintText(command, currentText = '') {
   return [parts.behavior, parts.command, parts.description].filter(Boolean).join(' — ');
 }
 
-export function commandHintParts(command, currentText = '') {
+export function commandHintParts(command, currentText = '', option = null) {
   if (!command) return '';
   const hint = getCommandDisplayArgumentHint(command, currentText);
-  const commandText = `${command.name}${hint ? ` ${hint}` : ''}`;
+  const optionValue = option ? completionValue(option) : '';
+  const commandText = optionValue ? `${command.name} ${optionValue}` : `${command.name}${hint ? ` ${hint}` : ''}`;
   const behavior = commandBehaviorHint(command, currentText);
   return {
     behavior,
     command: commandText,
-    description: command.shortDescription || '',
+    description: option?.description || command.shortDescription || '',
   };
 }
 
@@ -114,51 +148,122 @@ export function hasRequiredArguments(command, text) {
   return value.length > String(command.name || '').length && value.slice(command.name.length).trim().length > 0;
 }
 
+function commandTokenForText(value) {
+  const match = String(value || '').match(/^\/\S*/);
+  return match ? match[0] : '';
+}
+
+function getOptionMatches(command, prefix = '') {
+  const raw = String(prefix || '');
+  const descriptions = command?.optionDescriptions || {};
+  return (command?.options || [])
+    .filter((option) => String(option).startsWith(raw))
+    .map((option) => ({
+      type: 'option',
+      value: String(option),
+      completion: String(option),
+      label: String(option),
+      description: descriptions[option] || '',
+      command,
+    }));
+}
+
+function selectedOptionForText(command, value) {
+  if (!command?.options?.length) return null;
+  const commandToken = commandTokenForText(value);
+  if (commandToken !== command.name) return null;
+  const rest = String(value || '').slice(command.name.length);
+  const argument = rest.trim().split(/\s+/, 1)[0] || '';
+  if (!argument) return null;
+  return getOptionMatches(command, argument).find((option) => option.value === argument) || null;
+}
+
 export function buildSuggestState(text, caretIndex, commandMetadata, previous = {}) {
   const value = String(text || '');
   if (value.includes('\n') && value.trim()) {
-    return {
-      open: false,
-      matches: [],
-      activeIndex: 0,
-      prefix: '',
-      suffix: '',
-      argumentHint: '',
-      argumentMissing: false,
-    };
+    return emptySuggestState({ text: value });
   }
 
-  const prefix = currentCommandPrefix(text, caretIndex);
-  if (!prefix) {
-    const command = commandForInput(text, commandMetadata);
-    return {
-      open: false,
-      matches: [],
-      activeIndex: 0,
-      prefix: '',
-      suffix: '',
-      argumentHint: getArgumentHint(command, text),
-      argumentMissing: false,
-    };
+  if (!value.startsWith('/')) return emptySuggestState({ text: value });
+
+  const commandToken = commandTokenForText(value);
+  if (!commandToken) return emptySuggestState({ text: value });
+
+  const hasCommandSpace = /\s/.test(value.slice(commandToken.length, commandToken.length + 1));
+  const command = commandMetadata.find((entry) => entry.name === commandToken) || null;
+
+  if (hasCommandSpace && command?.options?.length) {
+    const rest = value.slice(commandToken.length);
+    const leading = rest.match(/^\s*/)?.[0] || '';
+    const argumentText = rest.slice(leading.length);
+    const argument = argumentText.match(/^\S*/)?.[0] || '';
+    const trailing = argumentText.slice(argument.length);
+
+    if (trailing.trim()) {
+      return emptySuggestState({
+        text: value,
+        command,
+        mode: 'option',
+        anchorIndex: commandToken.length + leading.length + argument.length,
+      });
+    }
+
+    const matches = getOptionMatches(command, argument);
+    if (!matches.length) {
+      return emptySuggestState({
+        text: value,
+        command,
+        mode: 'option',
+        prefix: argument,
+        anchorIndex: commandToken.length + leading.length + argument.length,
+      });
+    }
+
+    const previousValue = previous.mode === 'option' ? completionValue(previous.matches?.[previous.activeIndex]) : '';
+    let activeIndex = matches.findIndex((option) => option.value === previousValue);
+    if (activeIndex < 0) activeIndex = 0;
+    const active = matches[activeIndex];
+    const suffix = active.value.slice(argument.length);
+    return emptySuggestState({
+      text: value,
+      open: Boolean(suffix || matches.length > 1),
+      matches,
+      activeIndex,
+      prefix: argument,
+      suffix,
+      mode: 'option',
+      command,
+      anchorIndex: commandToken.length + leading.length + argument.length,
+    });
   }
 
-  const matches = getCommandMatches(prefix, commandMetadata);
-  if (!matches.length) return { open: false, matches: [], activeIndex: 0, prefix, suffix: '', argumentHint: '', argumentMissing: false };
+  const matches = getCommandMatches(commandToken, commandMetadata);
+  if (!matches.length) {
+    return emptySuggestState({
+      text: value,
+      prefix: commandToken,
+      anchorIndex: commandToken.length,
+    });
+  }
 
-  const previousName = previous.matches?.[previous.activeIndex]?.name || '';
+  const previousName = previous.mode === 'command' ? previous.matches?.[previous.activeIndex]?.name || '' : '';
   let activeIndex = matches.findIndex((command) => command.name === previousName);
   if (activeIndex < 0) activeIndex = 0;
   const active = matches[activeIndex];
-  const suffix = active.name.slice(prefix.length);
+  const suffix = active.name.slice(commandToken.length);
   const open = Boolean(suffix || matches.length > 1);
 
-  return {
+  return emptySuggestState({
+    text: value,
     open,
     matches,
     activeIndex,
-    prefix,
+    prefix: commandToken,
     suffix,
     argumentHint: suffix ? '' : getArgumentHint(active, text),
-    argumentMissing: false,
-  };
+    mode: 'command',
+    command: active,
+    anchorIndex: commandToken.length,
+    selectedOption: command ? selectedOptionForText(command, value) : null,
+  });
 }
