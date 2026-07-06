@@ -467,7 +467,7 @@ export async function sendComposerNow() {
       response.message,
       'Interrupt anyway',
       true,
-      { text: response.text || state.composer?.value || '' },
+      { text: response.text || state.composer?.value || '', promoteSteerActionId: response.promoteSteerActionId || null },
     );
     updateCounter();
     return;

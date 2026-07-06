@@ -34,6 +34,7 @@ test('parseComposerCommand parses slash commands with arguments', () => {
   assert.equal(ok('/schedule 15h').args.schedule.action, 'set');
   assert.equal(ok('/schedule 1h 30m').args.schedule.action, 'set');
   assert.equal(ok('/schedule 2026-07-05 18:30').args.schedule.action, 'set');
+  assert.equal(ok('/think!').args.text, '');
 });
 
 test('parseComposerCommand rejects invalid slash commands and missing bodies', () => {
@@ -42,7 +43,6 @@ test('parseComposerCommand rejects invalid slash commands and missing bodies', (
   assert.equal(rejected('/schedule nonsense').errorCode, 'invalid_schedule');
   assert.equal(rejected('/unknown').errorCode, 'unknown_command');
   assert.equal(rejected('/think').errorCode, 'missing_arg');
-  assert.equal(rejected('/think!').errorCode, 'missing_arg');
 });
 
 test('parseComposerCommand ignores slash text outside command start', () => {

@@ -123,7 +123,7 @@ function parseComposerCommand(text, options = {}) {
     if (!/^[-_.:\w]+$/.test(split.rest)) return commandError(split.command, split.raw, 'invalid_arg', 'Invalid queue item id.', usageFor(split.command));
     args.id = split.rest;
   } else if (split.command === '/think' || split.command === '/think!') {
-    if (!split.rest) return commandError(split.command, split.raw, 'missing_arg', split.command === '/think!' ? '/think! needs a follow-up prompt.' : '/think needs a note to send to the active prompt.', usageFor(split.command));
+    if (!split.rest && split.command === '/think') return commandError(split.command, split.raw, 'missing_arg', '/think needs a note to send to the active prompt.', usageFor(split.command));
     args.text = split.rest;
   } else if (split.command === '/schedule') {
     const parsedSchedule = parseScheduleArgument(split.rest, options);

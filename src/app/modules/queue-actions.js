@@ -96,6 +96,11 @@ function commandInfoResponse(ctx, parsed, message) {
   return { ok: true, clearComposer: false, commandInfo: true };
 }
 
+function latestUndoAction(ctx) {
+  if (!Array.isArray(ctx.undoActions) || !ctx.undoActions.length) return null;
+  return ctx.undoActions[ctx.undoActions.length - 1];
+}
+
 function queuePreview(item) {
   const preview = String(item?.preview || item?.text || '').replace(/\s+/g, ' ').trim();
   if (!preview) return '(empty prompt)';
@@ -330,6 +335,10 @@ module.exports = {
   },
 
   async executeThinkCommand(parsed) {
+    if (parsed.command === '/think!' && !parsed.args.text) {
+      return await this.executePromoteWaitingSteerCommand(parsed);
+    }
+
     const result = parsed.command === '/think!'
       ? await this.forceSteerActivePrompt(parsed.args.text)
       : await this.steerActivePrompt(parsed.args.text);
@@ -346,6 +355,39 @@ module.exports = {
       errorResponse.text = result.text || parsed.args.text;
     }
     return errorResponse;
+  },
+
+  async executePromoteWaitingSteerCommand(parsed) {
+    const action = latestUndoAction(this);
+    const meta = commandByName('/think!');
+
+    if (!action || action.type !== 'steer') {
+      return commandErrorResponse(this, {
+        ...parsed,
+        message: 'No waiting steer to force. Use /think! <text> to interrupt with a new correction.',
+        usage: commandUsage(meta),
+      });
+    }
+
+    if (action.status !== 'waiting') {
+      const message = action.status === 'sent'
+        ? 'Steer was already sent and cannot be converted to /think!.'
+        : 'No waiting steer to force. Use /think! <text> to interrupt with a new correction.';
+      return commandErrorResponse(this, {
+        ...parsed,
+        message,
+        usage: commandUsage(meta),
+      });
+    }
+
+    const result = await this.forceSteerActivePrompt(action.text, { promoteSteerActionId: action.id });
+    if (result?.ok || result?.needsConfirmation) return result;
+
+    return commandErrorResponse(this, {
+      ...parsed,
+      message: result?.message || 'Active prompt force steering failed.',
+      usage: commandUsage(meta),
+    });
   },
 
   async executeScheduleCommand(parsed) {

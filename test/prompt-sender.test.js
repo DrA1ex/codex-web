@@ -213,6 +213,167 @@ test('/undo cancels an unsent steer and leaves late rpc success ignored', async 
   assert.match(app.output.find((entry) => entry.type === 'user-note')?.text || '', /Status: canceled/);
 });
 
+test('/think! without text promotes a waiting steer into interrupt follow-up', async () => {
+  const active = item('active', 'sent');
+  const app = makeAppWithQueue([active]);
+  const steer = deferred();
+  const requests = [];
+  app.rateLimits = { status: 'available', buckets: [], resetAt: null };
+  app.app.state = 'streaming';
+  app.currentItemId = 'active';
+  app.currentTurnId = 'turn-a';
+  app.createOutputGroupForItem(active);
+  app.rpc = {
+    request: async (method, params, timeout) => {
+      requests.push([method, params, timeout]);
+      if (method === 'turn/steer') return await steer.promise;
+      if (method === 'turn/start') return { turn: { id: 'turn-b' } };
+      return {};
+    },
+  };
+
+  await app.sendComposerNow('/think use the backend state first');
+  const action = app.undoActions[0];
+  const result = await app.sendComposerNow('/think!');
+
+  assert.deepEqual(result, { ok: true, clearComposer: true });
+  assert.equal(action.status, 'promoted');
+  assert.equal(app.undoActions.length, 0);
+  assert.deepEqual(requests.map(([method]) => method), ['turn/steer', 'turn/interrupt', 'turn/start']);
+  assert.equal(requests[1][1].turnId, 'turn-a');
+  assert.equal(requests[2][1].input[0].text, 'use the backend state first');
+  assert.match(app.output.find((entry) => entry.type === 'user-note')?.text || '', /Status: force requested/);
+
+  steer.resolve({});
+  await Promise.resolve();
+  assert.match(app.output.find((entry) => entry.type === 'user-note')?.text || '', /Status: force requested/);
+});
+
+test('/think! without text rejects a steer that was already sent', async () => {
+  const active = item('active', 'sent');
+  const app = makeAppWithQueue([active]);
+  const requests = [];
+  app.rateLimits = { status: 'available', buckets: [], resetAt: null };
+  app.app.state = 'streaming';
+  app.currentItemId = 'active';
+  app.currentTurnId = 'turn-active';
+  app.createOutputGroupForItem(active);
+  app.rpc = { request: async (...args) => { requests.push(args); return {}; } };
+
+  await app.sendComposerNow('/think already sent steer');
+  await Promise.resolve();
+  const result = await app.sendComposerNow('/think!');
+
+  assert.equal(result.ok, false);
+  assert.equal(result.commandError, true);
+  assert.match(result.message, /already sent/);
+  assert.deepEqual(requests.map(([method]) => method), ['turn/steer']);
+  assert.equal(app.undoActions[0].status, 'sent');
+});
+
+test('/think! without text does not consume pending undo actions', async () => {
+  const active = item('active', 'sent');
+  const pending = item('pending');
+  const app = makeAppWithQueue([active, pending]);
+  const steer = deferred();
+  const requests = [];
+  app.rateLimits = { status: 'available', buckets: [], resetAt: null };
+  app.app.state = 'streaming';
+  app.currentItemId = 'active';
+  app.currentTurnId = 'turn-active';
+  app.createOutputGroupForItem(active);
+  app.rpc = {
+    request: async (method, params, timeout) => {
+      requests.push([method, params, timeout]);
+      if (method === 'turn/steer') return await steer.promise;
+      return {};
+    },
+  };
+
+  await app.sendComposerNow('/think keep waiting');
+  app.recordPendingUndo(pending);
+  const result = await app.sendComposerNow('/think!');
+
+  assert.equal(result.ok, false);
+  assert.equal(result.commandError, true);
+  assert.match(result.message, /No waiting steer/);
+  assert.deepEqual(requests.map(([method]) => method), ['turn/steer']);
+  assert.deepEqual(app.queue.map((queueItem) => queueItem.id), ['active', 'pending']);
+  assert.deepEqual(app.undoActions.map((action) => action.type), ['steer', 'pending']);
+});
+
+test('/think! without text keeps waiting steer until risky interrupt is confirmed', async () => {
+  const active = item('active', 'sent');
+  const app = makeAppWithQueue([active]);
+  const steer = deferred();
+  const requests = [];
+  app.rateLimits = { status: 'limited', buckets: [], resetAt: null };
+  app.app.state = 'streaming';
+  app.currentItemId = 'active';
+  app.currentTurnId = 'turn-active';
+  app.currentTurnResolve = () => {};
+  app.createOutputGroupForItem(active);
+  app.rpc = {
+    request: async (method, params, timeout) => {
+      requests.push([method, params, timeout]);
+      if (method === 'turn/steer') return await steer.promise;
+      return {};
+    },
+  };
+
+  await app.sendComposerNow('/think wait for confirmation');
+  const action = app.undoActions[0];
+  const prompt = await app.sendComposerNow('/think!');
+
+  assert.equal(prompt.ok, false);
+  assert.equal(prompt.needsConfirmation, true);
+  assert.equal(prompt.promoteSteerActionId, action.id);
+  assert.equal(action.status, 'waiting');
+  assert.equal(app.undoActions.length, 1);
+  assert.deepEqual(requests.map(([method]) => method), ['turn/steer']);
+
+  const confirmed = await app.forceSteerActivePrompt(prompt.text, { confirmed: true, promoteSteerActionId: prompt.promoteSteerActionId });
+
+  assert.equal(confirmed.ok, true);
+  assert.equal(action.status, 'promoted');
+  assert.equal(app.undoActions.length, 0);
+  assert.deepEqual(requests.map(([method]) => method), ['turn/steer', 'turn/interrupt']);
+  assert.equal(app.queue.at(-1).text, 'wait for confirmation');
+  assert.equal(app.queue.at(-1).status, 'pending');
+});
+
+test('/think! confirmation refuses to promote a steer that was sent meanwhile', async () => {
+  const active = item('active', 'sent');
+  const app = makeAppWithQueue([active]);
+  const steer = deferred();
+  const requests = [];
+  app.rateLimits = { status: 'limited', buckets: [], resetAt: null };
+  app.app.state = 'streaming';
+  app.currentItemId = 'active';
+  app.currentTurnId = 'turn-active';
+  app.createOutputGroupForItem(active);
+  app.rpc = {
+    request: async (method, params, timeout) => {
+      requests.push([method, params, timeout]);
+      if (method === 'turn/steer') return await steer.promise;
+      return {};
+    },
+  };
+
+  await app.sendComposerNow('/think wait but maybe send');
+  const action = app.undoActions[0];
+  const prompt = await app.sendComposerNow('/think!');
+  action.status = 'sent';
+  action.sentAt = new Date().toISOString();
+
+  const confirmed = await app.forceSteerActivePrompt(prompt.text, { confirmed: true, promoteSteerActionId: prompt.promoteSteerActionId });
+
+  assert.equal(confirmed.ok, false);
+  assert.match(confirmed.message, /already sent/);
+  assert.deepEqual(requests.map(([method]) => method), ['turn/steer']);
+  assert.equal(active.status, 'sent');
+});
+
 test('sendComposerNow rejects steering when there is no active turn', async () => {
   const app = makeAppWithQueue([]);
   app.rpc = { request: async () => { throw new Error('should not send'); } };

@@ -51,6 +51,26 @@ function activeItemOrNull(ctx) {
   return ctx.currentItem ? ctx.currentItem() : null;
 }
 
+function promoteSteerUndoAction(ctx, actionId) {
+  if (!actionId) return { ok: true, action: null };
+  if (!Array.isArray(ctx.undoActions)) return { ok: false, message: 'Waiting steer is no longer available.' };
+  const action = ctx.undoActions.find((candidate) => candidate.id === actionId);
+  if (!action || action.type !== 'steer') return { ok: false, message: 'Waiting steer is no longer available.' };
+  if (action.status !== 'waiting') {
+    return {
+      ok: false,
+      message: action.status === 'sent'
+        ? 'Steer was already sent and cannot be converted to /think!.'
+        : 'Waiting steer is no longer available.',
+    };
+  }
+
+  action.status = 'promoted';
+  ctx.updateSteerNote?.(action, 'force requested', { text: action.text });
+  ctx.forgetUndoAction?.(action);
+  return { ok: true, action };
+}
+
 module.exports = {
   steerConfirmationMessage() {
     return FORCE_STEER_CONFIRM_MESSAGE;
@@ -112,7 +132,7 @@ module.exports = {
       expectedTurnId: turnId,
       input: steerInput(text),
     }, 3000).then(() => {
-      if (action?.status === 'canceled') return;
+      if (action?.status === 'canceled' || action?.status === 'promoted') return;
       const sentAt = nowIso();
       if (action) {
         action.status = 'sent';
@@ -121,7 +141,7 @@ module.exports = {
       this.updateSteerNote(note?.id, 'sent', { text, sentAt });
       this.broadcastAll();
     }).catch((err) => {
-      if (action?.status === 'canceled') return;
+      if (action?.status === 'canceled' || action?.status === 'promoted') return;
       if (activeTurnNotSteerable(err)) {
         if (action) {
           action.status = 'not steerable';
@@ -154,8 +174,12 @@ module.exports = {
         confirmAction: 'force-steer',
         message: FORCE_STEER_CONFIRM_MESSAGE,
         text,
+        promoteSteerActionId: options.promoteSteerActionId || null,
       };
     }
+
+    const promoted = promoteSteerUndoAction(this, options.promoteSteerActionId);
+    if (!promoted.ok) return { ok: false, message: promoted.message };
 
     const item = activeItemOrNull(this);
     const originalTurnId = this.currentTurnId;

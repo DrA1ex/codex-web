@@ -75,7 +75,7 @@ test('standalone commands are parsed exactly', () => {
   assert.equal(compact.command, '/compact');
 });
 
-test('active prompt steering commands parse payloads and reject empty bodies', () => {
+test('active prompt steering commands parse payloads and support no-arg force promotion', () => {
   assert.deepEqual(parseSteerCommand('/think focus on queue state'), {
     ok: true,
     command: '/think',
@@ -95,10 +95,10 @@ test('active prompt steering commands parse payloads and reject empty bodies', (
     message: '/think needs a note to send to the active prompt.',
   });
   assert.deepEqual(parseSteerCommand('/think!   '), {
-    ok: false,
+    ok: true,
     command: '/think!',
     mode: 'force',
-    message: '/think! needs a follow-up prompt.',
+    text: '',
   });
   assert.equal(parseSteerCommand('/pause'), null);
   assert.equal(parseSteerCommand('hello'), null);

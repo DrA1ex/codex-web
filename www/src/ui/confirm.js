@@ -7,7 +7,7 @@ const CONFIRM_ACTIONS = {
   interrupt: () => api('/api/control/interrupt').then((result) => {
     if (result.message) openMessage('Interrupt', result.message);
   }),
-  'force-steer': ({ text }) => api('/api/control/steer-force', { text }).then((result) => {
+  'force-steer': ({ text, promoteSteerActionId }) => api('/api/control/steer-force', { text, promoteSteerActionId }).then((result) => {
     if (result.message) openMessage('Interrupt', result.message);
     return getState();
   }),
