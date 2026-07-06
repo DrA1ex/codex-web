@@ -228,6 +228,8 @@ test('loadPreviousOutputGroup prepends one session turn and tracks remaining his
   assert.equal(app.outputGroups.length, 1);
   assert.equal(app.outputGroups[0].turnId, 'turn-new');
   assert.equal(app.outputGroups[0].status, 'completed');
+  assert.equal(app.output[0].source, 'history');
+  assert.equal(app.output[1].source, 'history');
   assert.match(app.output[0].text, /New prompt/);
   assert.match(app.output[1].text, /New answer/);
 

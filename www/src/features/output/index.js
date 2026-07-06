@@ -262,10 +262,49 @@ function outputIsNearBottom() {
   return outputEl.scrollHeight - outputEl.scrollTop - outputEl.clientHeight < 30;
 }
 
+function outputContentKey() {
+  const lines = state.snap?.output || [];
+  return lines.map(outputLineKey).join('|');
+}
+
+function outputLineKey(line) {
+  return [
+    line.id || '',
+    line.type || '',
+    line.ts || '',
+    String(line.text || '').length,
+    String(line.tool?.output || '').length,
+    line.tool?.active ? 'tool-active' : '',
+    line.diff?.active ? 'diff-active' : '',
+  ].join(':');
+}
+
+function outputGroupById() {
+  const groups = new Map();
+  for (const group of state.snap?.outputGroups || []) {
+    if (group?.id) groups.set(group.id, group);
+  }
+  return groups;
+}
+
+function isHistoryOutputLine(line, groups) {
+  return line?.source === 'history' || groups.get(line?.groupId)?.source === 'history';
+}
+
+function liveOutputChanged(previousLineKeys) {
+  const groups = outputGroupById();
+  for (const line of state.snap?.output || []) {
+    const id = line?.id || '';
+    if (!id || isHistoryOutputLine(line, groups)) continue;
+    const nextKey = outputLineKey(line);
+    if (previousLineKeys[id] !== nextKey) return true;
+  }
+  return false;
+}
+
 export function updateOutputScrollState() {
-  const nextUnread = !outputIsNearBottom();
-  if (state.outputUnread === nextUnread) return;
-  state.outputUnread = nextUnread;
+  if (!outputIsNearBottom() || !state.outputUnread) return;
+  state.outputUnread = false;
   updateOutputJumpAction();
 }
 
@@ -279,12 +318,22 @@ export function renderOutput() {
   if (!outputEl) return;
 
   const wasAtBottom = outputIsNearBottom();
+  const previousContentKey = state.outputContentKey;
+  const previousLineKeys = state.outputLineKeys || Object.create(null);
+  const nextContentKey = outputContentKey();
+  const contentChanged = previousContentKey !== '' && previousContentKey !== nextContentKey;
+  const hasLiveOutputChange = contentChanged && liveOutputChanged(previousLineKeys);
   outputEl.innerHTML = `${renderOutputHistoryControl()}${renderGroupedOutput(state.snap?.output || [], state.snap?.outputGroups || [])}`;
+  state.outputContentKey = nextContentKey;
+  state.outputLineKeys = Object.create(null);
+  for (const line of state.snap?.output || []) {
+    if (line?.id) state.outputLineKeys[line.id] = outputLineKey(line);
+  }
 
   if (wasAtBottom) {
     outputEl.scrollTop = outputEl.scrollHeight;
     state.outputUnread = false;
-  } else {
+  } else if (hasLiveOutputChange) {
     state.outputUnread = true;
   }
   updateOutputJumpAction();

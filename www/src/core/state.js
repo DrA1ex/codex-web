@@ -32,6 +32,8 @@ export const state = {
   expandedOutputGroups: Object.create(null),
   outputHistoryLoading: false,
   outputUnread: false,
+  outputContentKey: '',
+  outputLineKeys: Object.create(null),
   activeQueueFilter: 'all',
   renderKeys: Object.create(null),
   lastNoticeKey: '',
