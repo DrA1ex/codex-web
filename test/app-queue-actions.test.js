@@ -145,6 +145,21 @@ test('undo and clear operations affect only expected queue items', async () => {
   assert.deepEqual(app.queue, []);
 });
 
+test('/undo without anything to undo writes a command error output block', async () => {
+  const app = makeAppWithQueue([]);
+
+  const result = await app.undoLast();
+
+  assert.equal(result.ok, false);
+  assert.equal(result.commandError, true);
+  assert.match(result.message, /No pending prompt to undo/);
+  const output = app.output.at(-1);
+  assert.equal(output.type, 'command');
+  assert.equal(output.command.status, 'error');
+  assert.equal(output.command.raw, '/undo');
+  assert.match(output.command.message, /No pending prompt to undo/);
+});
+
 test('sent steer younger than grace window reports command error then older undo continues', async () => {
   const pending = item('pending');
   const app = makeAppWithQueue([pending]);

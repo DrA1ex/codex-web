@@ -498,7 +498,13 @@ module.exports = {
 
     const result = undoLastPending(this.queue);
     this.queue = result.queue;
-    if (!result.item) return { ok: false, message: 'No pending prompt to undo' };
+    if (!result.item) {
+      return commandErrorResponse(this, {
+        command: '/undo',
+        raw: '/undo',
+        message: 'No pending prompt to undo.',
+      });
+    }
     await this.saveQueue();
     this.appendOutput(`[queue] undo #${result.item.id}`, 'system');
     this.broadcastAll();
