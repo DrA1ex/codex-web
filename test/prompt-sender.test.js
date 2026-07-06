@@ -5,6 +5,16 @@ const test = require('node:test');
 
 const { item, makeAppWithQueue } = require('./helpers');
 
+function deferred() {
+  let resolve;
+  let reject;
+  const promise = new Promise((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
+
 test('sendComposerNow creates a queue item and sends immediately only when idle', async () => {
   const app = makeAppWithQueue([]);
   app.rateLimits = { status: 'available', buckets: [], resetAt: null };
@@ -152,7 +162,55 @@ test('sendComposerNow steers active turn without changing queue', async () => {
   ]);
   const note = app.output.find((entry) => entry.type === 'user-note');
   assert.match(note?.text || '', /focus on the queue-state bug/);
+  assert.match(note?.text || '', /Status: (waiting to send|sent)/);
   assert.equal(note?.groupId, app.currentOutputGroupId);
+});
+
+test('sendComposerNow creates waiting steer note and undo action before rpc resolves', async () => {
+  const active = item('active', 'sent');
+  const app = makeAppWithQueue([active]);
+  const steer = deferred();
+  app.app.state = 'streaming';
+  app.currentItemId = 'active';
+  app.currentTurnId = 'turn-active';
+  app.createOutputGroupForItem(active);
+  app.rpc = { request: async () => await steer.promise };
+
+  const result = await app.sendComposerNow('/think stay on backend first');
+
+  assert.deepEqual(result, { ok: true, clearComposer: true });
+  const note = app.output.find((entry) => entry.type === 'user-note');
+  assert.match(note?.text || '', /Status: waiting to send/);
+  assert.equal(note?.steer?.status, 'waiting');
+  assert.equal(app.undoActions.length, 1);
+  assert.equal(app.undoActions[0].type, 'steer');
+  assert.equal(app.undoActions[0].status, 'waiting');
+});
+
+test('/undo cancels an unsent steer and leaves late rpc success ignored', async () => {
+  const active = item('active', 'sent');
+  const app = makeAppWithQueue([active]);
+  const steer = deferred();
+  app.app.state = 'streaming';
+  app.currentItemId = 'active';
+  app.currentTurnId = 'turn-active';
+  app.createOutputGroupForItem(active);
+  app.rpc = { request: async () => await steer.promise };
+
+  await app.sendComposerNow('/think cancel me');
+  const action = app.undoActions[0];
+  const undo = await app.undoLast();
+
+  assert.equal(undo.ok, true);
+  assert.equal(undo.clearComposer, true);
+  assert.equal(action.status, 'canceled');
+  assert.equal(app.undoActions.length, 0);
+  assert.match(app.output.find((entry) => entry.type === 'user-note')?.text || '', /Status: canceled/);
+  assert.match(app.output.at(-1)?.command?.message || '', /Steer canceled/);
+
+  steer.resolve({});
+  await Promise.resolve();
+  assert.match(app.output.find((entry) => entry.type === 'user-note')?.text || '', /Status: canceled/);
 });
 
 test('sendComposerNow rejects steering when there is no active turn', async () => {
@@ -184,14 +242,15 @@ test('sendComposerNow keeps not-steerable note visible without failing active it
   app.rpc = { request: async () => { throw err; } };
 
   const result = await app.sendComposerNow('/think wait for tool result');
+  await Promise.resolve();
 
-  assert.equal(result.ok, false);
-  assert.equal(result.steerForceAvailable, true);
+  assert.equal(result.ok, true);
   assert.equal(active.status, 'sent');
   assert.equal(app.app.state, 'streaming');
   const note = app.output.find((entry) => entry.type === 'user-note');
   assert.match(note?.text || '', /Status: not steerable/);
   assert.equal(note?.steer?.forceAvailable, true);
+  assert.equal(app.undoActions.length, 0);
 });
 
 test('force steering requires confirmation when limits are unavailable', async () => {

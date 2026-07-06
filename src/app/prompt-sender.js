@@ -166,6 +166,7 @@ module.exports = {
     this.queue.push(item);
 
     await this.saveQueue();
+    if (this.recordPendingUndo) this.recordPendingUndo(item);
     this.appendOutput(queueAddLabel(item), 'system');
     this.broadcastAll();
 

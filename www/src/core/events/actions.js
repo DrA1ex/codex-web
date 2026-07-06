@@ -1,6 +1,6 @@
 import { api, getState, isNetworkError, writeOutputError } from '#core/api';
 import { state } from '#core/state';
-import { addQueue, updateCounter } from '#features/composer';
+import { addQueue, handleComposerResponse, updateCounter } from '#features/composer';
 import { renderOutput } from '#features/output';
 import { clearQueueScrollRequest, renderQueue, requestQueueScroll } from '#features/queue';
 import { openConfirm, openMessage } from '#ui/confirm';
@@ -46,9 +46,9 @@ export function undoQueue() {
   setQueueMenuOpen(false);
   api('/api/queue/undo')
     .then((response) => {
-      if (state.composer && response.composerText !== undefined) state.composer.value = response.composerText;
-      if (response.message) openMessage('Queue', response.message);
+      handleComposerResponse(response);
       updateCounter();
+      getState().catch(reportError);
     })
     .catch(reportError);
 }

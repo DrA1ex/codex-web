@@ -185,6 +185,7 @@ module.exports = {
     const item = makeQueueItem(normalized);
     this.queue.push(item);
     await this.saveQueue();
+    if (this.recordPendingUndo) this.recordPendingUndo(item);
     this.app.state = this.app.state === 'done' ? 'watching' : this.app.state;
     this.appendOutput(queuedCommand ? `[queue] added #${item.id} · command ${queuedCommand}` : `[queue] added #${item.id} · ${item.lineCount} lines`, 'system');
     this.broadcastAll();
@@ -411,6 +412,48 @@ module.exports = {
   },
 
   async undoLast() {
+    if (!Array.isArray(this.undoActions)) this.undoActions = [];
+    while (this.undoActions.length) {
+      const action = this.undoActions.pop();
+      if (action?.type === 'pending') {
+        const item = this.undoActionQueueItem ? this.undoActionQueueItem(action) : null;
+        if (!item || !isPendingLikeStatus(item.status)) continue;
+
+        this.queue.splice(this.queue.indexOf(item), 1);
+        await this.saveQueue();
+        this.appendOutput(`[queue] undo #${item.id}`, 'system');
+        this.broadcastAll();
+        return { ok: true, composerText: item.text };
+      }
+
+      if (action?.type !== 'steer') continue;
+      const outputEntry = this.undoActionOutputEntry ? this.undoActionOutputEntry(action) : null;
+      if (!outputEntry) continue;
+
+      if (action.status === 'waiting') {
+        action.status = 'canceled';
+        if (this.updateSteerNote) this.updateSteerNote(action, 'canceled');
+        commandSuccess(this, { command: '/undo', raw: '/undo' }, 'Steer canceled.');
+        this.broadcastAll();
+        return { ok: true, clearComposer: true };
+      }
+
+      if (action.status === 'sent') {
+        if (this.undoSentSteerAgeMs(action) < this.STEER_SENT_GRACE_MS) {
+          const message = 'Steer was already sent and cannot be undone.';
+          commandFeedback(this, {
+            status: 'error',
+            title: 'Command error',
+            raw: '/undo',
+            message,
+          });
+          this.broadcastAll();
+          return { ok: false, clearComposer: false, commandError: true, message };
+        }
+        continue;
+      }
+    }
+
     const result = undoLastPending(this.queue);
     this.queue = result.queue;
     if (!result.item) return { ok: false, message: 'No pending prompt to undo' };

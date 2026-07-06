@@ -16,6 +16,18 @@ function steerInput(text) {
   return [{ type: 'text', text }];
 }
 
+function steerStatusLabel(status) {
+  if (status === 'waiting') return 'waiting to send';
+  return status || 'sent';
+}
+
+function steerNoteText(text, status = 'sent', extra = {}) {
+  const lines = ['[user-note]', text, `Status: ${steerStatusLabel(status)}`];
+  if (extra.error) lines.push(`Error: ${extra.error}`);
+  if (extra.action) lines.push(`Action: ${extra.action}`);
+  return lines.join('\n');
+}
+
 function forceTurnStartParams(ctx, text) {
   const params = {
     threadId: ctx.app.sessionId,
@@ -45,16 +57,38 @@ module.exports = {
   },
 
   appendSteerNote(text, status = 'sent', extra = {}) {
-    const lines = ['[user-note]', text];
-    if (status !== 'sent') lines.push(`Status: ${status}`);
-    if (extra.action) lines.push(`Action: ${extra.action}`);
-    return this.appendOutput(lines.join('\n'), 'user-note', false, this.currentOutputMeta({
+    return this.appendOutput(steerNoteText(text, status, extra), 'user-note', false, this.currentOutputMeta({
       steer: {
         status,
         text,
         forceAvailable: Boolean(extra.forceAvailable),
+        sentAt: extra.sentAt || null,
+        canceledAt: extra.canceledAt || null,
+        error: extra.error || null,
       },
     }));
+  },
+
+  updateSteerNote(actionOrOutputId, status, extra = {}) {
+    const outputId = typeof actionOrOutputId === 'string' ? actionOrOutputId : actionOrOutputId?.outputId;
+    const entry = this.output.find((candidate) => candidate.id === outputId);
+    if (!entry) return null;
+
+    const text = extra.text || entry.steer?.text || actionOrOutputId?.text || '';
+    const canceledAt = extra.canceledAt || (status === 'canceled' ? nowIso() : entry.steer?.canceledAt || null);
+    entry.text = steerNoteText(text, status, extra);
+    entry.ts = nowIso();
+    entry.steer = {
+      ...(entry.steer || {}),
+      status,
+      text,
+      forceAvailable: Boolean(extra.forceAvailable),
+      sentAt: extra.sentAt || entry.steer?.sentAt || null,
+      canceledAt,
+      error: extra.error || null,
+    };
+    if (actionOrOutputId && typeof actionOrOutputId === 'object') actionOrOutputId.canceledAt = canceledAt;
+    return entry;
   },
 
   async steerActivePrompt(text) {
@@ -63,28 +97,49 @@ module.exports = {
     }
 
     const turnId = this.currentTurnId;
-    try {
-      await this.rpc.request('turn/steer', {
-        threadId: this.app.sessionId,
-        expectedTurnId: turnId,
-        input: steerInput(text),
-      }, 3000);
-      this.appendSteerNote(text);
-      this.broadcastAll();
-      return { ok: true, clearComposer: true };
-    } catch (err) {
-      if (activeTurnNotSteerable(err)) {
-        this.appendSteerNote(text, 'not steerable', { forceAvailable: true, action: 'Force send' });
-        this.broadcastAll();
-        return {
-          ok: false,
-          message: 'The active turn is not steerable right now.',
-          steerForceAvailable: true,
-          text,
-        };
+    const threadId = this.app.sessionId;
+    const note = this.appendSteerNote(text, 'waiting');
+    const action = this.recordSteerUndo ? this.recordSteerUndo({
+      outputId: note?.id || null,
+      turnId,
+      threadId,
+      text,
+    }) : null;
+    this.broadcastAll();
+
+    this.rpc.request('turn/steer', {
+      threadId,
+      expectedTurnId: turnId,
+      input: steerInput(text),
+    }, 3000).then(() => {
+      if (action?.status === 'canceled') return;
+      const sentAt = nowIso();
+      if (action) {
+        action.status = 'sent';
+        action.sentAt = sentAt;
       }
-      return { ok: false, message: err.message || String(err) };
-    }
+      this.updateSteerNote(note?.id, 'sent', { text, sentAt });
+      this.broadcastAll();
+    }).catch((err) => {
+      if (action?.status === 'canceled') return;
+      if (activeTurnNotSteerable(err)) {
+        if (action) {
+          action.status = 'not steerable';
+          this.forgetUndoAction?.(action);
+        }
+        this.updateSteerNote(note?.id, 'not steerable', { text, forceAvailable: true, action: 'Force send' });
+        this.broadcastAll();
+        return;
+      }
+      if (action) {
+        action.status = 'failed';
+        this.forgetUndoAction?.(action);
+      }
+      this.updateSteerNote(note?.id, 'failed', { text, error: err.message || String(err) });
+      this.broadcastAll();
+    });
+
+    return { ok: true, clearComposer: true };
   },
 
   async forceSteerActivePrompt(text, options = {}) {

@@ -27,6 +27,7 @@ const eventMethods = require('./modules/events');
 const outputMethods = require('./modules/output');
 const queueActionMethods = require('./modules/queue-actions');
 const httpMethods = require('./modules/http');
+const undoActionMethods = require('./undo-actions');
 
 class CodexLimitWatchApp {
   constructor(opts) {
@@ -68,6 +69,7 @@ class CodexLimitWatchApp {
     this.turnCompletionStatus = null;
     this.forceSteer = null;
     this.intentionalInterrupts = new Map();
+    this.undoActions = [];
     this.lastComposerText = '';
 
     this.sessionsLoaded = false;
@@ -161,6 +163,7 @@ Object.assign(
   outputMethods,
   queueActionMethods,
   httpMethods,
+  undoActionMethods,
 );
 
 module.exports = { CodexLimitWatchApp };

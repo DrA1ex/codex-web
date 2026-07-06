@@ -130,6 +130,37 @@ function renderCommandToolLine(line) {
   `;
 }
 
+function steerStatusLabel(status) {
+  if (status === 'waiting') return 'waiting';
+  if (status === 'not steerable') return 'not steerable';
+  return status || 'sent';
+}
+
+function steerStatusClass(status) {
+  if (status === 'sent' || status === 'force sent') return 'sent';
+  if (status === 'waiting') return 'waiting';
+  if (status === 'canceled') return 'canceled';
+  if (status === 'not steerable') return 'not-steerable';
+  if (status === 'failed') return 'failed';
+  return 'unknown';
+}
+
+function renderUserNoteLine(line, meta) {
+  const status = line.steer?.status || 'sent';
+  const action = line.steer?.forceAvailable
+    ? `<button type="button" class="out-inline-action" data-force-steer="${esc(line.id || '')}">Force send</button>`
+    : '';
+
+  return `
+    <div class="out-line user-note ${esc(steerStatusClass(status))}">
+      <span class="out-label">${esc(meta.label)}</span>
+      <span class="out-body">${esc(meta.body)}</span>
+      <span class="out-note-status">${esc(steerStatusLabel(status))}</span>
+      ${action}
+    </div>
+  `;
+}
+
 function groupStatusLabel(group) {
   if (group.status === 'active') return 'running';
   if (group.status === 'failed') return 'failed';
@@ -232,19 +263,16 @@ function renderOutputLine(line) {
   if (type === 'command') return renderCommandFeedbackLine(line);
   if (type === 'diff') return renderDiffLine(line, meta);
   if (type === 'tool' && line.tool?.kind === 'command') return renderCommandToolLine(line);
+  if (type === 'user-note') return renderUserNoteLine(line, meta);
 
   const body = BLOCK_OUTPUT_TYPES.has(type)
     ? `<pre class="out-body">${esc(meta.body)}</pre>`
     : `<span class="out-body">${esc(meta.body)}</span>`;
-  const action = type === 'user-note' && line.steer?.forceAvailable
-    ? `<button type="button" class="out-inline-action" data-force-steer="${esc(line.id || '')}">Force send</button>`
-    : '';
 
   return `
     <div class="out-line ${esc(type)}">
       <span class="out-label">${esc(meta.label)}</span>
       ${body}
-      ${action}
     </div>
   `;
 }
@@ -276,6 +304,9 @@ function outputLineKey(line) {
     String(line.tool?.output || '').length,
     line.tool?.active ? 'tool-active' : '',
     line.diff?.active ? 'diff-active' : '',
+    line.steer?.status || '',
+    line.steer?.sentAt || '',
+    line.steer?.canceledAt || '',
   ].join(':');
 }
 

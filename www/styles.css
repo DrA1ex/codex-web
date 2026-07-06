@@ -1479,6 +1479,36 @@ textarea:focus {
     color: var(--output-body-strong);
 }
 
+.out-note-status {
+    justify-self: start;
+    align-self: start;
+    padding: 2px 7px;
+    border: 1px solid var(--border-soft);
+    border-radius: 999px;
+    color: var(--output-system);
+    background: var(--surface-soft);
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+}
+
+.out-line.user-note.waiting .out-note-status {
+    color: var(--warn);
+}
+
+.out-line.user-note.sent .out-note-status {
+    color: var(--ok);
+}
+
+.out-line.user-note.canceled .out-note-status,
+.out-line.user-note.not-steerable .out-note-status {
+    color: var(--output-system);
+}
+
+.out-line.user-note.failed .out-note-status {
+    color: var(--danger);
+}
+
 .out-inline-action {
     justify-self: start;
     min-height: 28px;

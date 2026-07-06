@@ -179,12 +179,13 @@ function renderControlState(app, counts = {}) {
   const hasSession = Boolean(app.sessionId);
   const pending = counts.pending || 0;
   const completed = counts.completed || 0;
+  const canUndo = app.canUndo !== undefined ? Boolean(app.canUndo) : pending > 0;
 
-  setButtonState('undoBtn', false, pending === 0);
-  setButtonState('undoMenuBtn', false, pending === 0);
+  setButtonState('undoBtn', false, !canUndo);
+  setButtonState('undoMenuBtn', false, !canUndo);
   setButtonState('clearBtn', false, pending === 0);
   setButtonState('clearCompletedBtn', false, completed === 0);
-  setButtonState('queueMenuBtn', pending === 0 && completed === 0, false);
+  setButtonState('queueMenuBtn', !canUndo && pending === 0 && completed === 0, false);
   setButtonState('pauseBtn', !(hasSession && app.canPause), false);
   setButtonState('resumeBtn', !(hasSession && app.canResume), false);
   setButtonState('scheduleBtn', !app.canScheduleQueue, false);

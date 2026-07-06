@@ -155,6 +155,7 @@ module.exports = {
         canResume: !!this.app.sessionId && (canResumePaused || canResumeManualContinuation),
         canChangeSession: this.canChangeSession(),
         canScheduleQueue: this.canScheduleQueue(),
+        canUndo: this.canUndoAction ? this.canUndoAction() : hasPendingQueue,
       },
       sessions: this.sessions,
       queue,

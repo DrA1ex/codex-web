@@ -5,6 +5,14 @@ const test = require('node:test');
 
 const { item, makeAppWithQueue } = require('./helpers');
 
+function addSentSteerAction(app, text, sentAt = new Date().toISOString()) {
+  const note = app.appendSteerNote(text, 'sent', { sentAt });
+  const action = app.recordSteerUndo({ outputId: note.id, turnId: 'turn-active', threadId: app.app.sessionId, text });
+  action.status = 'sent';
+  action.sentAt = sentAt;
+  return action;
+}
+
 test('addPrompt normalizes CRLF text, executes immediate commands, and queues queue commands', async () => {
   const app = makeAppWithQueue([]);
   const commands = [];
@@ -135,6 +143,83 @@ test('undo and clear operations affect only expected queue items', async () => {
 
   await app.clearCompleted();
   assert.deepEqual(app.queue, []);
+});
+
+test('sent steer younger than grace window reports command error then older undo continues', async () => {
+  const pending = item('pending');
+  const app = makeAppWithQueue([pending]);
+  app.recordPendingUndo(pending);
+  addSentSteerAction(app, 'already sent');
+
+  const blocked = await app.undoLast();
+
+  assert.equal(blocked.ok, false);
+  assert.equal(blocked.commandError, true);
+  assert.match(blocked.message, /already sent/);
+  assert.deepEqual(app.queue.map((queueItem) => queueItem.id), ['pending']);
+  assert.equal(app.output.at(-1).type, 'command');
+  assert.equal(app.output.at(-1).command.status, 'error');
+
+  const pendingUndo = await app.undoLast();
+  assert.equal(pendingUndo.ok, true);
+  assert.equal(pendingUndo.composerText, 'Prompt pending');
+  assert.deepEqual(app.queue, []);
+});
+
+test('sent steer older than grace window is skipped and pending undo works', async () => {
+  const pending = item('pending');
+  const app = makeAppWithQueue([pending]);
+  app.recordPendingUndo(pending);
+  addSentSteerAction(app, 'old steer', new Date(Date.now() - 31_000).toISOString());
+
+  const result = await app.undoLast();
+
+  assert.equal(result.ok, true);
+  assert.equal(result.composerText, 'Prompt pending');
+  assert.deepEqual(app.queue, []);
+  assert.equal(app.output.some((entry) => entry.type === 'command' && entry.command?.status === 'error'), false);
+});
+
+test('mixed undo order handles steer, pending, steer', async () => {
+  const app = makeAppWithQueue([]);
+  const firstNote = app.appendSteerNote('first steer', 'waiting');
+  const firstSteer = app.recordSteerUndo({ outputId: firstNote.id, turnId: 'turn-1', threadId: app.app.sessionId, text: 'first steer' });
+
+  const pending = item('pending');
+  app.queue.push(pending);
+  app.recordPendingUndo(pending);
+
+  const secondNote = app.appendSteerNote('second steer', 'waiting');
+  const secondSteer = app.recordSteerUndo({ outputId: secondNote.id, turnId: 'turn-2', threadId: app.app.sessionId, text: 'second steer' });
+
+  const undoSecond = await app.undoLast();
+  assert.equal(undoSecond.ok, true);
+  assert.equal(secondSteer.status, 'canceled');
+  assert.match(app.output.find((entry) => entry.id === secondNote.id)?.text || '', /Status: canceled/);
+
+  const undoPending = await app.undoLast();
+  assert.equal(undoPending.composerText, 'Prompt pending');
+  assert.deepEqual(app.queue, []);
+
+  const undoFirst = await app.undoLast();
+  assert.equal(undoFirst.ok, true);
+  assert.equal(firstSteer.status, 'canceled');
+  assert.match(app.output.find((entry) => entry.id === firstNote.id)?.text || '', /Status: canceled/);
+});
+
+test('undo action stack keeps only newest five actions', () => {
+  const app = makeAppWithQueue([]);
+  for (let index = 1; index <= 6; index += 1) {
+    app.recordUndoAction({ type: 'pending', queueItemId: `item-${index}` });
+  }
+
+  assert.deepEqual(app.undoActions.map((action) => action.queueItemId), [
+    'item-2',
+    'item-3',
+    'item-4',
+    'item-5',
+    'item-6',
+  ]);
 });
 
 test('updateQueueItem handles edit, duplicate, retry, completed, status, and sendNow transitions', async () => {

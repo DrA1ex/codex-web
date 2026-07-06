@@ -116,8 +116,8 @@ const COMMAND_REGISTRY = [
   {
     name: '/undo',
     argumentHint: '',
-    shortDescription: 'Restore the last pending prompt to the composer.',
-    details: 'Removes the newest pending queue item and puts its text back into the composer so it can be edited or sent again. It does not affect running or completed items.',
+    shortDescription: 'Undo the latest queue add or cancel a waiting steer.',
+    details: 'Walks the last few undoable actions. Pending queue additions are removed and restored to the composer. Waiting /think notes are canceled before the steer request is accepted. Already-sent steers cannot be undone.',
     examples: ['/undo'],
     category: 'Queue',
     execution: 'backend-executed',

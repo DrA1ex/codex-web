@@ -33,7 +33,7 @@ function applyComposerResponse(response) {
   updateAutocomplete();
 }
 
-function handleComposerResponse(response) {
+export function handleComposerResponse(response) {
   if (response.help?.commands) openHelp(response.help.commands);
   if (response.openScheduleModal) openScheduleModal();
   applyComposerResponse(response);
