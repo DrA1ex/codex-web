@@ -23,6 +23,35 @@ const {resolveApiRoute} = require('../../http/api-routes');
 const path = require('node:path');
 const {TEXT_TYPES, BINARY_TYPES} = require('../../shared/config');
 
+const MAX_SSE_BUFFER_BYTES = 1024 * 1024;
+
+function closeSseClient(ctx, client) {
+  if (!client || client.closed) return;
+  client.closed = true;
+  ctx.clients.delete(client);
+  try { client.res.end(); } catch (_) {}
+  ctx.syncClientCount();
+}
+
+function flushSseClient(ctx, client) {
+  if (!client || client.closed) return;
+  client.blocked = false;
+  while (client.queue.length) {
+    const chunk = client.queue.shift();
+    client.queuedBytes -= Buffer.byteLength(chunk);
+    try {
+      if (client.res.write(chunk) === false) {
+        client.blocked = true;
+        client.res.once('drain', () => flushSseClient(ctx, client));
+        return;
+      }
+    } catch (_) {
+      closeSseClient(ctx, client);
+      return;
+    }
+  }
+}
+
 module.exports = {
   async handleHttp(req, res) {
     try {
@@ -97,14 +126,18 @@ module.exports = {
       'X-Accel-Buffering': 'no',
     });
 
-    res.write(': connected\n\n');
-
-    const client = {res};
+    const client = { res, blocked: false, queue: [], queuedBytes: 0, closed: false };
+    if (res.write(': connected\n\n') === false) {
+      client.blocked = true;
+      res.once('drain', () => flushSseClient(this, client));
+    }
     this.clients.add(client);
     this.syncClientCount();
     this.sendSse(client, 'state', this.snapshot());
 
     req.on('close', () => {
+      if (client.closed) return;
+      client.closed = true;
       this.clients.delete(client);
       this.syncClientCount();
       this.broadcast('state', this.snapshot());
@@ -123,10 +156,17 @@ module.exports = {
 
   snapshot() {
     const counts = countQueue(this.queue);
+    const archivedCompleted = Math.max(0, Number(this.completedArchiveTotal) || 0);
+    counts.completed = (counts.completed || 0) + archivedCompleted;
+    counts.total = (counts.total || 0) + archivedCompleted;
     const nextPending = this.queue.find((item) => isPendingLikeStatus(item.status)) || null;
     const completedArchive = this.completedArchiveSnapshot ? this.completedArchiveSnapshot() : { items: [], hasMore: false, cursor: null, totalCompleted: 0 };
-    const completedArchiveIds = new Set((completedArchive.items || []).map((item) => item.id));
-    const queue = this.queue.filter((item) => item.status !== 'completed' || completedArchiveIds.has(item.id));
+    const queue = this.completedArchivePath
+      ? this.queue
+      : [
+          ...this.queue.filter((item) => item.status !== 'completed'),
+          ...(completedArchive.items || []),
+        ];
     const manualPromptActive = !!(this.currentManualSend && (this.currentItemId || this.currentTurnId));
     const hasPendingQueue = this.queue.some((item) => isPendingLikeStatus(item.status));
     const hasScheduledQueue = !!this.app.scheduledRunAt;
@@ -166,6 +206,7 @@ module.exports = {
       rateLimits: this.rateLimits,
       limitResetRequest: this.currentLimitResetRequest ? this.currentLimitResetRequest() : null,
       approval: this.approval,
+      outputSequence: this.outputSequence || 0,
       debug: this.opts.debug
              ? this.debug
              : {connectedBrowserClients: this.debug.connectedBrowserClients},
@@ -181,11 +222,27 @@ module.exports = {
   },
 
   sendSse(client, event, data) {
+    if (!client || client.closed) return false;
+    const chunk = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
+    if (client.blocked) {
+      const bytes = Buffer.byteLength(chunk);
+      if (client.queuedBytes + bytes > MAX_SSE_BUFFER_BYTES) {
+        closeSseClient(this, client);
+        return false;
+      }
+      client.queue.push(chunk);
+      client.queuedBytes += bytes;
+      return true;
+    }
     try {
-      client.res.write(`event: ${event}\n`);
-      client.res.write(`data: ${JSON.stringify(data)}\n\n`);
+      if (client.res.write(chunk) === false) {
+        client.blocked = true;
+        client.res.once('drain', () => flushSseClient(this, client));
+      }
+      return true;
     } catch (_) {
-      this.clients.delete(client);
+      closeSseClient(this, client);
+      return false;
     }
   },
 };

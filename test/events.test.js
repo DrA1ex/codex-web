@@ -196,6 +196,44 @@ test('handleNotification captures completed agent messages as group summaries', 
   assert.equal(app.output.length, 0);
 });
 
+test('handleNotification marks accepted steer submitted from matching userMessage client id', () => {
+  const app = makeAppWithQueue([]);
+  const note = app.appendSteerNote('queued steer', 'accepted', {
+    clientUserMessageId: 'client-steer-1',
+    acceptedAt: new Date().toISOString(),
+  });
+  const action = app.recordSteerUndo({
+    outputId: note.id,
+    turnId: 'turn-active',
+    threadId: app.app.sessionId,
+    text: 'queued steer',
+    clientUserMessageId: 'client-steer-1',
+  });
+  action.status = 'accepted';
+
+  app.handleNotification('item/started', {
+    item: {
+      type: 'userMessage',
+      clientId: 'other-client',
+      content: [{ text: 'other message' }],
+    },
+  });
+  assert.equal(action.status, 'accepted');
+  assert.equal(app.undoActions.length, 1);
+
+  app.handleNotification('item/started', {
+    item: {
+      type: 'userMessage',
+      clientId: 'client-steer-1',
+      content: [{ text: 'queued steer' }],
+    },
+  });
+
+  assert.equal(action.status, 'submitted');
+  assert.equal(app.output.find((entry) => entry.id === note.id)?.steer?.status, 'submitted');
+  assert.equal(app.undoActions.length, 0);
+});
+
 test('stale force steer state does not capture a normal later queue turn', () => {
   const app = makeAppWithQueue([]);
   const first = app.createOutputGroupForItem({ id: 'item-1', text: 'Interrupted prompt' });
@@ -207,8 +245,9 @@ test('stale force steer state does not capture a normal later queue turn', () =>
     outputGroupId: first.id,
   };
   const second = app.createOutputGroupForItem({ id: 'item-2', text: 'Next prompt' });
+  app.turnCoordinator.begin({ threadId: app.app.sessionId, itemId: 'item-2', outputGroupId: second.id });
 
-  app.handleNotification('turn/started', { turn: { id: 'turn-b' } });
+  app.handleNotification('turn/started', { threadId: app.app.sessionId, turn: { id: 'turn-b' } });
 
   assert.equal(app.currentOutputGroupId, second.id);
   assert.equal(app.output.at(-1).groupId, second.id);

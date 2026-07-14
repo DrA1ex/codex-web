@@ -9,6 +9,7 @@ import {
 } from '#core/api';
 import { attachEventHandlers } from '#core/events';
 import { sectionKey, update } from '#core/renderer';
+import { applyOutputPatch } from '#core/output-patch';
 import { initComposerUi, loadComposerCommands, updateCounter } from '#features/composer';
 import { renderOutput } from '#features/output';
 import { renderApproval } from '#ui/approval';
@@ -43,13 +44,26 @@ function attachEventStream() {
     update(JSON.parse(event.data));
   });
 
+  stream.addEventListener('outputPatch', (event) => {
+    markNetworkOnline();
+    if (!state.snap) return;
+    const result = applyOutputPatch(state.snap, JSON.parse(event.data));
+    if (result.gap) {
+      refreshStateSilently();
+      return;
+    }
+    if (!result.applied) return;
+    state.renderKeys.output = sectionKey('output', state.snap);
+    renderOutput();
+  });
+
+  // Compatibility with older servers during rolling upgrades.
   stream.addEventListener('output', (event) => {
     markNetworkOnline();
     if (!state.snap) return;
     const payload = JSON.parse(event.data);
-    if (Array.isArray(payload)) {
-      state.snap.output = payload;
-    } else {
+    if (Array.isArray(payload)) state.snap.output = payload;
+    else {
       state.snap.output = payload.output || [];
       state.snap.outputGroups = payload.outputGroups || [];
       state.snap.outputHistory = payload.outputHistory || state.snap.outputHistory || { hasMore: false };

@@ -7,7 +7,6 @@ const {
   movePendingToNext: movePendingToNextItem,
   undoLastPending,
   clearPending: clearPendingItems,
-  clearCompleted: clearCompletedItems,
   updateQueueItemData,
   removeQueueItem: removeQueueItemData,
   reorderPendingItem,
@@ -15,22 +14,6 @@ const {
 } = require('../../queue');
 const { commandByName, commandHelpPayload } = require('../commands');
 const { parseComposerCommand } = require('../command-parser');
-
-const COMPLETED_ARCHIVE_INITIAL_COUNT = 10;
-const COMPLETED_ARCHIVE_PAGE_SIZE = 50;
-
-function queueItemTime(item) {
-  const time = new Date(item?.finishedAt || item?.createdAt || 0).getTime();
-  return Number.isFinite(time) ? time : 0;
-}
-
-function completedQueueEntries(queue) {
-  return queue
-    .map((item, index) => ({ item, index, time: queueItemTime(item) }))
-    .filter((entry) => entry.item.status === 'completed')
-    .sort((left, right) => left.time - right.time || left.index - right.index);
-}
-
 
 function commandRaw(parsed, fallback) {
   return parsed?.raw || fallback || parsed?.command || '';
@@ -370,8 +353,8 @@ module.exports = {
     }
 
     if (action.status !== 'waiting') {
-      const message = action.status === 'sent'
-        ? 'Steer was already sent and cannot be converted to /think!.'
+      const message = action.status === 'accepted'
+        ? 'Steer was already accepted by app-server and cannot be converted to /think!.'
         : 'No waiting steer to force. Use /think! <text> to interrupt with a new correction.';
       return commandErrorResponse(this, {
         ...parsed,
@@ -480,9 +463,9 @@ module.exports = {
         return { ok: true, clearComposer: true };
       }
 
-      if (action.status === 'sent') {
-        if (this.undoSentSteerAgeMs(action) < this.STEER_SENT_GRACE_MS) {
-          const message = 'Steer was already sent and cannot be undone.';
+      if (action.status === 'accepted') {
+        if (this.undoAcceptedSteerAgeMs(action) < this.STEER_SENT_GRACE_MS) {
+          const message = 'Steer was already accepted by app-server and cannot be undone.';
           commandFeedback(this, {
             status: 'error',
             title: 'Command error',
@@ -520,20 +503,15 @@ module.exports = {
   },
 
   async clearCompleted() {
-    const result = clearCompletedItems(this.queue);
-    this.queue = result.queue;
-    await this.saveQueue();
-    this.appendOutput(`[queue] cleared ${result.removed} completed prompt(s)`, 'system');
+    const activeCompleted = this.queue.filter((item) => item.status === 'completed').length;
+    this.queue = this.queue.filter((item) => item.status !== 'completed');
+    await this.saveQueue({ skipArchive: true });
+    const archivedCompleted = typeof this.clearCompletedArchive === 'function'
+      ? await this.clearCompletedArchive()
+      : 0;
+    const removed = activeCompleted + archivedCompleted;
+    this.appendOutput(`[queue] cleared ${removed} completed prompt(s)`, 'system');
     this.broadcastAll();
-  },
-
-  completedArchiveSnapshot() {
-    return completedQueuePage(this.queue, null, COMPLETED_ARCHIVE_INITIAL_COUNT);
-  },
-
-  async loadCompletedArchivePage(body = {}) {
-    const before = body.before || null;
-    return completedQueuePage(this.queue, before, body.limit || COMPLETED_ARCHIVE_PAGE_SIZE);
   },
 
   async updateQueueItem(body) {

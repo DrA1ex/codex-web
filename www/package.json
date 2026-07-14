@@ -1,0 +1,25 @@
+{
+  "private": true,
+  "type": "module",
+  "imports": {
+    "#core/api": "./src/core/api.js",
+    "#core/bootstrap": "./src/core/bootstrap.js",
+    "#core/events": "./src/core/events.js",
+    "#core/output-patch": "./src/core/output-patch.js",
+    "#core/renderer": "./src/core/renderer.js",
+    "#core/state": "./src/core/state.js",
+    "#features/composer": "./src/features/composer/index.js",
+    "#features/output": "./src/features/output/index.js",
+    "#features/queue": "./src/features/queue/index.js",
+    "#ui/approval": "./src/ui/approval.js",
+    "#ui/confirm": "./src/ui/confirm.js",
+    "#ui/header": "./src/ui/header.js",
+    "#ui/help": "./src/ui/help.js",
+    "#ui/html": "./src/ui/html.js",
+    "#ui/limit-reset": "./src/ui/limit-reset.js",
+    "#ui/schedule": "./src/ui/schedule.js",
+    "#ui/sessions": "./src/ui/sessions.js",
+    "#utils/dom": "./src/utils/dom.js",
+    "#utils/format": "./src/utils/format.js"
+  }
+}

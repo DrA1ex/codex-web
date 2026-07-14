@@ -11,8 +11,8 @@ function timeMs(value) {
   return Number.isFinite(ms) ? ms : 0;
 }
 
-function sentSteerAgeMs(action, now = Date.now()) {
-  return now - timeMs(action?.sentAt);
+function acceptedSteerAgeMs(action, now = Date.now()) {
+  return now - timeMs(action?.acceptedAt);
 }
 
 module.exports = {
@@ -76,8 +76,8 @@ module.exports = {
     return this.undoActions.some((action) => {
       if (action?.type !== 'steer') return false;
       if (action.status === 'waiting') return Boolean(this.undoActionOutputEntry(action));
-      if (action.status === 'sent') {
-        return Boolean(this.undoActionOutputEntry(action)) && sentSteerAgeMs(action, now) < STEER_SENT_GRACE_MS;
+      if (action.status === 'accepted') {
+        return Boolean(this.undoActionOutputEntry(action)) && acceptedSteerAgeMs(action, now) < STEER_SENT_GRACE_MS;
       }
       return false;
     });
@@ -88,6 +88,6 @@ module.exports = {
     return this.hasRecentSteerUndoAction(now);
   },
 
-  undoSentSteerAgeMs: sentSteerAgeMs,
+  undoAcceptedSteerAgeMs: acceptedSteerAgeMs,
   STEER_SENT_GRACE_MS,
 };

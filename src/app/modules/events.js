@@ -15,30 +15,7 @@ const {
   humanApprovalResponse,
 } = require('../../codex/policies');
 const { nowIso, safeJson, truncate, asArray, maskSecrets } = require('../../shared/utils');
-
-function forceSteerInterruptedRecord(ctx, turnId, method, status, errMessage) {
-  if (turnId && ctx.intentionalInterrupts?.has(turnId)) {
-    return { turnId, record: ctx.intentionalInterrupts.get(turnId) };
-  }
-
-  if (
-    !turnId
-    && method === 'turn/failed'
-    && ctx.forceSteer
-    && (!ctx.forceSteer.replacementTurnId || /interrupt|cancel/i.test(errMessage || status || ''))
-  ) {
-    return {
-      turnId: null,
-      record: {
-        queueItemId: ctx.forceSteer.queueItemId || null,
-        outputGroupId: ctx.forceSteer.outputGroupId || null,
-        handled: false,
-      },
-    };
-  }
-
-  return null;
-}
+const { transitionQueueItem } = require('../../queue');
 
 function markOutputGroupActive(ctx, groupId) {
   const group = groupId ? ctx.useOutputGroup(groupId) : null;
@@ -91,35 +68,26 @@ module.exports = {
     }
     if (method === 'turn/started') {
       const turn = params.turn || params;
+      const correlation = this.turnCoordinator.correlateStarted(params);
+      if (!correlation.matched) {
+        this.debugLog('ignored uncorrelated turn/started', safeJson(maskSecrets(params)).slice(0, 500));
+        return;
+      }
       this.updateContextTokenCount(params);
-      const turnId = turn.id || turn.turnId || this.currentTurnId;
-      const isForceSteerReplacement = !!(
-        this.forceSteer?.outputGroupId
-        && turnId
-        && turnId !== this.forceSteer.originalTurnId
-        && !(this.forceSteer.interruptedTurnIds || []).includes(turnId)
-        && (
-          turnId === this.forceSteer.replacementTurnId
-          || (!this.forceSteer.replacementTurnId && this.forceSteer.awaitingReplacementTurn)
-        )
-      );
-      if (isForceSteerReplacement) {
-        markOutputGroupActive(this, this.forceSteer.outputGroupId);
-        if (!this.forceSteer.replacementTurnId) this.forceSteer.replacementTurnId = turnId;
-        this.forceSteer.awaitingReplacementTurn = false;
+      const turnId = correlation.turnId;
+      if (correlation.replacement) {
+        markOutputGroupActive(this, this.forceSteer?.outputGroupId);
       } else {
         const group = this.outputGroupForTurnId(turnId);
         if (group) this.useOutputGroup(group.id);
       }
-      this.currentTurnId = turnId;
-      this.updateCurrentOutputGroup({ turnId: this.currentTurnId || null, status: 'active' });
-      this.debug.lastTurnId = this.currentTurnId;
-      this.turnStarted = true;
+      this.updateCurrentOutputGroup({ turnId, status: 'active' });
+      this.debug.lastTurnId = turnId;
       const item = this.currentItem();
       if (item) {
-        item.status = 'sent';
-        this.recordQueueItemTurn(item, this.currentTurnId).catch(() => {});
-        this.saveQueue().catch(() => {});
+        transitionQueueItem(item, 'sent');
+        this.recordQueueItemTurn(item, turnId).catch((err) => this.debugLog('record turn failed', err.message));
+        this.saveQueue().catch((err) => this.debugLog('save queue after turn start failed', err.message));
       }
       this.app.state = 'streaming';
       this.appendOutput('[turn] started', 'turn');
@@ -128,53 +96,66 @@ module.exports = {
     }
     if (method === 'turn/completed' || method === 'turn/failed') {
       const turn = params.turn || params;
-      this.updateContextTokenCount(params);
-      const eventTurnId = turn.id || turn.turnId || params.turnId || null;
       const status = turn.status || (method === 'turn/failed' ? 'failed' : 'completed');
       const errMessage = turn?.error?.message || params?.error?.message || null;
-      const interrupted = forceSteerInterruptedRecord(this, eventTurnId, method, status, errMessage);
-      if (interrupted) {
-        markOutputGroupActive(this, interrupted.record.outputGroupId || this.forceSteer?.outputGroupId);
-        if (!interrupted.record.handled) {
+      const correlation = this.turnCoordinator.correlateTerminal(method, params, status, errMessage);
+      if (!correlation.matched) {
+        this.debugLog(`ignored uncorrelated ${method}`, safeJson(maskSecrets(params)).slice(0, 500));
+        return;
+      }
+      this.updateContextTokenCount(params);
+      if (correlation.ignored) {
+        const record = correlation.interrupted.record;
+        markOutputGroupActive(this, record.outputGroupId || this.forceSteer?.outputGroupId);
+        if (!record.handled) {
           this.appendOutput('[steer] Original turn interrupted', 'system');
-          interrupted.record.handled = true;
-          if (interrupted.turnId && this.intentionalInterrupts?.has(interrupted.turnId)) {
-            this.intentionalInterrupts.set(interrupted.turnId, interrupted.record);
+          record.handled = true;
+          if (correlation.interrupted.turnId && this.intentionalInterrupts.has(correlation.interrupted.turnId)) {
+            this.intentionalInterrupts.set(correlation.interrupted.turnId, record);
           }
-        }
-        if (this.forceSteer && !this.forceSteer.replacementTurnId && !this.forceSteer.awaitingReplacementTurn) {
-          this.forceSteer = null;
         }
         this.broadcastAll();
         return;
       }
+      const eventTurnId = correlation.turnId;
       const group = this.outputGroupForTurnId(eventTurnId);
       if (group) this.useOutputGroup(group.id);
-      this.turnCompletionSeen = true;
-      this.turnCompletionStatus = status;
       const item = this.currentItem();
       if (item) {
         item.finishedAt = nowIso();
-        item.status = status === 'completed' ? 'completed' : 'failed';
+        transitionQueueItem(item, status === 'completed' ? 'completed' : 'failed');
         item.error = errMessage;
-        this.saveQueue().catch(() => {});
+        this.saveQueue().catch((err) => this.debugLog('save queue after turn completion failed', err.message));
       }
       this.finishActiveOutputBlocks();
       this.appendOutput(status === 'completed' ? '[turn] completed' : `[turn] ${status}${errMessage ? ': ' + errMessage : ''}`, status === 'completed' ? 'turn' : 'error');
       this.finishCurrentOutputGroup(status === 'completed' ? 'completed' : 'failed', errMessage);
       this.tryReadSession().then(() => this.broadcastAll()).catch((err) => this.debugLog('refresh session title failed', err.message));
-      if (this.currentTurnResolve) this.currentTurnResolve();
       if (method === 'turn/completed' && this.currentQueueCommand === '/compact' && this.currentQueueCommandResolve) {
         this.currentQueueCommandResolve(params || {});
       }
       if (this.forceSteer?.replacementTurnId && eventTurnId === this.forceSteer.replacementTurnId) {
-        this.forceSteer = null;
+        this.turnCoordinator.finishForceSteer();
       }
       if (status !== 'completed') this.pause('Auto-send paused after turn failure. Type /resume after reviewing the error.');
       return;
     }
+    const isTurnScopedEvent = method === 'item/started'
+      || method === 'item/completed'
+      || method.includes('/delta')
+      || method.includes('Delta')
+      || method === 'turn/plan/updated'
+      || method === 'turn/diff/updated';
+    if (isTurnScopedEvent && !this.turnCoordinator.matchesScopedEvent(params, { allowUnscoped: true })) {
+      this.debugLog(`ignored uncorrelated ${method}`, safeJson(maskSecrets(params)).slice(0, 500));
+      return;
+    }
     if (method === 'item/started') {
       const item = params.item || params;
+      if (item.type === 'userMessage' && this.markSteerSubmittedFromUserMessage?.(item)) {
+        this.broadcastAll();
+        return;
+      }
       if (item.type === 'commandExecution') {
         this.appendCommandOutput(item);
         return;

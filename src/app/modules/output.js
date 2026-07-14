@@ -2,6 +2,7 @@
 
 const { MAX_OUTPUT_LINES, MAX_OUTPUT_TOTAL_CHARS } = require('../../shared/config');
 const { nowIso, randomId, asArray, truncate } = require('../../shared/utils');
+const { createOutputPatch } = require('../output-patch');
 const {
   canAppendOutput,
   limitOutputText,
@@ -13,8 +14,27 @@ module.exports = {
     return { output: this.output, outputGroups: this.outputGroups, outputHistory: this.outputHistoryPayload() };
   },
 
-  broadcastOutput() {
-    this.broadcast('output', this.outputPayload());
+  broadcastOutput(delay = 40) {
+    if (delay <= 0) return this.flushOutputBroadcast();
+    if (this.outputBroadcastTimer) return;
+    this.outputBroadcastTimer = setTimeout(() => {
+      this.outputBroadcastTimer = null;
+      this.flushOutputBroadcast();
+    }, delay);
+    if (typeof this.outputBroadcastTimer.unref === 'function') this.outputBroadcastTimer.unref();
+  },
+
+  flushOutputBroadcast() {
+    if (this.outputBroadcastTimer) {
+      clearTimeout(this.outputBroadcastTimer);
+      this.outputBroadcastTimer = null;
+    }
+    const payload = this.outputPayload();
+    this.outputSequence += 1;
+    const patch = createOutputPatch(this.lastOutputBroadcastPayload, payload, this.outputSequence);
+    this.lastOutputBroadcastPayload = JSON.parse(JSON.stringify(payload));
+    this.broadcast('outputPatch', patch);
+    return patch;
   },
 
   outputGroupTitle(item) {
@@ -29,6 +49,8 @@ module.exports = {
         sessionId,
         hasMore: !!sessionId,
         loadedTurnIds: new Set(),
+        turns: null,
+        cursorIndex: null,
       };
     }
     if (!(this.outputHistory.loadedTurnIds instanceof Set)) {
@@ -321,13 +343,17 @@ module.exports = {
     if (!history.sessionId) throw new Error('No Codex session selected');
     if (!history.hasMore) return { ok: true, loaded: false, hasMore: false };
 
-    const read = await this.rpc.request('thread/read', { threadId: history.sessionId, includeTurns: true }, 8000);
-    const turns = this.extractHistoryTurns(read);
+    if (!Array.isArray(history.turns)) {
+      const read = await this.rpc.request('thread/read', { threadId: history.sessionId, includeTurns: true }, 8000);
+      history.turns = this.extractHistoryTurns(read);
+      history.cursorIndex = history.turns.length - 1;
+    }
+    const turns = history.turns;
     const known = this.knownOutputTurnIds();
     let loaded = null;
     let loadedIndex = -1;
 
-    for (let index = turns.length - 1; index >= 0; index -= 1) {
+    for (let index = history.cursorIndex ?? turns.length - 1; index >= 0; index -= 1) {
       const turn = turns[index];
       const turnId = String(turn?.id || turn?.turnId || `index:${index}`);
       if (known.has(turnId)) continue;
@@ -349,14 +375,15 @@ module.exports = {
     }
 
     this.prependHistoryOutputGroup(loaded);
+    history.cursorIndex = loadedIndex - 1;
     history.loadedTurnIds.add(loaded.turnId);
     known.add(loaded.turnId);
     history.hasMore = turns.some((turn, index) => {
-      if (index >= loadedIndex) return false;
+      if (index > history.cursorIndex) return false;
       const turnId = String(turn?.id || turn?.turnId || `index:${index}`);
       return !known.has(turnId) && !!this.normalizeHistoryTurn(turn, turnId);
     });
-    this.broadcastOutput();
+    this.broadcastOutput(0);
     this.broadcastAll();
     return { ok: true, loaded: true, hasMore: history.hasMore };
   },
@@ -465,7 +492,7 @@ module.exports = {
     out.tool.output = appendLimitedOutputText(out.tool.output || '', text);
     out.tool.active = true;
     out.ts = nowIso();
-    this.broadcastOutput();
+    this.broadcastOutput(40);
     return true;
   },
 

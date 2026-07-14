@@ -1,6 +1,6 @@
 'use strict';
 
-const fs = require('node:fs');
+const fsp = require('node:fs/promises');
 const path = require('node:path');
 
 const { mapApprovalPolicy, mapSandbox } = require('../../codex/policies');
@@ -12,25 +12,47 @@ const {
 const { countQueue } = require('../../queue');
 const { shortId, sha256, stripTrailingSep } = require('../../shared/utils');
 
-function queuePathForSession(opts, sessionId) {
+function stateDirForSession(opts, sessionId) {
   const key = sha256(`${stripTrailingSep(opts.projectDir)}\n${sessionId}`).slice(0, 32);
-  return path.join(opts.stateDir, key, 'queue.json');
+  return path.join(opts.stateDir, key);
 }
 
-function readSessionQueueCounts(opts, sessionId) {
+async function readJsonOrNull(filePath) {
+  try {
+    return JSON.parse(await fsp.readFile(filePath, 'utf8'));
+  } catch (_) {
+    return null;
+  }
+}
+
+async function readSessionQueueCounts(opts, sessionId) {
   const empty = { pending: 0, completed: 0 };
   if (!sessionId) return empty;
-  try {
-    const raw = JSON.parse(fs.readFileSync(queuePathForSession(opts, sessionId), 'utf8'));
-    const queue = Array.isArray(raw) ? raw : (Array.isArray(raw.items) ? raw.items : []);
-    const counts = countQueue(queue);
-    return {
-      pending: counts.pending || 0,
-      completed: counts.completed || 0,
-    };
-  } catch (_) {
-    return empty;
+  const dir = stateDirForSession(opts, sessionId);
+  const [raw, meta] = await Promise.all([
+    readJsonOrNull(path.join(dir, 'queue.json')),
+    readJsonOrNull(path.join(dir, 'completed.meta.json')),
+  ]);
+  const queue = Array.isArray(raw) ? raw : (Array.isArray(raw?.items) ? raw.items : []);
+  const counts = countQueue(queue);
+  return {
+    pending: counts.pending || 0,
+    completed: (counts.completed || 0) + Math.max(0, Number(meta?.totalCompleted) || 0),
+  };
+}
+
+async function mapWithConcurrency(values, limit, mapper) {
+  const result = new Array(values.length);
+  let index = 0;
+  async function worker() {
+    while (index < values.length) {
+      const current = index;
+      index += 1;
+      result[current] = await mapper(values[current], current);
+    }
   }
+  await Promise.all(Array.from({ length: Math.min(limit, values.length) }, worker));
+  return result;
 }
 
 module.exports = {
@@ -75,9 +97,9 @@ module.exports = {
 
     const byId = new Map();
     for (const t of threads) byId.set(t.id || t.threadId || t.sessionId, t);
-    const ranked = [...byId.values()].map((t) => {
+    const ranked = await mapWithConcurrency([...byId.values()], 8, async (t) => {
       const session = normalizeSession(t, this.opts.projectDir);
-      session.queueCounts = readSessionQueueCounts(this.opts, session.id);
+      session.queueCounts = await readSessionQueueCounts(this.opts, session.id);
       return session;
     });
     ranked.sort((a, b) => a.rank - b.rank || (b.updatedAtMs || 0) - (a.updatedAtMs || 0));
@@ -203,7 +225,7 @@ module.exports = {
   async tryReadSession() {
     if (!this.app.sessionId) return;
     try {
-      const read = await this.rpc.request('thread/read', { threadId: this.app.sessionId, includeTurns: true }, 6000);
+      const read = await this.rpc.request('thread/read', { threadId: this.app.sessionId, includeTurns: false }, 6000);
       const thread = read?.thread || read || {};
       this.updateContextTokenCount(read);
       this.app.sessionTitle = fallbackThreadTitle(thread, this.opts.projectDir) || this.app.sessionTitle;

@@ -24,7 +24,7 @@ function makeAppWithQueue(queue = [], overrides = {}) {
     effort: '',
     sandbox: 'workspace-write',
     approvalPolicy: 'on-request',
-    approvalResponse: '',
+    approvalResponse: 'manual',
     network: true,
     addDirs: [],
     allSessions: false,
@@ -40,6 +40,9 @@ function makeAppWithQueue(queue = [], overrides = {}) {
     logJsonrpc: false,
     modelProvided: false,
     effortProvided: false,
+    sandboxProvided: false,
+    approvalPolicyProvided: false,
+    approvalResponseProvided: false,
     ...overrides,
   });
   app.queue = queue;

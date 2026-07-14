@@ -5,11 +5,11 @@ const test = require('node:test');
 
 const { item, makeAppWithQueue } = require('./helpers');
 
-function addSentSteerAction(app, text, sentAt = new Date().toISOString()) {
-  const note = app.appendSteerNote(text, 'sent', { sentAt });
+function addAcceptedSteerAction(app, text, acceptedAt = new Date().toISOString()) {
+  const note = app.appendSteerNote(text, 'accepted', { acceptedAt });
   const action = app.recordSteerUndo({ outputId: note.id, turnId: 'turn-active', threadId: app.app.sessionId, text });
-  action.status = 'sent';
-  action.sentAt = sentAt;
+  action.status = 'accepted';
+  action.acceptedAt = acceptedAt;
   return action;
 }
 
@@ -160,17 +160,17 @@ test('/undo without anything to undo writes a command error output block', async
   assert.match(output.command.message, /No pending prompt to undo/);
 });
 
-test('sent steer younger than grace window reports command error then older undo continues', async () => {
+test('accepted steer younger than grace window reports command error then older undo continues', async () => {
   const pending = item('pending');
   const app = makeAppWithQueue([pending]);
   app.recordPendingUndo(pending);
-  addSentSteerAction(app, 'already sent');
+  addAcceptedSteerAction(app, 'already accepted');
 
   const blocked = await app.undoLast();
 
   assert.equal(blocked.ok, false);
   assert.equal(blocked.commandError, true);
-  assert.match(blocked.message, /already sent/);
+  assert.match(blocked.message, /already accepted/);
   assert.deepEqual(app.queue.map((queueItem) => queueItem.id), ['pending']);
   assert.equal(app.output.at(-1).type, 'command');
   assert.equal(app.output.at(-1).command.status, 'error');
@@ -181,11 +181,11 @@ test('sent steer younger than grace window reports command error then older undo
   assert.deepEqual(app.queue, []);
 });
 
-test('sent steer older than grace window is skipped and pending undo works', async () => {
+test('accepted steer older than grace window is skipped and pending undo works', async () => {
   const pending = item('pending');
   const app = makeAppWithQueue([pending]);
   app.recordPendingUndo(pending);
-  addSentSteerAction(app, 'old steer', new Date(Date.now() - 31_000).toISOString());
+  addAcceptedSteerAction(app, 'old steer', new Date(Date.now() - 31_000).toISOString());
 
   const result = await app.undoLast();
 
@@ -237,7 +237,7 @@ test('undo action stack keeps only newest five actions', () => {
   ]);
 });
 
-test('updateQueueItem handles edit, duplicate, retry, completed, status, and sendNow transitions', async () => {
+test('updateQueueItem handles explicit edit, duplicate, retry, completed, and sendNow transitions', async () => {
   const failed = item('failed', 'failed', {
     error: 'boom',
     startedAt: '2026-01-01T00:00:00.000Z',
@@ -263,8 +263,11 @@ test('updateQueueItem handles edit, duplicate, retry, completed, status, and sen
   assert.equal(completed.status, 'completed');
   assert.equal(typeof completed.finishedAt, 'string');
 
-  await app.updateQueueItem({ id: app.queue[1].id, status: 'cancelled' });
-  assert.equal(app.queue[1].status, 'cancelled');
+  await assert.rejects(
+    () => app.updateQueueItem({ id: app.queue[1].id, status: 'cancelled' }),
+    /Unsupported queue action/,
+  );
+  assert.equal(app.queue[1].status, 'pending');
 
   completed.status = 'failed';
   completed.error = 'again';

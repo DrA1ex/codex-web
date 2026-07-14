@@ -19,6 +19,7 @@ const {
   parseExactCommand,
   parseQueuedCommand,
   parseSteerCommand,
+  transitionQueueItem,
 } = require('../src/queue');
 const { item } = require('./helpers');
 
@@ -174,4 +175,26 @@ test('reorderPendingItem reorders only pending slots and validates targets', () 
 
   assert.throws(() => reorderPendingItem(queue, 'running', { beforeId: 'first' }), /Only pending/);
   assert.throws(() => reorderPendingItem(queue, 'third', { beforeId: 'done' }), /pending prompts/);
+});
+
+
+test('queue ids use 128 bits and state transitions reject invalid lifecycle jumps', () => {
+  const queueItem = makeQueueItem('hello');
+  assert.match(queueItem.id, /^[a-f0-9]{32}$/);
+
+  transitionQueueItem(queueItem, 'sending');
+  transitionQueueItem(queueItem, 'sent');
+  assert.throws(() => transitionQueueItem(queueItem, 'pending'), /Invalid queue transition/);
+  transitionQueueItem(queueItem, 'failed');
+  transitionQueueItem(queueItem, 'pending');
+  assert.equal(queueItem.status, 'pending');
+
+  assert.throws(
+    () => updateQueueItemData([queueItem], { id: queueItem.id, status: 'completed' }),
+    /Unsupported queue action/,
+  );
+  assert.throws(
+    () => updateQueueItemData([queueItem], { id: queueItem.id, action: 'edit', text: '   ' }),
+    /Prompt is empty/,
+  );
 });

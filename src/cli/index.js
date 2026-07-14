@@ -20,13 +20,16 @@ function parseArgs(argv) {
     effort: '',
     sandbox: 'workspace-write',
     approvalPolicy: 'on-request',
-    approvalResponse: 'accept-for-session',
+    approvalResponse: 'manual',
     network: true,
     logJsonrpc: false,
     debug: false,
     force: false,
     modelProvided: false,
     effortProvided: false,
+    sandboxProvided: false,
+    approvalPolicyProvided: false,
+    approvalResponseProvided: false,
     addDirs: [],
   };
   const positional = [];
@@ -51,9 +54,9 @@ function parseArgs(argv) {
     else if (a === '--countdown') opts.countdown = Number(next());
     else if (a === '--model' || a === '-m') { opts.model = next(); opts.modelProvided = true; }
     else if (a === '--effort') { opts.effort = next(); opts.effortProvided = true; }
-    else if (a === '--sandbox') opts.sandbox = next();
-    else if (a === '--approval-policy') opts.approvalPolicy = next();
-    else if (a === '--approval-response') opts.approvalResponse = next();
+    else if (a === '--sandbox') { opts.sandbox = next(); opts.sandboxProvided = true; }
+    else if (a === '--approval-policy') { opts.approvalPolicy = next(); opts.approvalPolicyProvided = true; }
+    else if (a === '--approval-response') { opts.approvalResponse = next(); opts.approvalResponseProvided = true; }
     else if (a === '--network') opts.network = toBool(next(), true);
     else if (a === '--log-jsonrpc') opts.logJsonrpc = true;
     else if (a === '--debug') opts.debug = true;

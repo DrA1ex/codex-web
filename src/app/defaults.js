@@ -28,6 +28,13 @@ function createAppState(opts) {
     sandbox: opts.sandbox,
     approvalPolicy: opts.approvalPolicy,
     approvalResponse: opts.approvalResponse,
+    configSources: {
+      model: opts.modelProvided ? 'cli' : 'default',
+      effort: opts.effortProvided ? 'cli' : 'default',
+      sandbox: opts.sandboxProvided ? 'cli' : 'default',
+      approvalPolicy: opts.approvalPolicyProvided ? 'cli' : 'default',
+      approvalResponse: opts.approvalResponseProvided ? 'cli' : 'default',
+    },
     network: opts.network,
     writableRoots: [opts.projectDir, ...opts.addDirs],
     allSessions: opts.allSessions,

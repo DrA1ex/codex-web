@@ -52,7 +52,11 @@ class JsonRpcClient {
         }
         this.pending.clear();
         if (!this.app.shuttingDown) {
-          this.app.setError(`codex app-server exited: code=${code}, signal=${signal || 'none'}`);
+          const error = new Error(`codex app-server exited: code=${code}, signal=${signal || 'none'}`);
+          error.code = 'APP_SERVER_EXITED';
+          Promise.resolve(this.app.handleRpcExit(error)).catch((err) => {
+            this.app.setError(err.message || String(err));
+          });
         }
       });
       setTimeout(() => {

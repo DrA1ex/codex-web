@@ -32,7 +32,7 @@ test('setupPairState creates per-session paths, acquires lock, loads state and q
   assert.equal(app.lockAcquired, false);
 });
 
-test('acquireLock rejects a live existing lock unless force is enabled', async () => {
+test('acquireLock rejects a live existing lock even with force and recovers a stale lock', async () => {
   const dir = await tempDir();
   const app = makeAppWithQueue([], { stateDir: dir, force: false });
   app.lockPath = path.join(dir, 'app.lock');
@@ -41,6 +41,9 @@ test('acquireLock rejects a live existing lock unless force is enabled', async (
   await assert.rejects(() => app.acquireLock(), /Another codex-web instance/);
 
   app.opts.force = true;
+  await assert.rejects(() => app.acquireLock(), /live lock cannot be overridden/i);
+
+  await fsp.writeFile(app.lockPath, JSON.stringify({ pid: 99999999, url: 'http://stale.local' }));
   await app.acquireLock();
   assert.equal(app.lockAcquired, true);
   app.releaseLock();
@@ -185,4 +188,40 @@ test('eventLog and debugLog append log lines when a path is configured', async (
   const text = await fsp.readFile(app.eventsLogPath, 'utf8');
   assert.match(text, /info hello/);
   assert.match(text, /debug debug message payload/);
+});
+
+test('overlapping saveQueue calls cannot let an older snapshot overwrite a newer one', async () => {
+  const dir = await tempDir();
+  const queuePath = path.join(dir, 'queue.json');
+  const first = item('first');
+  const second = item('second');
+  const app = makeAppWithQueue([first]);
+  app.queuePath = queuePath;
+  app.saveQueue = CodexLimitWatchApp.prototype.saveQueue.bind(app);
+
+  const oldSave = app.saveQueue();
+  app.queue.push(second);
+  const newSave = app.saveQueue();
+  await Promise.all([oldSave, newSave]);
+  await app.persistence.drain();
+
+  const persisted = JSON.parse(await fsp.readFile(queuePath, 'utf8'));
+  assert.deepEqual(persisted.map((queueItem) => queueItem.id), ['first', 'second']);
+});
+
+test('atomic lock acquisition allows only one concurrent owner', async () => {
+  const dir = await tempDir();
+  const lockPath = path.join(dir, 'app.lock');
+  const first = makeAppWithQueue([]);
+  const second = makeAppWithQueue([]);
+  first.lockPath = lockPath;
+  second.lockPath = lockPath;
+
+  const results = await Promise.allSettled([first.acquireLock(), second.acquireLock()]);
+  assert.equal(results.filter((result) => result.status === 'fulfilled').length, 1);
+  assert.equal(results.filter((result) => result.status === 'rejected').length, 1);
+  assert.match(results.find((result) => result.status === 'rejected').reason.message, /already running|changed repeatedly/);
+
+  first.releaseLock();
+  second.releaseLock();
 });

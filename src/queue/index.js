@@ -5,6 +5,31 @@ const { isQueuedCommandName } = require('../app/commands');
 const { parseComposerCommand } = require('../app/command-parser');
 
 const PENDING_LIKE_STATUSES = new Set(['pending', 'next']);
+const QUEUE_STATUSES = new Set(['pending', 'next', 'sending', 'sent', 'completed', 'cancelled', 'failed', 'unknown', 'interrupted']);
+const QUEUE_TRANSITIONS = new Map([
+  ['pending', new Set(['next', 'sending', 'cancelled', 'completed'])],
+  ['next', new Set(['pending', 'sending', 'cancelled', 'completed'])],
+  ['sending', new Set(['sent', 'completed', 'failed', 'unknown', 'interrupted'])],
+  ['sent', new Set(['completed', 'failed', 'unknown', 'interrupted'])],
+  ['failed', new Set(['pending', 'completed'])],
+  ['unknown', new Set(['pending', 'completed'])],
+  ['cancelled', new Set(['pending', 'completed'])],
+  ['interrupted', new Set(['pending', 'completed'])],
+  ['completed', new Set()],
+]);
+
+function transitionQueueItem(item, nextStatus, options = {}) {
+  if (!item || typeof item !== 'object') throw new Error('Queue item is required');
+  const current = item.status || 'pending';
+  if (!QUEUE_STATUSES.has(nextStatus)) throw new Error(`Unsupported queue status: ${nextStatus}`);
+  if (current === nextStatus) return item;
+  if (!options.force && !QUEUE_TRANSITIONS.get(current)?.has(nextStatus)) {
+    throw new Error(`Invalid queue transition: ${current} -> ${nextStatus}`);
+  }
+  item.status = nextStatus;
+  return item;
+}
+
 
 function isPendingLikeStatus(status) {
   return PENDING_LIKE_STATUSES.has(status);
@@ -13,7 +38,7 @@ function isPendingLikeStatus(status) {
 function makeQueueItem(text) {
   const command = parseQueuedCommand(text);
   const item = {
-    id: randomId(4),
+    id: randomId(16),
     text,
     kind: command ? 'command' : 'prompt',
     command,
@@ -30,12 +55,16 @@ function makeQueueItem(text) {
   return item;
 }
 function normalizeQueueItem(item) {
-  item.id = item.id || randomId(4);
+  item.id = item.id || randomId(16);
   item.text = String(item.text || '');
   const command = parseQueuedCommand(item.text);
   item.kind = command ? 'command' : (item.kind || 'prompt');
   item.command = command || (item.kind === 'command' ? item.command || '' : null);
   item.status = item.status || 'pending';
+  if (!QUEUE_STATUSES.has(item.status)) {
+    item.error = item.error || `Recovered unsupported queue status: ${item.status}`;
+    item.status = 'unknown';
+  }
   item.createdAt = item.createdAt || nowIso();
   item.startedAt = item.startedAt || null;
   item.finishedAt = item.finishedAt || null;
@@ -107,9 +136,13 @@ function updateQueueItemData(queue, body) {
   const item = queue.find((i) => i.id === body.id);
   if (!item) throw new Error('Queue item not found');
   if (body.action === 'edit') {
-    if (!['pending', 'next', 'failed', 'unknown', 'cancelled', 'interrupted'].includes(item.status)) throw new Error('Only pending/failed/unknown/cancelled/interrupted items can be edited');
-    item.text = String(body.text || '');
-    item.status = 'pending';
+    if (!['pending', 'next', 'failed', 'unknown', 'cancelled', 'interrupted'].includes(item.status)) throw new Error('Only pending, next, failed, unknown, cancelled, or interrupted items can be edited');
+    const text = String(body.text || '');
+    if (!text.trim()) throw new Error('Prompt is empty');
+    item.text = text;
+    transitionQueueItem(item, 'pending');
+    item.startedAt = null;
+    item.finishedAt = null;
     item.error = null;
     item.usage = null;
     normalizeQueueItem(item);
@@ -118,17 +151,18 @@ function updateQueueItemData(queue, body) {
     const idx = queue.indexOf(item);
     queue.splice(idx + 1, 0, dup);
   } else if (body.action === 'markCompleted') {
-    item.status = 'completed';
+    transitionQueueItem(item, 'completed');
     item.finishedAt = nowIso();
     item.error = null;
   } else if (body.action === 'retry') {
-    item.status = 'pending';
+    if (!['failed', 'unknown', 'cancelled', 'interrupted'].includes(item.status)) throw new Error('Only failed, unknown, cancelled, or interrupted items can be retried');
+    transitionQueueItem(item, 'pending');
     item.startedAt = null;
     item.finishedAt = null;
     item.error = null;
     item.usage = null;
-  } else if (body.status) {
-    item.status = String(body.status);
+  } else {
+    throw new Error(`Unsupported queue action: ${body.action || '(missing)'}`);
   }
   normalizeQueueItem(item);
   return { queue, item };
@@ -219,4 +253,6 @@ module.exports = {
   parseExactCommand,
   parseQueuedCommand,
   parseSteerCommand,
+  QUEUE_STATUSES,
+  transitionQueueItem,
 };

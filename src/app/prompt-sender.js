@@ -7,13 +7,10 @@ const {
   isPendingLikeStatus,
   normalizeQueueItem,
   parseQueuedCommand,
+  transitionQueueItem,
 } = require('../queue');
 const { parseComposerCommand } = require('./command-parser');
-const {
-  waitForAvailableLimits,
-  setWaitingForLimits,
-  setRefreshingLimits,
-} = require('./limit-wait');
+const { waitForAvailableLimits } = require('./limit-wait');
 const { compactUsageOutput } = require('./usage');
 
 function normalizePromptText(text) {
@@ -69,16 +66,18 @@ function queueAddLabel(item) {
 
 function finishFailedPrompt(ctx, item, err) {
   item.finishedAt = nowIso();
-  item.status = 'failed';
+  if (!err?.preserveItemStatus) transitionQueueItem(item, err?.queueStatus || 'failed');
   item.error = err.message;
 
-  if (ctx.turnStarted) {
-    ctx.pause(`Error after turn/started: ${err.message}`);
-  } else {
-    ctx.pause(`turn/start failed before confirmation: ${err.message}`);
+  if (err?.code !== 'APP_SERVER_EXITED') {
+    if (ctx.turnStarted) {
+      ctx.pause(`Error after turn/started: ${err.message}`);
+    } else {
+      ctx.pause(`turn/start failed before confirmation: ${err.message}`);
+    }
   }
 
-  ctx.appendOutput(`[error] ${err.message}`, 'error');
+  if (!err?.reported) ctx.appendOutput(`[error] ${err.message}`, 'error');
 }
 
 function shouldContinueAfterPrompt(ctx, continueQueue) {
@@ -116,31 +115,16 @@ module.exports = {
       this.app.message = 'Manual send requested';
       this.broadcastAll();
 
-      if (this.rateLimits.status === 'unknown' || this.rateLimits.refreshing) await this.pollRateLimits();
-
-      if (this.rateLimits.status === 'limited') {
-        setWaitingForLimits(this.app, this.rateLimits, this.opts.watchInterval);
-        this.broadcastAll();
+      if (await waitForAvailableLimits(this, 'manual send')) {
+        this.pendingManualSendItemId = item.id;
         return { ok: true, item };
       }
 
-      if (this.rateLimits.refreshing) {
-        setRefreshingLimits(this.app, 'manual send');
-        this.broadcastAll();
-        return { ok: true, item };
-      }
-
-      if (this.rateLimits.status === 'unknown') {
-        this.app.state = 'waiting-limits';
-        this.app.message = 'Limits unknown; retrying before manual send';
-        this.broadcastAll();
-        return { ok: true, item };
-      }
-
+      this.pendingManualSendItemId = null;
       await this.runCountdownAndSend(item, { continueQueue: false });
     } finally {
       this.manualSendContinueQueue = false;
-      this.currentManualSend = false;
+      if (!this.pendingManualSendItemId) this.currentManualSend = false;
       this.broadcastAll();
     }
 
@@ -199,7 +183,7 @@ module.exports = {
     this.countdownCancel = false;
     normalizeQueueItem(item);
     if (item.status === 'pending') {
-      item.status = 'next';
+      transitionQueueItem(item, 'next');
       await this.saveQueue();
     }
     this.app.state = 'countdown';
@@ -207,7 +191,7 @@ module.exports = {
 
     const resetNext = async () => {
       if (item.status !== 'next') return;
-      item.status = 'pending';
+      transitionQueueItem(item, 'pending');
       await this.saveQueue();
       this.broadcastAll();
     };
@@ -244,15 +228,16 @@ module.exports = {
 
     this.currentManualSend = !continueQueue;
     normalizeQueueItem(item);
-    item.status = 'sending';
+    transitionQueueItem(item, 'sending');
     item.startedAt = nowIso();
     item.error = null;
 
-    this.currentItemId = item.id;
-    this.turnStarted = false;
-    this.turnCompletionSeen = false;
-    this.turnCompletionStatus = null;
-    this.createOutputGroupForItem(item);
+    const outputGroup = this.createOutputGroupForItem(item);
+    this.turnCoordinator.begin({
+      threadId: this.app.sessionId,
+      itemId: item.id,
+      outputGroupId: outputGroup?.id || null,
+    });
 
     await this.beginQueueItemUsage(item);
     await this.saveQueue();
@@ -265,17 +250,18 @@ module.exports = {
       const result = await this.rpc.request('turn/start', createTurnStartParams(this, item));
       const turn = result?.turn || result || {};
 
-      this.currentTurnId = turn.id || this.currentTurnId;
+      const turnId = turn.id || turn.turnId || this.currentTurnId;
+      if (turnId) this.turnCoordinator.acceptTurn(turnId);
       this.debug.lastTurnId = this.currentTurnId;
       await this.recordQueueItemTurn(item, this.currentTurnId);
 
       if (!this.turnCompletionSeen) {
-        item.status = 'sent';
+        transitionQueueItem(item, 'sent');
         await this.saveQueue();
         this.app.state = 'streaming';
         this.broadcastAll();
-        await this.waitForTurnCompletion();
       }
+      await this.waitForTurnCompletion();
     } catch (err) {
       finishFailedPrompt(this, item, err);
       await this.saveQueue();
@@ -283,17 +269,14 @@ module.exports = {
       const continueAfterPrompt = shouldContinueAfterPrompt(this, continueQueue);
 
       await this.completeQueueItemUsage(item);
+      if (item.status === 'completed') await this.finalizeCompletedQueueItem(item);
       if (this.currentOutputGroupId) {
         this.finishCurrentOutputGroup(item.status === 'failed' ? 'failed' : 'completed', item.error || null);
       }
-      this.currentItemId = null;
-      this.currentTurnId = null;
       this.currentOutputGroupId = null;
       this.currentManualSend = false;
       this.manualSendContinueQueue = false;
-      this.currentTurnResolve = null;
-      this.currentTurnReject = null;
-      this.turnStarted = false;
+      this.turnCoordinator.reset();
 
       await this.saveState();
       this.broadcastAll();
@@ -320,7 +303,7 @@ module.exports = {
     if (item.kind !== 'command' || !item.command) throw new Error('Queue item is not a command');
 
     this.currentManualSend = !continueQueue;
-    item.status = 'sending';
+    transitionQueueItem(item, 'sending');
     item.startedAt = nowIso();
     item.error = null;
 
@@ -334,7 +317,7 @@ module.exports = {
 
     try {
       const commandResult = await this.runQueueCommand(item.command);
-      item.status = 'completed';
+      transitionQueueItem(item, 'completed');
       item.finishedAt = nowIso();
       if (item.command === '/compact') {
         const usage = await this.completeQueuedCommandUsage(item, commandResult);
@@ -343,7 +326,7 @@ module.exports = {
       this.appendOutput(`[command] ${item.command} completed`, 'system');
       await this.saveQueue();
     } catch (err) {
-      item.status = 'failed';
+      transitionQueueItem(item, 'failed');
       item.finishedAt = nowIso();
       item.error = err.message;
       await this.saveQueue();
@@ -355,6 +338,7 @@ module.exports = {
       this.currentQueueCommandResolve = null;
       this.currentQueueCommandReject = null;
       this.currentQueueCommand = null;
+      if (item.status === 'completed') await this.finalizeCompletedQueueItem(item);
       this.currentItemId = null;
       this.currentTurnId = null;
       this.turnStarted = false;
@@ -408,10 +392,7 @@ module.exports = {
   },
 
   waitForTurnCompletion() {
-    return new Promise((resolve, reject) => {
-      this.currentTurnResolve = resolve;
-      this.currentTurnReject = reject;
-    });
+    return this.turnCoordinator.waitForCompletion();
   },
 
 };

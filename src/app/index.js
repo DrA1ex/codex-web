@@ -17,6 +17,8 @@ const {
   createInitialRateLimits,
   createDebugState,
 } = require('./defaults');
+const { TurnCoordinator, installTurnCompatibilityAliases } = require('./turn-coordinator');
+const { PersistenceCoordinator } = require('./persistence-coordinator');
 
 const persistenceMethods = require('./modules/persistence');
 const sessionMethods = require('./modules/sessions');
@@ -46,6 +48,14 @@ class CodexLimitWatchApp {
     this.jsonRpcLogPath = null;
     this.lockPath = null;
     this.lockAcquired = false;
+    this.lockOwnerNonce = null;
+    this.persistence = new PersistenceCoordinator();
+    this.queueRevision = 0;
+    this.completedArchivePath = null;
+    this.completedArchiveMetaPath = null;
+    this.archivedCompletedIds = new Set();
+    this.completedArchiveRecent = [];
+    this.completedArchiveTotal = 0;
 
     this.pumpTimer = null;
     this.limitTimer = null;
@@ -54,21 +64,16 @@ class CodexLimitWatchApp {
     this.pendingUsageRefreshItemId = null;
     this.countdownCancel = false;
 
-    this.currentTurnResolve = null;
-    this.currentTurnReject = null;
+    this.turnCoordinator = new TurnCoordinator(this);
+    installTurnCompatibilityAliases(this, this.turnCoordinator);
+
     this.currentQueueCommandResolve = null;
     this.currentQueueCommandReject = null;
     this.currentQueueCommand = null;
     this.currentQueueCommandTimer = null;
-    this.currentItemId = null;
-    this.currentTurnId = null;
     this.currentManualSend = false;
+    this.pendingManualSendItemId = null;
     this.manualSendContinueQueue = false;
-    this.turnStarted = false;
-    this.turnCompletionSeen = false;
-    this.turnCompletionStatus = null;
-    this.forceSteer = null;
-    this.intentionalInterrupts = new Map();
     this.undoActions = [];
     this.lastComposerText = '';
 
@@ -81,7 +86,10 @@ class CodexLimitWatchApp {
     this.queue = [];
     this.output = [];
     this.outputGroups = [];
-    this.outputHistory = { sessionId: null, hasMore: false, loadedTurnIds: new Set() };
+    this.outputHistory = { sessionId: null, hasMore: false, loadedTurnIds: new Set(), turns: null, cursorIndex: null };
+    this.outputSequence = 0;
+    this.lastOutputBroadcastPayload = null;
+    this.outputBroadcastTimer = null;
     this.currentOutputGroupId = null;
     this.lastDiffOutputText = null;
     this.currentDiffOutputId = null;

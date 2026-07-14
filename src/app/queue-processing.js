@@ -97,6 +97,8 @@ module.exports = {
     if (await waitUntilScheduledTime(this)) return;
     if (await waitForAvailableLimits(this, 'auto-send')) return;
 
-    await this.runCountdownAndSend(pending);
+    const manualPending = this.pendingManualSendItemId === pending.id;
+    if (manualPending) this.pendingManualSendItemId = null;
+    await this.runCountdownAndSend(pending, { continueQueue: !manualPending });
   },
 };

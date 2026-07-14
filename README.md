@@ -125,11 +125,39 @@ By default, state is stored under:
 ~/.local/state/codex-web
 ```
 
-This includes queued prompts, per-session state, theme settings, and logs. Browser local storage is not used for app settings.
+This includes active prompts in `queue.json`, completed prompt history in append-only `completed.jsonl`, per-session state, theme settings, and logs. Browser local storage is not used for app settings.
 
 ## Notes
 
 - The UI is token-protected and listens on `127.0.0.1` by default.
-- Approval requests can be handled in the browser UI.
+- Approval requests are handled manually in the browser by default. Automatic approval requires an explicit `--approval-response` option.
 - Queued prompts are persisted per project/session pair.
 - Theme selection is saved in the app state directory and works across ports.
+
+
+## Development
+
+Validate backend and frontend syntax, including the browser ES modules:
+
+```bash
+npm run check
+```
+
+Run the full backend and frontend-oriented test suite:
+
+```bash
+npm test
+```
+
+Run both checks:
+
+```bash
+npm run validate
+```
+
+## Reliability Notes
+
+- Explicit CLI values for model, effort, sandbox, and approval policy take precedence over saved settings.
+- Turn events are correlated to the selected thread and active turn before they can change queue state.
+- Output updates use sequenced incremental SSE patches; clients resynchronize from `/api/state` if a sequence gap is detected.
+- Slow SSE clients are bounded and disconnected instead of allowing an unbounded server-side buffer.

@@ -1,5 +1,6 @@
 'use strict';
 
+const { transitionQueueItem } = require('../queue');
 const {
   PROCESSING_STATES,
   SESSION_CHANGE_RUNNING_STATES,
@@ -73,11 +74,14 @@ module.exports = {
     this.clearPumpTimer();
     this.countdownCancel = true;
     this.manualSendContinueQueue = false;
+    this.pendingManualSendItemId = null;
+    if (!this.currentItemId && !this.currentTurnId) this.currentManualSend = false;
     this.app.scheduledRunAt = null;
     this.app.state = 'paused';
     this.app.message = message;
     this.appendOutput(message, 'system');
     this.broadcastAll();
+    this.saveState().catch((err) => this.reportPersistenceFailure('saving paused state', err));
   },
 
   cancelPendingSend() {
@@ -125,7 +129,40 @@ module.exports = {
     this.app.message = 'Auto-send resumed';
     this.appendOutput('[queue] resumed', 'system');
     this.broadcastAll();
+    this.saveState().catch((err) => this.reportPersistenceFailure('saving resumed state', err));
     this.schedulePump(200);
+  },
+
+  async handleRpcExit(error) {
+    if (this.shuttingDown) return;
+    this.clearPumpTimer();
+    if (this.currentQueueCommandTimer) clearTimeout(this.currentQueueCommandTimer);
+    this.currentQueueCommandTimer = null;
+    const exitError = error instanceof Error ? error : new Error(String(error || 'codex app-server exited'));
+    exitError.code = exitError.code || 'APP_SERVER_EXITED';
+    exitError.reported = true;
+    exitError.queueStatus = this.turnStarted || this.currentTurnId ? 'unknown' : 'failed';
+
+    if (this.currentQueueCommandReject) this.currentQueueCommandReject(exitError);
+    this.currentQueueCommandReject = null;
+    this.currentQueueCommandResolve = null;
+    this.currentQueueCommand = null;
+    this.turnCoordinator.fail(exitError);
+
+    const item = this.currentItem();
+    if (item && (item.status === 'sending' || item.status === 'sent')) {
+      transitionQueueItem(item, exitError.queueStatus);
+      item.finishedAt = new Date().toISOString();
+      item.error = exitError.message;
+    }
+
+    this.app.state = 'error';
+    this.app.message = exitError.message;
+    this.appendOutput(`[error] ${exitError.message}`, 'error');
+    this.eventLog('error', exitError.message);
+    await this.saveQueue().catch((err) => this.reportPersistenceFailure('saving queue after app-server exit', err));
+    await this.saveState().catch((err) => this.reportPersistenceFailure('saving state after app-server exit', err));
+    this.broadcastAll();
   },
 
   setError(message) {
@@ -141,6 +178,9 @@ module.exports = {
     if (this.shuttingDown) return;
 
     this.clearPumpTimer();
+    if (this.outputBroadcastTimer) {
+      this.flushOutputBroadcast();
+    }
     if (this.usageRefreshTimer) clearTimeout(this.usageRefreshTimer);
     if (this.currentQueueCommandTimer) clearTimeout(this.currentQueueCommandTimer);
     this.usageRefreshTimer = null;
@@ -173,6 +213,7 @@ module.exports = {
       await this.rpc.stop();
     } catch (_) {
     }
+    if (this.persistence) await this.persistence.drain();
 
     for (const client of this.clients) {
       try {

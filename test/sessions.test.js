@@ -180,3 +180,38 @@ test('createSession starts a thread and validates missing session ids', async ()
   missing.rpc = { request: async () => ({ thread: {} }) };
   await assert.rejects(() => missing.createSession(), /did not return a session id/);
 });
+
+test('loadSessions reads active queue and completed archive metadata asynchronously', async () => {
+  const fs = require('node:fs/promises');
+  const path = require('node:path');
+  const { sha256, stripTrailingSep } = require('../src/shared/utils');
+  const { tempDir } = require('./helpers');
+
+  const stateDir = await tempDir();
+  const app = makeAppWithQueue([], { stateDir, projectDir: process.cwd(), allSessions: true });
+  app.app.sessionId = null;
+  app.app.state = 'selecting-session';
+  const sessionId = 'session-with-archive';
+  const key = sha256(`${stripTrailingSep(app.opts.projectDir)}\n${sessionId}`).slice(0, 32);
+  const pairDir = path.join(stateDir, key);
+  await fs.mkdir(pairDir, { recursive: true });
+  await fs.writeFile(path.join(pairDir, 'queue.json'), JSON.stringify([
+    { id: 'pending', text: 'Pending', status: 'pending' },
+    { id: 'active', text: 'Active', status: 'sent' },
+  ]));
+  await fs.writeFile(path.join(pairDir, 'completed.meta.json'), JSON.stringify({ totalCompleted: 17 }));
+
+  app.rpc = {
+    request: async (method, params) => {
+      if (method !== 'thread/list') return {};
+      if (params.cwd) return { data: [{ id: sessionId, cwd: app.opts.projectDir, preview: 'Recent work' }] };
+      return { data: [] };
+    },
+  };
+
+  await app.loadSessions();
+
+  const session = app.sessions.find((candidate) => candidate.id === sessionId);
+  assert.ok(session);
+  assert.deepEqual(session.queueCounts, { pending: 1, completed: 17 });
+});

@@ -132,12 +132,14 @@ function renderCommandToolLine(line) {
 
 function steerStatusLabel(status) {
   if (status === 'waiting') return 'waiting';
+  if (status === 'accepted') return 'accepted';
+  if (status === 'submitted') return 'submitted';
   if (status === 'not steerable') return 'not steerable';
   return status || 'sent';
 }
 
 function steerStatusClass(status) {
-  if (status === 'sent' || status === 'force sent') return 'sent';
+  if (status === 'accepted' || status === 'submitted' || status === 'force sent') return 'sent';
   if (status === 'waiting') return 'waiting';
   if (status === 'canceled') return 'canceled';
   if (status === 'not steerable') return 'not-steerable';
@@ -277,6 +279,117 @@ function renderOutputLine(line) {
   `;
 }
 
+function componentHash(value) {
+  const text = String(value || '');
+  let hash = 2166136261;
+  for (let index = 0; index < text.length; index += 1) {
+    hash ^= text.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(36);
+}
+
+function decorateOutputComponent(html, key, signature) {
+  return html.replace(/^\s*<([a-z0-9-]+)/i, (match) => (
+    `${match} data-output-component="${esc(key)}" data-output-signature="${esc(signature)}"`
+  ));
+}
+
+export function outputComponentModel(lines, groups) {
+  const components = [];
+  const historyHtml = renderOutputHistoryControl();
+  if (historyHtml) {
+    const signature = componentHash(JSON.stringify({
+      history: state.snap?.outputHistory || {},
+      loading: Boolean(state.outputHistoryLoading),
+    }));
+    components.push({
+      key: 'history-control',
+      signature,
+      html: decorateOutputComponent(historyHtml, 'history-control', signature),
+    });
+  }
+
+  const linesByGroup = new Map();
+  for (const line of lines) {
+    if (!line.groupId) continue;
+    const bucket = linesByGroup.get(line.groupId) || [];
+    bucket.push(line);
+    linesByGroup.set(line.groupId, bucket);
+  }
+
+  const groupById = new Map(groups.filter((group) => group?.id).map((group) => [group.id, group]));
+  const renderedGroupIds = new Set();
+  const addLine = (line, fallbackIndex) => {
+    const key = `line:${line.id || fallbackIndex}`;
+    const signature = componentHash(`${outputLineKey(line)}:${Boolean(state.expandedDiffOutput[line.id])}:${Boolean(state.expandedToolOutput[line.id])}`);
+    components.push({ key, signature, html: decorateOutputComponent(renderOutputLine(line), key, signature) });
+  };
+  const addGroup = (group) => {
+    const groupLines = linesByGroup.get(group.id) || [];
+    const key = `group:${group.id}`;
+    const signature = componentHash(JSON.stringify({
+      group,
+      lineKeys: groupLines.map(outputLineKey),
+      expanded: Boolean(state.expandedOutputGroups[group.id]),
+      expandedDiff: groupLines.map((line) => Boolean(state.expandedDiffOutput[line.id])),
+      expandedTool: groupLines.map((line) => Boolean(state.expandedToolOutput[line.id])),
+    }));
+    components.push({ key, signature, html: decorateOutputComponent(renderOutputGroup(group, groupLines), key, signature) });
+  };
+
+  lines.forEach((line, index) => {
+    if (!line.groupId) {
+      addLine(line, index);
+      return;
+    }
+    if (renderedGroupIds.has(line.groupId)) return;
+    const group = groupById.get(line.groupId);
+    if (!group) {
+      addLine(line, index);
+      return;
+    }
+    renderedGroupIds.add(line.groupId);
+    addGroup(group);
+  });
+
+  for (const group of groups) {
+    if (!renderedGroupIds.has(group.id)) addGroup(group);
+  }
+  return components;
+}
+
+function nodeFromComponent(component) {
+  const template = document.createElement('template');
+  template.innerHTML = component.html.trim();
+  return template.content.firstElementChild;
+}
+
+function patchOutputComponents(outputEl, components) {
+  const existing = new Map();
+  for (const child of outputEl.children) {
+    const key = child.dataset.outputComponent;
+    if (key) existing.set(key, child);
+  }
+  const retained = new Set();
+
+  components.forEach((component, index) => {
+    let node = existing.get(component.key) || null;
+    if (!node || node.dataset.outputSignature !== component.signature) {
+      const replacement = nodeFromComponent(component);
+      if (node) node.replaceWith(replacement);
+      node = replacement;
+    }
+    retained.add(component.key);
+    const currentAtIndex = outputEl.children[index] || null;
+    if (currentAtIndex !== node) outputEl.insertBefore(node, currentAtIndex);
+  });
+
+  for (const [key, node] of existing) {
+    if (!retained.has(key) && node.isConnected) node.remove();
+  }
+}
+
 function updateOutputJumpAction() {
   const button = document.getElementById('bottomBtn');
   if (!button) return;
@@ -305,7 +418,8 @@ function outputLineKey(line) {
     line.tool?.active ? 'tool-active' : '',
     line.diff?.active ? 'diff-active' : '',
     line.steer?.status || '',
-    line.steer?.sentAt || '',
+    line.steer?.acceptedAt || '',
+    line.steer?.submittedAt || '',
     line.steer?.canceledAt || '',
   ].join(':');
 }
@@ -354,7 +468,7 @@ export function renderOutput() {
   const nextContentKey = outputContentKey();
   const contentChanged = previousContentKey !== '' && previousContentKey !== nextContentKey;
   const hasLiveOutputChange = contentChanged && liveOutputChanged(previousLineKeys);
-  outputEl.innerHTML = `${renderOutputHistoryControl()}${renderGroupedOutput(state.snap?.output || [], state.snap?.outputGroups || [])}`;
+  patchOutputComponents(outputEl, outputComponentModel(state.snap?.output || [], state.snap?.outputGroups || []));
   state.outputContentKey = nextContentKey;
   state.outputLineKeys = Object.create(null);
   for (const line of state.snap?.output || []) {

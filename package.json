@@ -4,6 +4,8 @@
   "private": true,
   "type": "commonjs",
   "scripts": {
-    "test": "node --test"
+    "check": "node scripts/check-syntax.js",
+    "test": "node --test",
+    "validate": "npm run check && npm test"
   }
 }

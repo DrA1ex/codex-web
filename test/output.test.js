@@ -285,3 +285,31 @@ test('trimOutput enforces line and character limits and removes stale command ma
   assert.equal(app.output.length, 1);
   assert.equal(app.commandOutputByItemId.has('cmd'), false);
 });
+
+test('loadPreviousOutputGroup caches thread turns across multiple history pages', async () => {
+  const app = makeAppWithQueue([]);
+  let reads = 0;
+  app.rpc = {
+    request: async (method, params) => {
+      assert.equal(method, 'thread/read');
+      assert.equal(params.includeTurns, true);
+      reads += 1;
+      return {
+        thread: {
+          turns: [
+            { id: 'turn-1', input: 'Prompt one', output: 'Answer one' },
+            { id: 'turn-2', input: 'Prompt two', output: 'Answer two' },
+          ],
+        },
+      };
+    },
+  };
+
+  const newest = await app.loadPreviousOutputGroup();
+  const older = await app.loadPreviousOutputGroup();
+
+  assert.equal(newest.loaded, true);
+  assert.equal(older.loaded, true);
+  assert.equal(reads, 1);
+  assert.deepEqual(app.outputGroups.map((group) => group.turnId), ['turn-1', 'turn-2']);
+});

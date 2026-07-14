@@ -7,12 +7,14 @@
 - `codex-web`: executable entrypoint.
 - `src/cli/index.js`: CLI args and startup options.
 - `src/app/index.js`: main `CodexLimitWatchApp` state container; composes modules from `src/app/modules/*`.
+- `src/app/turn-coordinator.js`: the single owner of active turn correlation, completion waiters, interrupts, and replacement turns.
 - `src/app/prompt-sender.js`: prompt sending, countdown, queued command execution, model/effort payloads.
 - `src/app/queue-processing.js`: auto-pump loop.
 - `src/queue/index.js`: queue item normalization, counts, reorder/update helpers, command parsing.
 - `src/http/api-routes.js`: local JSON API routes.
 - `www/index.html`: static UI shell.
-- `www/src/*`: modular frontend; no `www/app.js`.
+- `www/app.js`: minimal ES-module entrypoint.
+- `www/src/*`: modular frontend implementation.
 - `www/styles.css`: main responsive layout and theme styling.
 
 The app is CommonJS and intentionally has no runtime dependencies.
@@ -38,12 +40,12 @@ Important verified protocol details:
 
 ## Queue And Output Behavior
 
-Queue items are persisted per project/session pair. `loadQueue` recovers interrupted `sending`/`sent` items as `unknown` so work is not silently lost.
+Active queue items are persisted per project/session pair in `queue.json`. Completed items are appended to `completed.jsonl`; `completed.meta.json` keeps cheap session-list counters. `loadQueue` recovers interrupted `sending`/`sent` items as `unknown` so work is not silently lost.
 
 Queue statuses include:
 
 - Active/pending-like: `pending`, `next`, `sending`, `sent`
-- Finished: `completed`, `cancelled`, `failed`, `unknown`
+- Finished or recoverable: `completed`, `cancelled`, `failed`, `unknown`, `interrupted`
 
 Commands:
 
@@ -94,9 +96,10 @@ Important UI behavior already implemented:
 Queue data is the most important local data.
 
 - Queue persistence uses session/project-specific paths.
-- Writes are designed to be safer than plain overwrite and keep backups.
+- Queue, settings, and state writes are serialized, atomic, fsynced where supported, and queue writes keep backups.
+- Completed history is append-only JSONL and is paged from the end without loading the full archive.
 - Startup can restore from backup when the queue file is missing/corrupt.
-- A per project/session lock prevents multiple codex-web instances from writing the same queue state.
+- A per project/session lock is acquired atomically. Live locks cannot be overridden; `--force` only permits stale-lock recovery.
 
 Always check `git status --short` before editing. This repo may have user changes in progress; do not revert unrelated edits.
 
@@ -105,9 +108,10 @@ Always check `git status --short` before editing. This repo may have user change
 Validation:
 
 ```bash
+npm run check
 npm test
-node --check codex-web
-find src www/src -name '*.js' -print0 | xargs -0 -n1 node --check
+# or run both:
+npm run validate
 ```
 
 Run locally:

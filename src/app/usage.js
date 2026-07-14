@@ -286,14 +286,18 @@ module.exports = {
     const id = this.pendingUsageRefreshItemId;
     if (!id) return false;
 
-    const item = this.queue.find((queueItem) => queueItem.id === id);
+    const item = this.queue.find((queueItem) => queueItem.id === id)
+      || this.completedArchiveRecent?.find((queueItem) => queueItem.id === id);
     this.pendingUsageRefreshItemId = null;
     if (!item?.usage?.refreshPending) return false;
 
     await safePollRateLimits(this, 'previous usage');
     item.usage.refreshPending = false;
     const updated = await updateUsageFromLimits(this, item, 'refreshedLimits');
-    if (updated) await this.saveQueue();
+    if (updated) {
+      if (item.status === 'completed' && this.completedArchivePath) await this.archiveCompletedItem(item);
+      else await this.saveQueue();
+    }
     return updated;
   },
 
@@ -329,7 +333,7 @@ module.exports = {
   async readThreadTokenCount() {
     if (!this.app.sessionId) return null;
     try {
-      const read = await this.rpc.request('thread/read', { threadId: this.app.sessionId, includeTurns: true }, 6000);
+      const read = await this.rpc.request('thread/read', { threadId: this.app.sessionId, includeTurns: false }, 6000);
       const count = extractThreadTokenCount(read);
       this.setContextTokenCount(count);
       return count;

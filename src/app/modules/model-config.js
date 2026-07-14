@@ -101,6 +101,7 @@ module.exports = {
 
     this.opts.model = value;
     this.app.model = value;
+    this.app.configSources.model = 'runtime';
     this.app.effortOptions = buildEffortOptions(this.modelCatalog, value);
 
     await resetUnsupportedEffort(this);
@@ -125,6 +126,7 @@ module.exports = {
 
     this.opts.effort = value;
     this.app.effort = value;
+    this.app.configSources.effort = 'runtime';
     await this.saveState();
     this.appendOutput(`[config] effort ${selectedEffortLabel(this, value)}`, 'system');
     this.broadcastAll();
@@ -148,6 +150,7 @@ module.exports = {
 
     this.opts.sandbox = value;
     this.app.sandbox = value;
+    this.app.configSources.sandbox = 'runtime';
     await this.saveSettings();
     this.appendOutput(`[config] sandbox ${value}`, 'system');
     this.broadcastAll();
@@ -161,6 +164,7 @@ module.exports = {
 
     this.opts.approvalPolicy = value;
     this.app.approvalPolicy = value;
+    this.app.configSources.approvalPolicy = 'runtime';
     await this.saveSettings();
     this.appendOutput(`[config] approval ${value}`, 'system');
     this.broadcastAll();

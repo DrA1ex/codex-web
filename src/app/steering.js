@@ -1,7 +1,7 @@
 'use strict';
 
-const { nowIso } = require('../shared/utils');
-const { makeQueueItem } = require('../queue');
+const { nowIso, randomId } = require('../shared/utils');
+const { makeQueueItem, transitionQueueItem } = require('../queue');
 const { mapApprovalPolicy, makeSandboxPolicy } = require('../codex/policies');
 
 const FORCE_STEER_CONFIRM_MESSAGE = 'The active prompt may not be able to continue after interruption because rate limits are currently unavailable. The current queue item will be marked as interrupted, and the correction may remain pending until limits are available.';
@@ -16,12 +16,32 @@ function steerInput(text) {
   return [{ type: 'text', text }];
 }
 
-function steerStatusLabel(status) {
-  if (status === 'waiting') return 'waiting to send';
-  return status || 'sent';
+function makeSteerClientUserMessageId() {
+  return `codex-queue-steer-${randomId(8)}`;
 }
 
-function steerNoteText(text, status = 'sent', extra = {}) {
+function steerClientIdFromItem(item) {
+  return item?.clientId
+    || item?.client_id
+    || item?.clientUserMessageId
+    || item?.client_user_message_id
+    || null;
+}
+
+function steerActionDoneForRpc(action) {
+  return action?.status === 'canceled'
+    || action?.status === 'promoted'
+    || action?.status === 'submitted';
+}
+
+function steerStatusLabel(status) {
+  if (status === 'waiting') return 'waiting to send';
+  if (status === 'accepted') return 'accepted by app-server';
+  if (status === 'submitted') return 'submitted to turn';
+  return status || 'accepted by app-server';
+}
+
+function steerNoteText(text, status = 'accepted', extra = {}) {
   const lines = ['[user-note]', text, `Status: ${steerStatusLabel(status)}`];
   if (extra.error) lines.push(`Error: ${extra.error}`);
   if (extra.action) lines.push(`Action: ${extra.action}`);
@@ -59,8 +79,8 @@ function promoteSteerUndoAction(ctx, actionId) {
   if (action.status !== 'waiting') {
     return {
       ok: false,
-      message: action.status === 'sent'
-        ? 'Steer was already sent and cannot be converted to /think!.'
+      message: action.status === 'accepted'
+        ? 'Steer was already accepted by app-server and cannot be converted to /think!.'
         : 'Waiting steer is no longer available.',
     };
   }
@@ -76,13 +96,15 @@ module.exports = {
     return FORCE_STEER_CONFIRM_MESSAGE;
   },
 
-  appendSteerNote(text, status = 'sent', extra = {}) {
+  appendSteerNote(text, status = 'accepted', extra = {}) {
     return this.appendOutput(steerNoteText(text, status, extra), 'user-note', false, this.currentOutputMeta({
       steer: {
         status,
         text,
         forceAvailable: Boolean(extra.forceAvailable),
-        sentAt: extra.sentAt || null,
+        clientUserMessageId: extra.clientUserMessageId || null,
+        acceptedAt: extra.acceptedAt || null,
+        submittedAt: extra.submittedAt || null,
         canceledAt: extra.canceledAt || null,
         error: extra.error || null,
       },
@@ -103,7 +125,9 @@ module.exports = {
       status,
       text,
       forceAvailable: Boolean(extra.forceAvailable),
-      sentAt: extra.sentAt || entry.steer?.sentAt || null,
+      clientUserMessageId: extra.clientUserMessageId || entry.steer?.clientUserMessageId || actionOrOutputId?.clientUserMessageId || null,
+      acceptedAt: extra.acceptedAt || entry.steer?.acceptedAt || null,
+      submittedAt: extra.submittedAt || entry.steer?.submittedAt || null,
       canceledAt,
       error: extra.error || null,
     };
@@ -118,30 +142,33 @@ module.exports = {
 
     const turnId = this.currentTurnId;
     const threadId = this.app.sessionId;
-    const note = this.appendSteerNote(text, 'waiting');
+    const clientUserMessageId = makeSteerClientUserMessageId();
+    const note = this.appendSteerNote(text, 'waiting', { clientUserMessageId });
     const action = this.recordSteerUndo ? this.recordSteerUndo({
       outputId: note?.id || null,
       turnId,
       threadId,
       text,
+      clientUserMessageId,
     }) : null;
     this.broadcastAll();
 
     this.rpc.request('turn/steer', {
       threadId,
       expectedTurnId: turnId,
+      clientUserMessageId,
       input: steerInput(text),
     }, 3000).then(() => {
-      if (action?.status === 'canceled' || action?.status === 'promoted') return;
-      const sentAt = nowIso();
+      if (steerActionDoneForRpc(action)) return;
+      const acceptedAt = nowIso();
       if (action) {
-        action.status = 'sent';
-        action.sentAt = sentAt;
+        action.status = 'accepted';
+        action.acceptedAt = acceptedAt;
       }
-      this.updateSteerNote(note?.id, 'sent', { text, sentAt });
+      this.updateSteerNote(note?.id, 'accepted', { text, acceptedAt, clientUserMessageId });
       this.broadcastAll();
     }).catch((err) => {
-      if (action?.status === 'canceled' || action?.status === 'promoted') return;
+      if (steerActionDoneForRpc(action)) return;
       if (activeTurnNotSteerable(err)) {
         if (action) {
           action.status = 'not steerable';
@@ -160,6 +187,29 @@ module.exports = {
     });
 
     return { ok: true, clearComposer: true };
+  },
+
+  markSteerSubmittedFromUserMessage(item) {
+    const clientUserMessageId = steerClientIdFromItem(item);
+    if (!clientUserMessageId || !Array.isArray(this.undoActions)) return false;
+    const action = this.undoActions.find((candidate) => (
+      candidate?.type === 'steer'
+      && candidate.clientUserMessageId === clientUserMessageId
+      && (candidate.status === 'waiting' || candidate.status === 'accepted')
+    ));
+    if (!action) return false;
+
+    const submittedAt = nowIso();
+    action.status = 'submitted';
+    action.submittedAt = submittedAt;
+    this.updateSteerNote(action, 'submitted', {
+      text: action.text,
+      clientUserMessageId,
+      acceptedAt: action.acceptedAt || null,
+      submittedAt,
+    });
+    this.forgetUndoAction?.(action);
+    return true;
   },
 
   async forceSteerActivePrompt(text, options = {}) {
@@ -189,64 +239,76 @@ module.exports = {
       this.addTurnToOutputGroup(group, originalTurnId);
     }
     const continueQueue = !this.currentManualSend || this.manualSendContinueQueue;
-    const previousForceSteer = this.forceSteer && (
-      this.forceSteer.queueItemId === item?.id
-      || this.forceSteer.outputGroupId === group?.id
-    ) ? this.forceSteer : null;
-    const interruptedTurnIds = [
-      ...(previousForceSteer?.interruptedTurnIds || []),
-      originalTurnId,
-    ].filter(Boolean).filter((turnId, index, ids) => ids.indexOf(turnId) === index);
-    if (originalTurnId) {
-      this.intentionalInterrupts.set(originalTurnId, {
-        queueItemId: item?.id || null,
-        outputGroupId: group?.id || null,
-        createdAt: nowIso(),
-        handled: false,
-      });
-    }
-    this.forceSteer = {
+    const force = this.turnCoordinator.beginForceSteer({
       queueItemId: item?.id || null,
       originalTurnId,
-      replacementTurnId: null,
-      interruptedTurnIds,
       awaitingReplacementTurn: limitsAvailable(this),
       outputGroupId: group?.id || null,
       text,
       continueQueue,
       interruptedAt: nowIso(),
-    };
+    });
 
     this.appendOutput('[steer] Interrupt requested', 'system');
-    await this.rpc.request('turn/interrupt', { threadId: this.app.sessionId, turnId: originalTurnId }, 3000);
+    try {
+      await this.rpc.request('turn/interrupt', { threadId: this.app.sessionId, turnId: originalTurnId }, 3000);
+    } catch (err) {
+      this.turnCoordinator.rollbackForceSteer({ removeInterrupt: true });
+      this.appendOutput(`[error] Could not interrupt active turn: ${err.message || String(err)}`, 'error');
+      this.broadcastAll();
+      return { ok: false, message: `Could not interrupt active turn: ${err.message || String(err)}` };
+    }
 
     if (!limitsAvailable(this)) {
-      this.forceSteer.awaitingReplacementTurn = false;
+      force.awaitingReplacementTurn = false;
       if (item) {
-        item.status = 'interrupted';
+        transitionQueueItem(item, 'interrupted');
         item.finishedAt = nowIso();
         item.error = null;
       }
       const queued = makeQueueItem(text);
       this.queue.push(queued);
       await this.saveQueue();
+      const record = originalTurnId ? this.intentionalInterrupts.get(originalTurnId) : null;
+      if (record && !record.handled) {
+        record.handled = true;
+        this.appendOutput('[steer] Original turn interrupted', 'system');
+      }
       this.appendOutput('[steer] Follow-up prompt queued until limits are available', 'system');
-      if (this.currentTurnResolve) this.currentTurnResolve();
+      this.turnCoordinator.resolveSynthetic('interrupted', { turnId: originalTurnId });
       this.broadcastAll();
       return { ok: true, clearComposer: true, item: queued };
     }
 
     this.appendOutput('[steer] Sending follow-up prompt', 'system');
-    this.forceSteer.awaitingReplacementTurn = true;
-    const result = await this.rpc.request('turn/start', forceTurnStartParams(this, text));
+    force.awaitingReplacementTurn = true;
+    let result;
+    try {
+      result = await this.rpc.request('turn/start', forceTurnStartParams(this, text));
+    } catch (err) {
+      const message = `Follow-up turn/start failed after the original turn was interrupted: ${err.message || String(err)}`;
+      if (item) {
+        transitionQueueItem(item, 'failed');
+        item.finishedAt = nowIso();
+        item.error = message;
+      }
+      await this.saveQueue().catch((saveErr) => this.reportPersistenceFailure('saving failed force steer', saveErr));
+      this.turnCoordinator.rollbackForceSteer({ removeInterrupt: false });
+      const operationError = new Error(message);
+      operationError.preserveItemStatus = true;
+      this.turnCoordinator.fail(operationError);
+      this.pause('Auto-send paused because the force-steer replacement could not be started. Review the error before resuming.');
+      this.appendOutput(`[error] ${message}`, 'error');
+      this.broadcastAll();
+      return { ok: false, message };
+    }
+
     const turn = result?.turn || result || {};
-    const replacementTurnId = turn.id || turn.turnId || null;
-    if (replacementTurnId) {
-      this.currentTurnId = replacementTurnId;
+    const replacementTurnId = turn.id || turn.turnId || this.currentTurnId;
+    if (replacementTurnId && replacementTurnId !== originalTurnId) {
+      this.turnCoordinator.acceptTurn(replacementTurnId, { replacement: true });
       this.debug.lastTurnId = replacementTurnId;
-      this.forceSteer.replacementTurnId = replacementTurnId;
-      this.forceSteer.awaitingReplacementTurn = false;
-      if (this.forceSteer.outputGroupId) this.useOutputGroup(this.forceSteer.outputGroupId);
+      if (force.outputGroupId) this.useOutputGroup(force.outputGroupId);
       if (item) await this.recordQueueItemTurn(item, replacementTurnId);
       this.updateCurrentOutputGroup({ turnId: replacementTurnId, status: 'active' });
     }

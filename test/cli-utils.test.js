@@ -67,6 +67,23 @@ test('parseArgs normalizes CLI options and validates supported values', async ()
   assert.deepEqual(opts.addDirs, [fs.realpathSync(extraDir)]);
 });
 
+test('parseArgs defaults approvals to manual and records explicit safety overrides', () => {
+  const defaults = parseArgs([]);
+  assert.equal(defaults.approvalResponse, 'manual');
+  assert.equal(defaults.sandboxProvided, false);
+  assert.equal(defaults.approvalPolicyProvided, false);
+  assert.equal(defaults.approvalResponseProvided, false);
+
+  const explicit = parseArgs([
+    '--sandbox', 'read-only',
+    '--approval-policy', 'on-request',
+    '--approval-response', 'accept',
+  ]);
+  assert.equal(explicit.sandboxProvided, true);
+  assert.equal(explicit.approvalPolicyProvided, true);
+  assert.equal(explicit.approvalResponseProvided, true);
+});
+
 test('parseArgs and validateOptions reject bad inputs', () => {
   assert.throws(() => parseArgs(['--unknown']), /Unknown option/);
   assert.throws(() => parseArgs(['--port']), /Missing value/);
