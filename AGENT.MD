@@ -21,20 +21,20 @@ The app is CommonJS and intentionally has no runtime dependencies.
 
 ## App-Server API Facts
 
-The app starts `codex app-server` and talks JSON-RPC through `src/codex/json-rpc-client.js`.
+The app starts `codex app-server` and exchanges newline-delimited JSON messages through `src/codex/json-rpc-client.js`. The protocol is JSON-RPC-like but app-server messages do not require a `jsonrpc` field. The client must send `initialize` and then the `initialized` notification before normal requests.
 
 Methods currently used:
 
 - Sessions: `thread/list`, `thread/resume`, `thread/start`, `thread/read`, `thread/loaded/list`
 - Prompt turns: `turn/start`, `turn/interrupt`
-- Queued commands: `thread/compact/start`, completion via `thread/compacted`
+- Queued commands: `thread/compact/start`; current completion is observed through the `contextCompaction` item lifecycle
 - Account/model data: `account/rateLimits/read`, `account/rateLimitResetCredit/consume`, `model/list`
 
 Important verified protocol details:
 
 - `turn/start` input shape is `input: [{ type: 'text', text }]`.
 - `turn/steer` exists and accepts `{ threadId, expectedTurnId, input }`. It can fail with `activeTurnNotSteerable`.
-- `thread/compact/start` takes `{ threadId }` and completes with `thread/compacted`.
+- `thread/compact/start` takes `{ threadId }`. Current servers emit a `contextCompaction` item; `item/completed` followed by terminal turn lifecycle completes the command. `thread/compacted` is legacy compatibility only.
 - Approval policy values are mapped in `src/codex/policies.js`; do not send raw CLI values blindly.
 - Sandbox policy values are mapped before sending.
 
@@ -51,7 +51,7 @@ Commands:
 
 - Immediate standalone commands are parsed by `parseExactCommand`.
 - Queued commands are parsed by `parseQueuedCommand`.
-- `/compact` is a queued command, not immediate; it runs in queue order and waits for `thread/compacted`.
+- `/compact` is a queued command, not immediate; it runs in queue order and waits for the `contextCompaction` item lifecycle.
 
 Prompt sending:
 
@@ -105,14 +105,23 @@ Always check `git status --short` before editing. This repo may have user change
 
 ## Development
 
+Development dependencies and browser:
+
+```bash
+npm ci
+npx playwright install chromium
+```
+
 Validation:
 
 ```bash
-npm run check
-npm test
-# or run both:
-npm run validate
+npm run check       # CommonJS and browser ESM syntax/import graph
+npm test            # Node.js unit and protocol regression tests
+npm run e2e         # Playwright against e2e/mock-app-server.js
+npm run validate    # all of the above
 ```
+
+The mock app-server and E2E fixtures are under `e2e/`. Keep mock behavior aligned with the public app-server documentation rather than guessing from current application assumptions. Add a mock protocol test and a browser regression whenever a lifecycle or race-condition bug is fixed.
 
 Run locally:
 

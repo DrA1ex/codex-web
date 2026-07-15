@@ -46,7 +46,10 @@ async function waitUntilScheduledTime(ctx) {
 }
 
 function updateIdleStateAfterQueueDrain(ctx) {
-  if (allHaveStatus(ctx.queue, FINISHED_QUEUE_STATUSES)) {
+  const hasArchivedCompletion = Math.max(0, Number(ctx.completedArchiveTotal) || 0) > 0;
+  const queueDrained = allHaveStatus(ctx.queue, FINISHED_QUEUE_STATUSES)
+    || (ctx.queue.length === 0 && hasArchivedCompletion);
+  if (queueDrained) {
     if (ctx.app.state !== 'done' && !hasStatus(ctx.queue, FAILURE_QUEUE_STATUSES)) {
       ctx.app.state = 'done';
       ctx.appendOutput('[queue] completed', 'system');

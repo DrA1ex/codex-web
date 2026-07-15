@@ -124,15 +124,18 @@ module.exports = {
       const group = this.outputGroupForTurnId(eventTurnId);
       if (group) this.useOutputGroup(group.id);
       const item = this.currentItem();
+      const queueStatus = status === 'completed'
+        ? 'completed'
+        : (status === 'interrupted' ? 'interrupted' : 'failed');
       if (item) {
         item.finishedAt = nowIso();
-        transitionQueueItem(item, status === 'completed' ? 'completed' : 'failed');
+        transitionQueueItem(item, queueStatus);
         item.error = errMessage;
         this.saveQueue().catch((err) => this.debugLog('save queue after turn completion failed', err.message));
       }
       this.finishActiveOutputBlocks();
       this.appendOutput(status === 'completed' ? '[turn] completed' : `[turn] ${status}${errMessage ? ': ' + errMessage : ''}`, status === 'completed' ? 'turn' : 'error');
-      this.finishCurrentOutputGroup(status === 'completed' ? 'completed' : 'failed', errMessage);
+      this.finishCurrentOutputGroup(queueStatus, errMessage);
       this.tryReadSession().then(() => this.broadcastAll()).catch((err) => this.debugLog('refresh session title failed', err.message));
       if (method === 'turn/completed' && this.currentQueueCommand === '/compact' && this.currentQueueCommandResolve) {
         this.currentQueueCommandResolve(params || {});
@@ -173,6 +176,14 @@ module.exports = {
       const item = params.item || params;
       if (item.type === 'commandExecution') {
         this.updateCommandOutput(item);
+        return;
+      }
+      if (item.type === 'contextCompaction') {
+        this.updateContextTokenCountFromCompaction(params);
+        this.appendOutput('[compact] completed', 'system');
+        if (this.currentQueueCommand === '/compact' && this.currentQueueCommandResolve) {
+          this.currentQueueCommandResolve(params || {});
+        }
         return;
       }
       if (item.type === 'agentMessage') {

@@ -354,3 +354,40 @@ test('failed approval response remains retryable and gets a fresh timeout', asyn
   assert.equal(app.approval.requestId, 'retry-approval');
   assert.deepEqual(scheduled, ['retry-approval']);
 });
+
+test('documented contextCompaction item completes a queued compact command', () => {
+  const app = makeAppWithQueue([]);
+  app.app.sessionId = 'session';
+  app.currentQueueCommand = '/compact';
+  let resolved = null;
+  app.currentQueueCommandResolve = (value) => { resolved = value; };
+
+  const params = {
+    threadId: 'session',
+    turnId: 'turn-compact',
+    item: { id: 'compact-item', type: 'contextCompaction' },
+    beforeTokens: 1000,
+    afterTokens: 250,
+  };
+  app.handleNotification('item/completed', params);
+
+  assert.equal(resolved, params);
+  assert.match(app.output.at(-1).text, /compact.*completed/);
+  assert.equal(app.snapshot().app.contextTokens, 250);
+});
+
+test('documented interrupted terminal status remains interrupted in the queue', () => {
+  const active = item('active', 'sent');
+  const app = makeAppWithQueue([active]);
+  app.currentItemId = 'active';
+  app.currentTurnId = 'turn-interrupted';
+  app.tryReadSession = async () => {};
+
+  app.handleNotification('turn/completed', {
+    threadId: app.app.sessionId,
+    turn: { id: 'turn-interrupted', status: 'interrupted' },
+  });
+
+  assert.equal(active.status, 'interrupted');
+  assert.equal(app.app.state, 'paused');
+});

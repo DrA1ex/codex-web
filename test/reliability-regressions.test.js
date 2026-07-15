@@ -362,3 +362,15 @@ test('queue move helpers roll back ordering when persistence fails', async () =>
   await assert.rejects(() => app.movePendingToFirst(app.queue.find((queueItem) => queueItem.id === 'second')), /disk full/);
   assert.deepEqual(app.queue.map((queueItem) => queueItem.id), ['first', 'second']);
 });
+
+test('pump marks a fully archived JSONL queue done instead of leaving it watching', async () => {
+  const app = makeAppWithQueue([]);
+  app.completedArchiveTotal = 2;
+  app.app.state = 'watching';
+  app.app.sessionId = 'session';
+
+  await app.pumpQueue();
+
+  assert.equal(app.app.state, 'done');
+  assert.match(app.output.at(-1).text, /queue.*completed/);
+});

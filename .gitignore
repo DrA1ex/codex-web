@@ -18,3 +18,4 @@ coverage/
 .local/
 .cache/
 tmp/
+/test-results/

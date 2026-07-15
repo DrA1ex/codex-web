@@ -14,7 +14,7 @@ A small local web UI for queueing prompts into a Codex session.
 - Codex CLI installed and authenticated
 - macOS, Linux, or another Unix-like shell for the symlink examples below
 
-No npm packages are required. The app uses only Node.js built-ins.
+No npm packages are required at runtime. The application uses only Node.js built-ins; development and browser testing use Playwright as a dev dependency.
 
 ## Quick Start
 
@@ -137,23 +137,57 @@ This includes active prompts in `queue.json`, completed prompt history in append
 
 ## Development
 
-Validate backend and frontend syntax, including the browser ES modules:
+Install development dependencies and the Playwright Chromium build:
+
+```bash
+npm ci
+npx playwright install chromium
+```
+
+Validate backend and frontend syntax, including browser ES modules:
 
 ```bash
 npm run check
 ```
 
-Run the full backend and frontend-oriented test suite:
+Run the Node.js unit and protocol regression suite:
 
 ```bash
 npm test
 ```
 
-Run both checks:
+Run the browser E2E suite:
+
+```bash
+npm run e2e
+```
+
+Run all checks, unit tests, and E2E tests:
 
 ```bash
 npm run validate
 ```
+
+Use an already installed Chromium build when Playwright browser downloads are unavailable:
+
+```bash
+PLAYWRIGHT_CHROMIUM_EXECUTABLE=/path/to/chromium npm run e2e
+```
+
+### Mock app-server
+
+The E2E suite launches `e2e/mock-app-server.js` in place of the Codex CLI. The mock follows the public Codex app-server protocol documented at <https://developers.openai.com/codex/app-server/>:
+
+- newline-delimited JSON messages over stdio without a required `jsonrpc` field;
+- `initialize` request followed by the `initialized` notification;
+- thread, turn, and item lifecycle notifications;
+- command and file approval server requests;
+- rate-limit reads and reset-credit consumption;
+- compaction completion through the `contextCompaction` item lifecycle.
+
+The mock is strict enough to reject requests before initialization, unknown methods, invalid threads, overlapping active turns, and mismatched interrupts or steering requests. Scenario prompts cover early completion, foreign and duplicate events, Unicode, long delta streams, failures, interruption, approvals, process exit, and force-steer replacement turns.
+
+Each Playwright test gets an isolated state directory, project directory, mock control file, RPC transcript, app process tree, and browser server. Failed tests attach the application output and JSONL RPC transcript.
 
 ## Reliability Notes
 
