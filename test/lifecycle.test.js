@@ -215,6 +215,43 @@ test('interruptCurrentTurn sends app-server request and pauses after success', a
   assert.deepEqual(await idle.interruptCurrentTurn(), { ok: false, message: 'No running prompt to interrupt.' });
 });
 
+
+test('settled turn operation is not interruptible before asynchronous cleanup resets it', async () => {
+  const app = makeAppWithQueue([]);
+  const requests = [];
+  app.rpc = { request: async (...args) => { requests.push(args); return {}; } };
+  app.turnCoordinator.begin({ threadId: 'session', itemId: 'active' });
+  app.turnCoordinator.acceptTurn('turn-failed');
+
+  const failure = new Error('replacement start failed');
+  app.turnCoordinator.fail(failure);
+
+  assert.equal(app.currentTurnId, 'turn-failed');
+  assert.equal(app.turnCoordinator.canInterrupt, false);
+  assert.equal(app.snapshot().app.canInterrupt, false);
+  assert.deepEqual(await app.interruptCurrentTurn(), { ok: false, message: 'No running prompt to interrupt.' });
+  assert.deepEqual(requests, []);
+});
+
+
+test('force-steer gap is not interruptible but an accepted replacement turn is', () => {
+  const app = makeAppWithQueue([]);
+  app.turnCoordinator.begin({ threadId: 'session', itemId: 'active' });
+  app.turnCoordinator.acceptTurn('turn-original');
+  app.turnCoordinator.beginForceSteer({
+    originalTurnId: 'turn-original',
+    awaitingReplacementTurn: true,
+  });
+
+  assert.equal(app.turnCoordinator.canInterrupt, false);
+
+  app.turnCoordinator.acceptTurn('turn-replacement', { replacement: true });
+  assert.equal(app.turnCoordinator.canInterrupt, true);
+
+  app.turnCoordinator.fail(new Error('replacement failed'));
+  assert.equal(app.turnCoordinator.canInterrupt, false);
+});
+
 test('setError switches app to error state and logs output', () => {
   const app = makeAppWithQueue([]);
   app.setError('boom');

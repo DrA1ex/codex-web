@@ -33,6 +33,18 @@ function readControl() {
   catch (_) { return {}; }
 }
 
+function writeControl(control) {
+  if (!CONTROL_PATH) return;
+  fs.writeFileSync(CONTROL_PATH, JSON.stringify(control || {}, null, 2));
+}
+
+function consumeControlFlag(name) {
+  const control = readControl();
+  if (!control[name]) return false;
+  writeControl({ ...control, [name]: false });
+  return true;
+}
+
 function appendLog(entry) {
   if (!LOG_PATH) return;
   try {
@@ -603,6 +615,46 @@ function startScenario(active) {
       emitAgentCompletion(active, chunks.join(''), { chunks, chunkDelay: 1, totalTokens: 5000 });
       return;
     }
+    case 'LATE_USAGE': {
+      const itemId = `item-${nextItem++}`;
+      const text = 'Usage arrives after terminal completion.';
+      emitItemStarted(active, { id: itemId, type: 'agentMessage', text: '', phase: 'final_answer' });
+      emitAgentDelta(active, itemId, text);
+      notify('item/completed', {
+        threadId: active.threadId,
+        turnId: active.id,
+        item: { id: itemId, type: 'agentMessage', text, phase: 'final_answer' },
+      });
+      finishTurn(active, 'completed');
+      later(80, () => emitTokenUsage(active, 777));
+      return;
+    }
+    case 'FOREIGN_USAGE':
+      notify('thread/tokenUsage/updated', {
+        threadId: SECOND_THREAD_ID,
+        turnId: 'foreign-turn',
+        tokenUsage: {
+          total: { totalTokens: 999999, inputTokens: 999990, outputTokens: 9 },
+          last: { totalTokens: 999999, inputTokens: 999990, outputTokens: 9 },
+          modelContextWindow: 1000000,
+        },
+      });
+      emitAgentCompletion(active, 'Foreign usage was ignored.', { startDelay: 10, totalTokens: 91 });
+      return;
+    case 'EMPTY_COMPLETION':
+      schedule(active, 5, () => finishTurn(active, 'completed'));
+      return;
+    case 'DUPLICATE_ITEM_COMPLETION': {
+      const itemId = `item-${nextItem++}`;
+      const item = { id: itemId, type: 'agentMessage', text: 'One completed item.', phase: 'final_answer' };
+      emitItemStarted(active, { ...item, text: '' });
+      emitAgentDelta(active, itemId, item.text);
+      notify('item/completed', { threadId: active.threadId, turnId: active.id, item });
+      notify('item/completed', { threadId: active.threadId, turnId: active.id, item });
+      emitTokenUsage(active, 44);
+      finishTurn(active, 'completed');
+      return;
+    }
     default:
       emitDefaultScenario(active, prompt);
   }
@@ -634,10 +686,12 @@ function handleRequest(message) {
       respond(id, rateLimitsPayload());
       return;
     case 'account/rateLimitResetCredit/consume': {
-      const control = readControl();
-      if (CONTROL_PATH) {
-        fs.writeFileSync(CONTROL_PATH, JSON.stringify({ ...control, rateLimits: 'available' }, null, 2));
+      if (consumeControlFlag('resetConsumeFailureOnce')) {
+        fail(id, -32020, 'Mock reset consume failure');
+        return;
       }
+      const control = readControl();
+      writeControl({ ...control, rateLimits: 'available' });
       respond(id, { outcome: 'reset' });
       return;
     }
@@ -687,6 +741,11 @@ function handleRequest(message) {
     }
     case 'turn/start': {
       const threadId = String(params?.threadId || '');
+      const prompt = inputText(params);
+      if (/^MOCK:START_REJECT/.test(prompt)) {
+        fail(id, -32031, 'Mock turn/start rejection');
+        return;
+      }
       if (!threads.has(threadId)) {
         fail(id, -32602, `Thread not found: ${threadId}`);
         return;
@@ -695,7 +754,6 @@ function handleRequest(message) {
         fail(id, -32000, 'A turn is already active', { codexErrorInfo: 'TurnAlreadyActive' });
         return;
       }
-      const prompt = inputText(params);
       const active = createTurn(threadId, prompt);
       if (/^MOCK:EXIT_BEFORE_RESPONSE/.test(prompt)) {
         later(0, () => process.exit(43));
@@ -718,6 +776,10 @@ function handleRequest(message) {
     case 'turn/interrupt': {
       const threadId = String(params?.threadId || '');
       const active = activeTurns.get(threadId);
+      if (consumeControlFlag('interruptRejectOnce')) {
+        fail(id, -32032, 'Mock interrupt rejection');
+        return;
+      }
       if (!active || (params?.turnId && params.turnId !== active.id)) {
         fail(id, -32602, 'No matching active turn');
         return;
@@ -729,6 +791,10 @@ function handleRequest(message) {
     case 'turn/steer': {
       const threadId = String(params?.threadId || '');
       const active = activeTurns.get(threadId);
+      if (consumeControlFlag('steerRejectOnce')) {
+        fail(id, -32000, 'activeTurnNotSteerable', { reason: 'activeTurnNotSteerable' });
+        return;
+      }
       if (!active || (params?.expectedTurnId && params.expectedTurnId !== active.id)) {
         fail(id, -32000, 'activeTurnNotSteerable', { reason: 'activeTurnNotSteerable' });
         return;
@@ -759,6 +825,10 @@ function handleRequest(message) {
     }
     case 'thread/compact/start': {
       const threadId = String(params?.threadId || '');
+      if (consumeControlFlag('compactRejectOnce')) {
+        fail(id, -32033, 'Mock compaction rejection');
+        return;
+      }
       if (!threads.has(threadId)) {
         fail(id, -32602, `Thread not found: ${threadId}`);
         return;

@@ -120,6 +120,25 @@ class TurnCoordinator {
     return this.operation?.deferred?.error || null;
   }
 
+  get canInterrupt() {
+    const operation = this.operation;
+    if (!operation) return Boolean(this.legacy.turnId);
+
+    const replacementIsActive = Boolean(
+      this.forceSteer?.replacementTurnId
+      && !this.forceSteer.awaitingReplacementTurn
+      && this.forceSteer.replacementTurnId === operation.currentTurnId
+    );
+    const forceSteerBlocksInterrupt = Boolean(this.forceSteer && !replacementIsActive);
+
+    return Boolean(
+      operation.currentTurnId
+      && !operation.deferred.settled
+      && (operation.phase === 'starting' || operation.phase === 'streaming')
+      && !forceSteerBlocksInterrupt
+    );
+  }
+
   set completionStatus(value) {
     this.legacy.completionStatus = value || null;
   }

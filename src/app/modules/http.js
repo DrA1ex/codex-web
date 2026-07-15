@@ -190,7 +190,7 @@ module.exports = {
         ...this.app,
         queueCounts: counts,
         nextPendingId: nextPending?.id || null,
-        canInterrupt: !!(this.currentTurnId && this.app.sessionId),
+        canInterrupt: !!(this.app.sessionId && this.turnCoordinator.canInterrupt),
         isManualSend: !!this.currentManualSend,
         manualSendContinueQueue: !!this.manualSendContinueQueue,
         canPause: !!this.app.sessionId && (canPauseProcessing || canPauseManualContinuation),

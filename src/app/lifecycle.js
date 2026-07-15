@@ -91,7 +91,7 @@ module.exports = {
   },
 
   async interruptCurrentTurn() {
-    if (!this.currentTurnId || !this.app.sessionId) {
+    if (!this.app.sessionId || !this.turnCoordinator.canInterrupt) {
       return {ok: false, message: 'No running prompt to interrupt.'};
     }
 

@@ -136,7 +136,7 @@ module.exports = {
   },
 
   async steerActivePrompt(text) {
-    if (!this.currentTurnId || !this.app.sessionId) {
+    if (!this.app.sessionId || !this.turnCoordinator.canInterrupt) {
       return { ok: false, message: 'No active turn to steer.' };
     }
 
@@ -213,7 +213,7 @@ module.exports = {
   },
 
   async forceSteerActivePrompt(text, options = {}) {
-    if (!this.currentTurnId || !this.app.sessionId) {
+    if (!this.app.sessionId || !this.turnCoordinator.canInterrupt) {
       return { ok: false, message: 'No active turn to interrupt.' };
     }
 

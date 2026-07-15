@@ -186,3 +186,26 @@ test('fatal exit emits one terminal error and never downgrades unknown to failed
   const errors = snapshot.output.filter((entry) => entry.type === 'error' && entry.text.includes('app-server exited'));
   expect(errors).toHaveLength(1);
 });
+
+test.describe('rate-limit reset failure recovery', () => {
+  test.use({
+    mockConfig: { control: { rateLimits: 'limited', resetConsumeFailureOnce: true } },
+    appOptions: { watchInterval: 1 },
+  });
+
+  test('failed reset consumption keeps the authorization reusable for a retry', async ({ app }) => {
+    await app.page.locator('#limitResetOpenBtn').click();
+    await expect(app.page.locator('#limitResetConfirmBtn')).toBeEnabled({ timeout: 8000 });
+    const requestId = (await app.snapshot()).limitResetRequest?.requestId;
+    expect(requestId).toBeTruthy();
+
+    await expect(app.api('/api/limits/reset', { requestId })).rejects.toThrow('Mock reset consume failure');
+    expect((await app.snapshot()).limitResetRequest?.requestId).toBe(requestId);
+    await expect(app.page.locator('#limitBadge')).not.toHaveAttribute('title', 'limits available');
+
+    const retry = await app.api('/api/limits/reset', { requestId });
+    expect(retry).toEqual({ ok: true, outcome: 'reset' });
+    await expect(app.page.locator('#limitBadge')).toHaveAttribute('title', 'limits available');
+    expect(await app.clientRequests('account/rateLimitResetCredit/consume')).toHaveLength(2);
+  });
+});

@@ -161,9 +161,9 @@ Run syntax checks, unit tests, and Playwright E2E tests:
 npm run validate
 ```
 
-The E2E runner discovers the number of tests in each spec and splits large specs into isolated browser batches. Every test receives a fresh mock app-server, codex-web process, project directory, state directory, and navigation; the Chromium process and page are reused only within one bounded batch. Each batch has a watchdog, process-tree cleanup, and a short cooldown before the next Chromium launch.
+The E2E runner discovers the number of tests in each spec and splits large specs into isolated browser batches. By default, two batches run concurrently. Every test still receives a fresh mock app-server, codex-web process, port, project directory, state directory, and navigation; the Chromium process and page are reused only within one bounded batch. Each concurrent batch writes artifacts to its own `test-results/e2e-batches/batch-*` directory and has an independent watchdog and process-tree cleanup.
 
-Set `PLAYWRIGHT_CHROMIUM_EXECUTABLE=/path/to/chromium` to use a system browser when the Playwright-managed browser is unavailable. CI hosts can tune `E2E_MAX_TESTS_PER_PROCESS`, `E2E_FILE_TIMEOUT_MS`, and `E2E_BATCH_COOLDOWN_MS` when Chromium startup or teardown is unusually slow.
+Use `E2E_PARALLEL_PROCESSES=1 npm run e2e` for serial troubleshooting, or raise the value on a host with enough CPU and memory. The runner caps the value at the host's available CPU parallelism. Set `PLAYWRIGHT_CHROMIUM_EXECUTABLE=/path/to/chromium` to use a system browser when the Playwright-managed browser is unavailable. CI hosts can also tune `E2E_MAX_TESTS_PER_PROCESS`, `E2E_FILE_TIMEOUT_MS`, and `E2E_BATCH_COOLDOWN_MS` when Chromium startup or teardown is unusually slow.
 
 ## Reliability Notes
 

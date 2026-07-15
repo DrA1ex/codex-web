@@ -104,7 +104,14 @@ test('force steer replacement failure rejects the active waiter and leaves a rec
   assert.equal(active.status, 'failed');
   assert.equal(app.forceSteer, null);
   assert.equal(app.app.state, 'paused');
+  assert.equal(app.turnCoordinator.canInterrupt, false);
+  assert.equal(app.snapshot().app.canInterrupt, false);
   await assert.rejects(waiter, /replacement start failed/);
+
+  const retryInterrupt = await app.interruptCurrentTurn();
+  assert.deepEqual(retryInterrupt, { ok: false, message: 'No running prompt to interrupt.' });
+  const retrySteer = await app.steerActivePrompt('too late');
+  assert.deepEqual(retrySteer, { ok: false, message: 'No active turn to steer.' });
 
   app.handleNotification('turn/failed', {
     threadId: 'session',

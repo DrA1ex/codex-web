@@ -114,7 +114,7 @@ npm run e2e         # Playwright with the isolated mock app-server
 npm run validate    # all checks and tests
 ```
 
-The E2E runner counts tests per spec and splits large specs into bounded browser batches. Every test gets a fresh codex-web process, mock app-server, state directory, project directory, and page navigation; a browser/page is reused only within its batch. Each batch has a watchdog, recursive process-tree cleanup, and a configurable cooldown. Use `E2E_MAX_TESTS_PER_PROCESS`, `E2E_FILE_TIMEOUT_MS`, and `E2E_BATCH_COOLDOWN_MS` only for host-specific stability tuning.
+The E2E runner counts tests per spec and splits large specs into bounded browser batches. Two batches run concurrently by default, while each Playwright batch keeps one worker. Every test gets a fresh codex-web process, mock app-server, port, state directory, project directory, and page navigation; a browser/page is reused only within its batch. Concurrent batches use separate artifact directories, watchdogs, and recursive process-tree cleanup. Use `E2E_PARALLEL_PROCESSES=1` for serial debugging, or tune `E2E_PARALLEL_PROCESSES`, `E2E_MAX_TESTS_PER_PROCESS`, `E2E_FILE_TIMEOUT_MS`, and `E2E_BATCH_COOLDOWN_MS` for the host.
 
 Run locally:
 

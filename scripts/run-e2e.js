@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 'use strict';
 
+const os = require('node:os');
 const path = require('node:path');
+const fsp = require('node:fs/promises');
 const { spawn, spawnSync } = require('node:child_process');
 
 const playwrightRoot = path.dirname(require.resolve('playwright/package.json'));
@@ -19,9 +21,23 @@ const batchCooldownMs = Math.max(
   0,
   Number.parseInt(process.env.E2E_BATCH_COOLDOWN_MS || '3000', 10) || 0,
 );
+const resultRoot = path.resolve(process.env.E2E_OUTPUT_DIR || 'test-results/e2e-batches');
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function hostParallelism() {
+  if (typeof os.availableParallelism === 'function') return os.availableParallelism();
+  return os.cpus()?.length || 1;
+}
+
+function resolveParallelProcesses(value = process.env.E2E_PARALLEL_PROCESSES, available = hostParallelism()) {
+  const fallback = Math.min(2, Math.max(1, available));
+  if (value == null || value === '') return fallback;
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isFinite(parsed) || parsed < 1) return 1;
+  return Math.min(parsed, Math.max(1, available));
 }
 
 function descendantPids(rootPid) {
@@ -70,16 +86,22 @@ function killTree(child, signal) {
   signalPid(child.pid, signal);
 }
 
-let activeChild = null;
+const activeChildren = new Set();
 let terminating = false;
+
+function terminateActiveChildren(signal) {
+  for (const child of activeChildren) killTree(child, signal);
+}
 
 function forwardTermination(signal) {
   if (terminating) return;
   terminating = true;
-  if (!activeChild) process.exit(signal === 'SIGINT' ? 130 : 143);
-  killTree(activeChild, 'SIGTERM');
-  setTimeout(() => killTree(activeChild, 'SIGKILL'), 1000);
-  setTimeout(() => process.exit(signal === 'SIGINT' ? 130 : 143), 2000);
+  if (!activeChildren.size) process.exit(signal === 'SIGINT' ? 130 : 143);
+  terminateActiveChildren('SIGTERM');
+  const killTimer = setTimeout(() => terminateActiveChildren('SIGKILL'), 1000);
+  const exitTimer = setTimeout(() => process.exit(signal === 'SIGINT' ? 130 : 143), 2000);
+  killTimer.unref?.();
+  exitTimer.unref?.();
 }
 
 function installSignalHandlers() {
@@ -95,7 +117,7 @@ async function run(args, label) {
       stdio: 'inherit',
       detached: false,
     });
-    activeChild = child;
+    activeChildren.add(child);
 
     let settled = false;
     let timedOut = false;
@@ -103,15 +125,17 @@ async function run(args, label) {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
-      if (activeChild === child) activeChild = null;
+      activeChildren.delete(child);
       callback(value);
     };
     const timer = setTimeout(() => {
       timedOut = true;
       console.error(`\n[e2e] ${label} exceeded ${timeoutMs} ms; terminating its process tree`);
       killTree(child, 'SIGTERM');
-      setTimeout(() => killTree(child, 'SIGKILL'), 1000);
-      setTimeout(() => finish(resolve, 124), 2500);
+      const killTimer = setTimeout(() => killTree(child, 'SIGKILL'), 1000);
+      const settleTimer = setTimeout(() => finish(resolve, 124), 2500);
+      killTimer.unref?.();
+      settleTimer.unref?.();
     }, timeoutMs);
 
     child.once('error', (error) => finish(reject, error));
@@ -176,32 +200,76 @@ function createJobs(counts, limit = maxTestsPerProcess) {
   return jobs;
 }
 
+function jobLabel(job) {
+  const suffix = job.shards > 1 ? ` shard ${job.shard}/${job.shards}` : '';
+  return `${job.file}${suffix}`;
+}
+
+async function runJobPool(jobs, concurrency, execute, options = {}) {
+  const workerCount = Math.min(Math.max(1, concurrency), Math.max(1, jobs.length));
+  const cooldownMs = Math.max(0, options.cooldownMs || 0);
+  let cursor = 0;
+  let failedStatus = 0;
+
+  async function worker(slot) {
+    while (!failedStatus) {
+      const index = cursor;
+      cursor += 1;
+      if (index >= jobs.length) return;
+      const status = await execute(jobs[index], index, slot);
+      if (status !== 0) {
+        failedStatus = status;
+        return;
+      }
+      if (cooldownMs > 0 && cursor < jobs.length) await sleep(cooldownMs);
+    }
+  }
+
+  await Promise.all(Array.from({ length: workerCount }, (_, index) => worker(index + 1)));
+  return failedStatus;
+}
+
 async function main() {
   installSignalHandlers();
 
   // Explicit arguments preserve normal Playwright focused-run semantics.
   if (forwarded.length) return await run(forwarded, 'focused Playwright run');
 
-  // Each shard gets a fresh Playwright worker/browser process. Tests inside the
-  // shard still receive independent backend processes, ports, state directories,
-  // project directories, and navigations. Limiting shard size avoids long-lived
-  // Chromium degradation while avoiding one browser launch per individual test.
+  // A batch owns one Playwright worker/browser process. Batches are independent:
+  // every test creates a fresh backend, mock server, port, state directory, project
+  // directory, and navigation. Running multiple batches in parallel is therefore
+  // safe as long as their artifact directories are separate.
   const counts = discoverSpecCounts();
   const jobs = createJobs(counts);
   const totalTests = [...counts.values()].reduce((sum, value) => sum + value, 0);
+  const parallelProcesses = Math.min(resolveParallelProcesses(), jobs.length);
 
-  for (const [index, job] of jobs.entries()) {
-    const suffix = job.shards > 1 ? ` shard ${job.shard}/${job.shards}` : '';
-    const label = `${job.file}${suffix}`;
-    console.log(`\n[e2e] batch ${index + 1}/${jobs.length}: ${label}`);
-    const args = [job.file, '--workers=1'];
+  await fsp.rm(resultRoot, { recursive: true, force: true });
+  await fsp.mkdir(resultRoot, { recursive: true });
+
+  const executionLabel = parallelProcesses === 1
+    ? 'running serially'
+    : `running ${parallelProcesses} batches in parallel`;
+  console.log(`[e2e] ${totalTests} tests in ${jobs.length} browser batches; ${executionLabel}`);
+
+  const status = await runJobPool(jobs, parallelProcesses, async (job, index, slot) => {
+    const label = jobLabel(job);
+    console.log(`\n[e2e] batch ${index + 1}/${jobs.length} (slot ${slot}/${parallelProcesses}): ${label}`);
+    const outputDir = path.join(resultRoot, `batch-${String(index + 1).padStart(2, '0')}`);
+    const args = [job.file, '--workers=1', `--output=${outputDir}`];
     if (job.shards > 1) args.push(`--shard=${job.shard}/${job.shards}`);
-    const status = await run(args, label);
-    if (status !== 0) return status;
-    if (batchCooldownMs > 0 && index < jobs.length - 1) await sleep(batchCooldownMs);
+    return await run(args, label);
+  }, { cooldownMs: batchCooldownMs });
+
+  if (status !== 0) {
+    terminateActiveChildren('SIGTERM');
+    const killTimer = setTimeout(() => terminateActiveChildren('SIGKILL'), 1000);
+    killTimer.unref?.();
+    return status;
   }
 
-  console.log(`\n[e2e] ${totalTests}/${totalTests} tests passed across ${jobs.length} isolated browser batches`);
+  const completionMode = parallelProcesses === 1 ? 'serial' : `${parallelProcesses} parallel`;
+  console.log(`\n[e2e] ${totalTests}/${totalTests} tests passed across ${jobs.length} isolated browser batches (${completionMode})`);
   return 0;
 }
 
@@ -209,6 +277,9 @@ module.exports = {
   collectCounts,
   createJobs,
   descendantPids,
+  jobLabel,
+  resolveParallelProcesses,
+  runJobPool,
 };
 
 if (require.main === module) {
