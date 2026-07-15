@@ -46,25 +46,62 @@ function readBinaryAsset(name) {
   return readAssetFile(name);
 }
 
-function readJsonBody(req) {
+class HttpRequestError extends Error {
+  constructor(statusCode, message) {
+    super(message);
+    this.name = 'HttpRequestError';
+    this.statusCode = statusCode;
+  }
+}
+
+function readJsonBody(req, options = {}) {
+  const maxBytes = Number.isFinite(options.maxBytes) ? Math.max(0, options.maxBytes) : 20 * 1024 * 1024;
   return new Promise((resolve, reject) => {
-    let data = '';
-    req.on('data', (chunk) => {
-      data += chunk;
-      if (data.length > 20 * 1024 * 1024) {
-        reject(new Error('Request body too large'));
-        req.destroy();
+    const chunks = [];
+    let totalBytes = 0;
+    let settled = false;
+
+    const cleanup = () => {
+      req.removeListener?.('data', onData);
+      req.removeListener?.('end', onEnd);
+      req.removeListener?.('error', onError);
+    };
+    const fail = (err) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      if (typeof req.resume === 'function') req.resume();
+      reject(err);
+    };
+    const onData = (chunk) => {
+      if (settled) return;
+      const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk));
+      totalBytes += buffer.length;
+      if (totalBytes > maxBytes) {
+        fail(new HttpRequestError(413, 'Request body too large'));
+        return;
       }
-    });
-    req.on('end', () => {
-      if (!data) return resolve({});
+      chunks.push(buffer);
+    };
+    const onEnd = () => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      if (!chunks.length) {
+        resolve({});
+        return;
+      }
       try {
-        resolve(JSON.parse(data));
-      } catch (err) {
-        reject(new Error('Invalid JSON body'));
+        resolve(JSON.parse(Buffer.concat(chunks, totalBytes).toString('utf8')));
+      } catch (_) {
+        reject(new HttpRequestError(400, 'Invalid JSON body'));
       }
-    });
-    req.on('error', reject);
+    };
+    const onError = (err) => fail(err);
+
+    req.on('data', onData);
+    req.on('end', onEnd);
+    req.on('error', onError);
   });
 }
 
@@ -76,4 +113,5 @@ module.exports = {
   readAsset: readTextAsset,
   readBinaryAsset,
   readJsonBody,
+  HttpRequestError,
 };

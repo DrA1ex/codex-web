@@ -136,6 +136,11 @@ module.exports = {
   async handleRpcExit(error) {
     if (this.shuttingDown) return;
     this.clearPumpTimer();
+    this.clearApprovalTimeout();
+    if (this.approval) {
+      this.approval = null;
+      this.broadcast('approval', null);
+    }
     if (this.currentQueueCommandTimer) clearTimeout(this.currentQueueCommandTimer);
     this.currentQueueCommandTimer = null;
     const exitError = error instanceof Error ? error : new Error(String(error || 'codex app-server exited'));
@@ -183,8 +188,12 @@ module.exports = {
     }
     if (this.usageRefreshTimer) clearTimeout(this.usageRefreshTimer);
     if (this.currentQueueCommandTimer) clearTimeout(this.currentQueueCommandTimer);
+    if (this.limitTimer) clearInterval(this.limitTimer);
+    this.clearApprovalTimeout();
     this.usageRefreshTimer = null;
     this.currentQueueCommandTimer = null;
+    this.limitTimer = null;
+    this.approval = null;
     this.shuttingDown = true;
     this.app.state = 'shutting-down';
     this.app.message = reason;

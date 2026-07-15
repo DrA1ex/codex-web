@@ -215,3 +215,107 @@ test('loadSessions reads active queue and completed archive metadata asynchronou
   assert.ok(session);
   assert.deepEqual(session.queueCounts, { pending: 1, completed: 17 });
 });
+
+test('session operations reject overlap and release the guard after failure', async () => {
+  const app = makeAppWithQueue([]);
+  app.app.state = 'selecting-session';
+  let release;
+  const blocked = new Promise((resolve) => { release = resolve; });
+  app.rpc = {
+    request: async (method) => {
+      if (method === 'thread/list') {
+        await blocked;
+        return { threads: [] };
+      }
+      return {};
+    },
+  };
+
+  const loading = app.loadSessions();
+  await new Promise((resolve) => setImmediate(resolve));
+  await assert.rejects(() => app.createSession(), /Another session operation.*loadSessions/);
+  release();
+  await loading;
+  assert.equal(app.sessionOperation, null);
+
+  app.rpc.request = async () => { throw new Error('list failed'); };
+  await app.loadSessions();
+  assert.equal(app.sessionOperation, null);
+});
+
+test('selectSession rejects an empty id before changing state or calling RPC', async () => {
+  const app = makeAppWithQueue([]);
+  app.app.state = 'selecting-session';
+  let called = false;
+  app.rpc = { request: async () => { called = true; return {}; } };
+
+  await assert.rejects(() => app.selectSession('   '), /session id is required/i);
+
+  assert.equal(called, false);
+  assert.equal(app.app.state, 'selecting-session');
+  assert.equal(app.sessionOperation, null);
+});
+
+test('tryReadSession ignores a response that belongs to a previously selected session', async () => {
+  const app = makeAppWithQueue([]);
+  app.app.sessionId = 'old-session';
+  app.app.sessionTitle = 'Old title';
+  let resolveRead;
+  app.rpc = {
+    request: async () => await new Promise((resolve) => { resolveRead = resolve; }),
+  };
+
+  const reading = app.tryReadSession();
+  await new Promise((resolve) => setImmediate(resolve));
+  app.app.sessionId = 'new-session';
+  app.app.sessionTitle = 'New title';
+  resolveRead({ thread: { threadId: 'old-session', title: 'Late old title' } });
+  await reading;
+
+  assert.equal(app.app.sessionId, 'new-session');
+  assert.equal(app.app.sessionTitle, 'New title');
+  assert.equal(app.app.session, undefined);
+});
+
+test('selectSession persists state again after installing the selected session id', async () => {
+  const app = makeAppWithQueue([]);
+  app.app.state = 'selecting-session';
+  const savedSessionIds = [];
+  app.rpc = {
+    request: async (method) => {
+      if (method === 'thread/resume') return { thread: { threadId: 'selected-session', title: 'Selected' } };
+      if (method === 'thread/read') return { thread: { threadId: 'selected-session', title: 'Selected' } };
+      return {};
+    },
+  };
+  app.saveState = async (overrides = {}) => { savedSessionIds.push(overrides.sessionId ?? app.app.sessionId); };
+  app.setupPairState = async (sessionId) => { await app.saveState({ sessionId }); };
+
+  await app.selectSession('selected-session');
+
+  assert.deepEqual(savedSessionIds, ['selected-session', 'selected-session']);
+});
+
+test('failed session selection clears previous archive paths, indexes, and output history', async () => {
+  const app = makeAppWithQueue([item('pending')]);
+  app.app.state = 'selecting-session';
+  app.completedArchivePath = '/tmp/old-completed.jsonl';
+  app.completedArchiveMetaPath = '/tmp/old-completed.meta.json';
+  app.archivedCompletedIds = new Set(['old-item']);
+  app.completedArchiveRecent = [item('old-item', 'completed')];
+  app.completedArchiveTotal = 1;
+  app.outputHistory = { sessionId: 'old-session', hasMore: true, loadedTurnIds: new Set(['turn']), turns: [{}], cursorIndex: 1 };
+  app.releaseLock = () => {};
+  app.setupPairState = async () => { throw new Error('state unavailable'); };
+  app.rpc = { request: async () => ({ thread: { threadId: 'new-session' } }) };
+
+  await app.selectSession('new-session');
+
+  assert.equal(app.completedArchivePath, null);
+  assert.equal(app.completedArchiveMetaPath, null);
+  assert.deepEqual([...app.archivedCompletedIds], []);
+  assert.deepEqual(app.completedArchiveRecent, []);
+  assert.equal(app.completedArchiveTotal, 0);
+  assert.equal(app.outputHistory.sessionId, null);
+  assert.equal(app.outputHistory.hasMore, false);
+});

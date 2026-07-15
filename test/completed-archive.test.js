@@ -75,3 +75,39 @@ test('clearCompletedArchive truncates JSONL and resets metadata', async () => {
   const meta = JSON.parse(await fsp.readFile(app.completedArchiveMetaPath, 'utf8'));
   assert.equal(meta.totalCompleted, 0);
 });
+
+test('reverse JSONL pagination preserves UTF-8 across arbitrary chunk boundaries', async () => {
+  const dir = await tempDir();
+  const archivePath = path.join(dir, 'completed.jsonl');
+  const records = [
+    { op: 'insert', item: item('unicode-1', 'completed', { text: `prefix-${'x'.repeat(31)}😀-кириллица` }) },
+    { op: 'insert', item: item('unicode-2', 'completed', { text: `中文-${'y'.repeat(29)}🚲-конец` }) },
+  ];
+  await fsp.writeFile(archivePath, `${records.map(JSON.stringify).join('\n')}\n`, 'utf8');
+
+  const { readCompletedArchivePage } = require('../src/app/completed-archive');
+  const page = await readCompletedArchivePage(archivePath, {
+    limit: 10,
+    totalCompleted: 2,
+    chunkSize: 7,
+  });
+
+  assert.equal(page.items[0].text, records[0].item.text);
+  assert.equal(page.items[1].text, records[1].item.text);
+  assert.doesNotMatch(page.items.map((entry) => entry.text).join(''), /�/);
+});
+
+test('completed archive ignores damaged JSONL records and continues paging', async () => {
+  const dir = await tempDir();
+  const archivePath = path.join(dir, 'completed.jsonl');
+  const first = { op: 'insert', item: item('first-good', 'completed') };
+  const second = { op: 'insert', item: item('second-good', 'completed') };
+  await fsp.writeFile(archivePath, `${JSON.stringify(first)}\n{damaged\n${JSON.stringify(second)}\n`, 'utf8');
+
+  const { loadCompletedArchiveIndex, readCompletedArchivePage } = require('../src/app/completed-archive');
+  const index = await loadCompletedArchiveIndex(archivePath);
+  const page = await readCompletedArchivePage(archivePath, { limit: 10, totalCompleted: index.total, chunkSize: 5 });
+
+  assert.equal(index.total, 2);
+  assert.deepEqual(page.items.map((entry) => entry.id), ['first-good', 'second-good']);
+});

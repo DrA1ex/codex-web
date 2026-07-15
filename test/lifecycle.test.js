@@ -223,3 +223,21 @@ test('setError switches app to error state and logs output', () => {
   assert.equal(app.app.message, 'boom');
   assert.equal(app.output.at(-1).type, 'error');
 });
+
+test('app-server exit clears stale approval state and timeout', async () => {
+  const app = makeAppWithQueue([]);
+  let approvalBroadcast = 'unset';
+  app.broadcast = (event, value) => {
+    if (event === 'approval') approvalBroadcast = value;
+  };
+  app.approval = { rpcId: 1, requestId: 'approval-1' };
+  app.approvalTimer = setTimeout(() => {}, 60_000);
+  app.app.state = 'approval-required';
+
+  await app.handleRpcExit(new Error('server gone'));
+
+  assert.equal(app.approval, null);
+  assert.equal(app.approvalTimer, null);
+  assert.equal(approvalBroadcast, null);
+  assert.equal(app.app.state, 'error');
+});

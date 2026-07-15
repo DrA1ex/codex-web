@@ -125,6 +125,7 @@ class TurnCoordinator {
       throw new Error('A turn operation is already active');
     }
     this.forceSteer = null;
+    this.intentionalInterrupts.clear();
     const deferred = makeDeferred();
     this.operation = {
       threadId: threadId || null,
@@ -207,6 +208,7 @@ class TurnCoordinator {
   correlateStarted(params) {
     const operation = this.operation || this.ensureLegacyOperation();
     if (!operation || !this.matchesThread(params, operation)) return { matched: false };
+    if (operation.terminal) return { matched: false, ignored: true, reason: 'terminal-already-seen' };
     const turnId = eventTurnId(params) || operation.currentTurnId;
     if (!turnId) return { matched: false };
 
@@ -252,6 +254,7 @@ class TurnCoordinator {
   correlateTerminal(method, params, status, errorMessage) {
     const operation = this.operation || this.ensureLegacyOperation();
     if (!operation || !this.matchesThread(params, operation)) return { matched: false };
+    if (operation.terminal) return { matched: false, ignored: true, reason: 'terminal-already-seen' };
     const turnId = eventTurnId(params);
     const interrupted = this.isIntentionalInterrupt(turnId, method, status, errorMessage);
     if (interrupted) return { matched: true, ignored: true, interrupted, turnId };
@@ -366,6 +369,7 @@ class TurnCoordinator {
   reset() {
     this.operation = null;
     this.forceSteer = null;
+    this.intentionalInterrupts.clear();
     this.legacy.itemId = null;
     this.legacy.turnId = null;
     this.legacy.resolve = null;
@@ -373,7 +377,6 @@ class TurnCoordinator {
     this.legacy.started = false;
     this.legacy.completionSeen = false;
     this.legacy.completionStatus = null;
-    if (this.intentionalInterrupts.size > 100) this.intentionalInterrupts.clear();
   }
 }
 

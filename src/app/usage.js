@@ -288,16 +288,24 @@ module.exports = {
 
     const item = this.queue.find((queueItem) => queueItem.id === id)
       || this.completedArchiveRecent?.find((queueItem) => queueItem.id === id);
-    this.pendingUsageRefreshItemId = null;
-    if (!item?.usage?.refreshPending) return false;
+    if (!item?.usage?.refreshPending) {
+      if (this.pendingUsageRefreshItemId === id) this.pendingUsageRefreshItemId = null;
+      return false;
+    }
 
     await safePollRateLimits(this, 'previous usage');
-    item.usage.refreshPending = false;
     const updated = await updateUsageFromLimits(this, item, 'refreshedLimits');
-    if (updated) {
-      if (item.status === 'completed' && this.completedArchivePath) await this.archiveCompletedItem(item);
-      else await this.saveQueue();
+    item.usage.refreshPending = false;
+    try {
+      if (updated) {
+        if (item.status === 'completed' && this.completedArchivePath) await this.archiveCompletedItem(item);
+        else await this.saveQueue();
+      }
+    } catch (err) {
+      item.usage.refreshPending = true;
+      throw err;
     }
+    if (this.pendingUsageRefreshItemId === id) this.pendingUsageRefreshItemId = null;
     return updated;
   },
 
@@ -331,9 +339,11 @@ module.exports = {
   },
 
   async readThreadTokenCount() {
-    if (!this.app.sessionId) return null;
+    const sessionId = this.app.sessionId;
+    if (!sessionId) return null;
     try {
-      const read = await this.rpc.request('thread/read', { threadId: this.app.sessionId, includeTurns: false }, 6000);
+      const read = await this.rpc.request('thread/read', { threadId: sessionId, includeTurns: false }, 6000);
+      if (this.app.sessionId !== sessionId) return null;
       const count = extractThreadTokenCount(read);
       this.setContextTokenCount(count);
       return count;
@@ -405,22 +415,24 @@ module.exports = {
         .then((updated) => {
           if (updated) this.broadcastAll();
         })
-        .catch((err) => this.debugLog?.('usage refresh failed', err.message || String(err)));
+        .catch((err) => {
+          this.debugLog?.('usage refresh failed', err.message || String(err));
+          if (this.pendingUsageRefreshItemId === itemId) this.scheduleQueueItemUsageRefresh(itemId);
+        });
     }, USAGE_REFRESH_DELAY_MS);
     if (typeof this.usageRefreshTimer.unref === 'function') this.usageRefreshTimer.unref();
   },
 
   handleTokenUsageUpdated(params = {}) {
-    this.updateContextTokenCount(params);
     const threadId = params.threadId || params.thread?.id || null;
     const turnId = params.turnId || params.turn?.id || null;
-    if (!threadId || !turnId) return false;
-    if (threadId !== this.app.sessionId) return false;
+    if (!threadId || !turnId || threadId !== this.app.sessionId) return false;
+    this.updateContextTokenCount(params);
 
     const activeItem = turnId === this.currentTurnId ? this.currentItem() : null;
-    const item = activeItem || this.queue.find((queueItem) => (
-      queueItem.usage?.threadId === threadId && queueItem.usage?.turnId === turnId
-    ));
+    const item = activeItem
+      || this.queue.find((queueItem) => queueItem.usage?.threadId === threadId && queueItem.usage?.turnId === turnId)
+      || this.completedArchiveRecent?.find((queueItem) => queueItem.usage?.threadId === threadId && queueItem.usage?.turnId === turnId);
     if (!item) return false;
 
     const tokenUsage = normalizeTokenBreakdown(params.tokenUsage?.last || params.tokenUsage);
@@ -432,7 +444,13 @@ module.exports = {
     usage.tokenUsage = tokenUsage;
     usage.usageUpdatedAt = nowIso();
     usage.usageStatus = publicUsageStatus(usage);
-    this.saveQueue().catch(() => {});
+    const persist = item.status === 'completed' && this.completedArchivePath
+      ? this.archiveCompletedItem(item)
+      : this.saveQueue();
+    Promise.resolve(persist).catch((err) => {
+      if (typeof this.reportPersistenceFailure === 'function') this.reportPersistenceFailure('token usage persistence', err);
+      else this.debugLog?.('token usage persistence failed', err.message || String(err));
+    });
     this.broadcastAll();
     return true;
   },

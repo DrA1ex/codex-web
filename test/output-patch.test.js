@@ -159,3 +159,64 @@ test('the complete frontend ESM graph imports under Node', async () => {
   const loaded = await import(bootstrap);
   assert.equal(typeof loaded.startApp, 'function');
 });
+
+test('frontend output patch detects a missing first sequence and deduplicates repeated ids', async () => {
+  const modulePath = pathToFileURL(path.join(__dirname, '..', 'www', 'src', 'core', 'output-patch.js')).href;
+  const { applyOutputPatch } = await import(modulePath);
+  const gapSnapshot = { outputSequence: 0, output: [], outputGroups: [] };
+
+  assert.deepEqual(applyOutputPatch(gapSnapshot, {
+    sequence: 2,
+    output: { upsert: [], remove: [], order: [] },
+    outputGroups: { upsert: [], remove: [], order: [] },
+  }), { applied: false, gap: true });
+
+  const duplicateSnapshot = {
+    outputSequence: 0,
+    output: [{ id: 'same', text: 'old-1' }, { id: 'same', text: 'old-2' }],
+    outputGroups: [],
+  };
+  const result = applyOutputPatch(duplicateSnapshot, {
+    sequence: 1,
+    output: { upsert: [{ id: 'same', text: 'new' }], remove: [], order: null },
+    outputGroups: { upsert: [], remove: [], order: null },
+  });
+
+  assert.deepEqual(result, { applied: true, gap: false });
+  assert.deepEqual(duplicateSnapshot.output, [{ id: 'same', text: 'new' }]);
+});
+
+test('frontend queue merge keeps active retry over a stale completed archive copy', async () => {
+  const rendererPath = pathToFileURL(path.join(__dirname, '..', 'www', 'src', 'core', 'renderer.js')).href;
+  const { mergeCompletedArchiveQueue } = await import(rendererPath);
+  const active = { id: 'same', status: 'pending', text: 'retry' };
+  const archived = { id: 'same', status: 'completed', text: 'old result' };
+
+  assert.deepEqual(mergeCompletedArchiveQueue([active], [archived]), [active]);
+});
+
+test('frontend completed archive cache uses backend insertion cursor, not timestamp sorting', async () => {
+  const rendererPath = pathToFileURL(path.join(__dirname, '..', 'www', 'src', 'core', 'renderer.js')).href;
+  const statePath = pathToFileURL(path.join(__dirname, '..', 'www', 'src', 'core', 'state.js')).href;
+  const [{ syncCompletedArchiveCache }, { state }] = await Promise.all([
+    import(rendererPath),
+    import(statePath),
+  ]);
+  state.completedArchiveCache.sessionId = '';
+  state.completedArchiveCache.items = [];
+  state.completedArchiveCache.cursor = null;
+
+  syncCompletedArchiveCache({
+    app: { sessionId: 'cursor-session', queueCounts: { completed: 2 } },
+    completedArchive: {
+      items: [
+        { id: 'inserted-first', status: 'completed', finishedAt: '2030-01-01T00:00:00.000Z' },
+        { id: 'inserted-second', status: 'completed', finishedAt: '2020-01-01T00:00:00.000Z' },
+      ],
+      cursor: { id: 'inserted-first', finishedAt: '2030-01-01T00:00:00.000Z' },
+      hasMore: false,
+    },
+  });
+
+  assert.equal(state.completedArchiveCache.cursor.id, 'inserted-first');
+});

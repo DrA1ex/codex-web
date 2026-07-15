@@ -39,11 +39,14 @@ module.exports = {
       return;
     }
     if (method === 'serverRequest/resolved') {
-      if (this.approval && (!params.requestId || params.requestId === this.approval.requestId)) {
+      const requestId = params.requestId || params.request_id || params.itemId || params.item_id || null;
+      if (this.approval && requestId && requestId === this.approval.requestId) {
         this.approval = null;
         this.clearApprovalTimeout();
         this.broadcast('approval', null);
         if (this.app.state === 'approval-required') this.resume();
+      } else if (this.approval) {
+        this.debugLog('ignored uncorrelated serverRequest/resolved', safeJson(maskSecrets(params)).slice(0, 500));
       }
       return;
     }
@@ -217,6 +220,12 @@ module.exports = {
         this.rpc.respond(msg.id, result);
         return;
       }
+      if (this.approval) {
+        this.appendOutput(`[approval] rejected overlapping request ${params.requestId || params.itemId || msg.id}; resolve the current approval first`, 'error');
+        this.rpc.respond(msg.id, mapApprovalResponse('decline'));
+        this.broadcastAll();
+        return;
+      }
       this.approval = {
         rpcId: msg.id,
         requestId: params.requestId || params.itemId || String(msg.id),
@@ -249,7 +258,12 @@ module.exports = {
     this.clearApprovalTimeout();
     const mapped = mapApprovalResponse(decision);
     const id = this.approval.rpcId;
-    this.rpc.respond(id, mapped);
+    try {
+      this.rpc.respond(id, mapped);
+    } catch (err) {
+      this.scheduleApprovalTimeout(this.approval.requestId);
+      throw err;
+    }
     this.appendOutput(`[approval] ${humanApprovalResponse(mapped)}`, 'system');
     this.approval = null;
     this.broadcast('approval', null);
@@ -272,7 +286,12 @@ module.exports = {
   async autoRejectApproval(requestId) {
     if (!this.approval || this.approval.requestId !== requestId) return;
     const id = this.approval.rpcId;
-    this.rpc.respond(id, mapApprovalResponse('decline'));
+    try {
+      this.rpc.respond(id, mapApprovalResponse('decline'));
+    } catch (err) {
+      this.scheduleApprovalTimeout(requestId);
+      throw err;
+    }
     this.appendOutput('[approval] auto-declined after 15 minutes', 'system');
     this.approval = null;
     this.clearApprovalTimeout();

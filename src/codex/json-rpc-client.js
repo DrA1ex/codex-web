@@ -7,8 +7,11 @@ const { VERSION } = require('../shared/config');
 const { sleep, nowIso, safeJson, maskSecrets } = require('../shared/utils');
 
 class JsonRpcClient {
-  constructor(app) {
+  constructor(app, dependencies = {}) {
     this.app = app;
+    this.spawnProcess = dependencies.spawn || spawn;
+    this.sleep = dependencies.sleep || sleep;
+    this.killProcess = dependencies.kill || process.kill.bind(process);
     this.proc = null;
     this.rl = null;
     this.nextId = 1;
@@ -18,9 +21,18 @@ class JsonRpcClient {
   }
   start() {
     const opts = this.app.opts;
+    this.exited = false;
     return new Promise((resolve, reject) => {
       let settled = false;
-      const child = spawn(opts.codexBin, ['app-server'], {
+      let startupTimer = null;
+      const settle = (callback, value) => {
+        if (settled) return false;
+        settled = true;
+        if (startupTimer) clearTimeout(startupTimer);
+        callback(value);
+        return true;
+      };
+      const child = this.spawnProcess(opts.codexBin, ['app-server'], {
         cwd: opts.projectDir,
         stdio: ['pipe', 'pipe', 'pipe'],
         env: process.env,
@@ -29,11 +41,10 @@ class JsonRpcClient {
       this.proc = child;
       const onSpawn = () => {
         this.started = true;
-        if (!settled) { settled = true; resolve(); }
+        settle(resolve);
       };
       const onError = (err) => {
-        if (!settled) { settled = true; reject(err); }
-        else this.app.setError(`app-server error: ${err.message}`);
+        if (!settle(reject, err)) this.app.setError(`app-server error: ${err.message}`);
       };
       child.once('spawn', onSpawn);
       child.once('error', onError);
@@ -45,26 +56,28 @@ class JsonRpcClient {
       this.rl = readline.createInterface({ input: child.stdout });
       this.rl.on('line', (line) => this.handleLine(line));
       child.on('exit', (code, signal) => {
+        const started = this.started;
         this.exited = true;
+        this.started = false;
         this.app.debug.appServerStatus = `exited code=${code} signal=${signal || ''}`;
         for (const [id, p] of this.pending) {
+          if (p.timeout) clearTimeout(p.timeout);
           p.reject(new Error(`app-server exited before response to request ${id}`));
         }
         this.pending.clear();
+        const error = new Error(`codex app-server exited: code=${code}, signal=${signal || 'none'}`);
+        error.code = 'APP_SERVER_EXITED';
+        if (!started && settle(reject, error)) return;
         if (!this.app.shuttingDown) {
-          const error = new Error(`codex app-server exited: code=${code}, signal=${signal || 'none'}`);
-          error.code = 'APP_SERVER_EXITED';
           Promise.resolve(this.app.handleRpcExit(error)).catch((err) => {
             this.app.setError(err.message || String(err));
           });
         }
       });
-      setTimeout(() => {
-        if (!settled) {
-          settled = true;
-          reject(new Error('codex app-server did not emit spawn event in time'));
-        }
-      }, 3000).unref();
+      startupTimer = setTimeout(() => {
+        settle(reject, new Error('codex app-server did not emit spawn event in time'));
+      }, 3000);
+      startupTimer.unref();
     });
   }
   async initialize() {
@@ -75,21 +88,33 @@ class JsonRpcClient {
     this.notify('initialized', {});
   }
   request(method, params = undefined, timeoutMs = 0) {
-    if (!this.proc || !this.proc.stdin.writable) return Promise.reject(new Error('app-server is not running'));
+    if (!this.proc || this.exited || !this.proc.stdin.writable) return Promise.reject(new Error('app-server is not running'));
     const id = this.nextId++;
     const msg = { method, id };
     if (params !== undefined) msg.params = params;
-    this.write(msg);
     return new Promise((resolve, reject) => {
       let timeout = null;
+      const rejectPending = (error) => {
+        const pending = this.pending.get(id);
+        if (!pending) return;
+        this.pending.delete(id);
+        if (pending.timeout) clearTimeout(pending.timeout);
+        pending.reject(error);
+      };
       if (timeoutMs > 0) {
         timeout = setTimeout(() => {
-          this.pending.delete(id);
-          reject(new Error(`JSON-RPC request timed out: ${method}`));
+          rejectPending(new Error(`JSON-RPC request timed out: ${method}`));
         }, timeoutMs);
         timeout.unref();
       }
       this.pending.set(id, { method, resolve, reject, timeout });
+      try {
+        this.write(msg, (error) => {
+          if (error) rejectPending(error);
+        });
+      } catch (error) {
+        rejectPending(error);
+      }
     });
   }
   notify(method, params = {}) {
@@ -99,9 +124,12 @@ class JsonRpcClient {
     if (isError) this.write({ id, error: result });
     else this.write({ id, result });
   }
-  write(msg) {
+  write(msg, callback = undefined) {
+    if (!this.proc || this.exited || !this.proc.stdin || !this.proc.stdin.writable) {
+      throw new Error('app-server is not running');
+    }
     this.logJsonRpc('client', msg);
-    this.proc.stdin.write(JSON.stringify(msg) + '\n');
+    this.proc.stdin.write(JSON.stringify(msg) + '\n', callback);
   }
   logJsonRpc(direction, msg) {
     if (!this.app.jsonRpcLogPath) return;
@@ -137,28 +165,35 @@ class JsonRpcClient {
       return;
     }
     if (Object.prototype.hasOwnProperty.call(msg, 'id') && msg.method) {
-      this.app.handleServerRequest(msg).catch((err) => {
+      Promise.resolve().then(() => this.app.handleServerRequest(msg)).catch((err) => {
         this.respond(msg.id, { code: -32603, message: err.message || String(err) }, true);
       });
       return;
     }
-    if (msg.method) this.app.handleNotification(msg.method, msg.params || {});
+    if (msg.method) {
+      Promise.resolve().then(() => this.app.handleNotification(msg.method, msg.params || {})).catch((err) => {
+        this.app.debugLog('notification handler failed', `${msg.method}: ${err.message || String(err)}`);
+        if (typeof this.app.setError === 'function') {
+          this.app.setError(`Notification handler failed (${msg.method}): ${err.message || String(err)}`);
+        }
+      });
+    }
   }
   async stop() {
     if (!this.proc || this.exited) return;
     try { this.rl && this.rl.close(); } catch (_) {}
     try { this.proc.stdin.end(); } catch (_) {}
-    await sleep(100);
+    await this.sleep(100);
     if (!this.exited) {
       try {
-        if (process.platform !== 'win32' && this.proc.pid) process.kill(-this.proc.pid, 'SIGTERM');
+        if (process.platform !== 'win32' && this.proc.pid) this.killProcess(-this.proc.pid, 'SIGTERM');
         else this.proc.kill('SIGTERM');
       } catch (_) {}
     }
-    await sleep(500);
+    await this.sleep(500);
     if (!this.exited) {
       try {
-        if (process.platform !== 'win32' && this.proc.pid) process.kill(-this.proc.pid, 'SIGKILL');
+        if (process.platform !== 'win32' && this.proc.pid) this.killProcess(-this.proc.pid, 'SIGKILL');
         else this.proc.kill('SIGKILL');
       } catch (_) {}
     }

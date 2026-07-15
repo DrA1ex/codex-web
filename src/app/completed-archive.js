@@ -51,20 +51,29 @@ async function* reverseLines(filePath, chunkSize = 64 * 1024) {
   try {
     const stat = await handle.stat();
     let position = stat.size;
-    let carry = '';
+    let carry = Buffer.alloc(0);
     while (position > 0) {
       const length = Math.min(chunkSize, position);
       position -= length;
       const buffer = Buffer.allocUnsafe(length);
       const { bytesRead } = await handle.read(buffer, 0, length, position);
-      const text = buffer.subarray(0, bytesRead).toString('utf8') + carry;
-      const parts = text.split('\n');
-      carry = parts.shift() || '';
-      for (let index = parts.length - 1; index >= 0; index -= 1) {
-        if (parts[index]) yield parts[index];
+      const block = carry.length
+        ? Buffer.concat([buffer.subarray(0, bytesRead), carry])
+        : buffer.subarray(0, bytesRead);
+      let lineEnd = block.length;
+      for (let index = block.length - 1; index >= 0; index -= 1) {
+        if (block[index] !== 0x0a) continue;
+        let line = block.subarray(index + 1, lineEnd);
+        if (line.length && line[line.length - 1] === 0x0d) line = line.subarray(0, -1);
+        if (line.length) yield line.toString('utf8');
+        lineEnd = index;
       }
+      carry = Buffer.from(block.subarray(0, lineEnd));
     }
-    if (carry) yield carry;
+    if (carry.length) {
+      if (carry[carry.length - 1] === 0x0d) carry = carry.subarray(0, -1);
+      if (carry.length) yield carry.toString('utf8');
+    }
   } finally {
     await handle.close();
   }
@@ -84,7 +93,7 @@ async function readCompletedArchivePage(filePath, options = {}) {
   let beforeFound = !beforeId;
   let hasMore = false;
 
-  for await (const line of reverseLines(filePath)) {
+  for await (const line of reverseLines(filePath, options.chunkSize || 64 * 1024)) {
     let record;
     try {
       record = JSON.parse(line);

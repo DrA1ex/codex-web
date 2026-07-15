@@ -207,3 +207,158 @@ test('explicit sandbox and approval CLI options override saved settings', async 
   assert.equal(saved.app.configSources.sandbox, 'saved');
   assert.equal(saved.app.configSources.approvalPolicy, 'saved');
 });
+
+test('intentional interrupt records are scoped to one turn operation', () => {
+  const first = item('first', 'sent');
+  const second = item('second', 'sending');
+  const app = makeAppWithQueue([first, second]);
+
+  app.turnCoordinator.begin({ threadId: 'session', itemId: first.id });
+  app.turnCoordinator.acceptTurn('turn-old');
+  app.turnCoordinator.beginForceSteer({ originalTurnId: 'turn-old', queueItemId: first.id });
+  app.turnCoordinator.resolveSynthetic('interrupted');
+  app.turnCoordinator.reset();
+
+  app.turnCoordinator.begin({ threadId: 'session', itemId: second.id });
+  app.turnCoordinator.acceptTurn('turn-new');
+  const result = app.turnCoordinator.correlateTerminal(
+    'turn/failed',
+    { threadId: 'session' },
+    'failed',
+    'cancelled by server',
+  );
+
+  assert.equal(result.matched, true);
+  assert.equal(result.ignored, false);
+  assert.equal(result.turnId, 'turn-new');
+  assert.equal(app.intentionalInterrupts.size, 0);
+});
+
+test('sendPrompt cleans coordinator and item state when setup persistence fails', async () => {
+  const active = item('setup-failure');
+  const app = makeAppWithQueue([active]);
+  stubPromptUsage(app);
+  let saveCalls = 0;
+  app.saveQueue = async () => {
+    saveCalls += 1;
+    throw new Error('queue disk unavailable');
+  };
+
+  await app.sendPrompt(active, { continueQueue: false });
+
+  assert.equal(active.status, 'failed');
+  assert.match(active.error, /queue disk unavailable/);
+  assert.equal(app.currentItemId, null);
+  assert.equal(app.currentTurnId, null);
+  assert.equal(app.turnCoordinator.operation, null);
+  assert.equal(app.currentManualSend, false);
+  assert.ok(saveCalls >= 2);
+});
+
+test('sendPrompt cleanup failures cannot leave a completed turn active', async () => {
+  const active = item('cleanup-failure');
+  const app = makeAppWithQueue([active]);
+  const reported = [];
+  app.reportPersistenceFailure = (operation, err) => reported.push(`${operation}: ${err.message}`);
+  app.beginQueueItemUsage = async () => {};
+  app.recordQueueItemTurn = async () => {};
+  app.completeQueueItemUsage = async () => { throw new Error('usage cleanup failed'); };
+  app.finalizeCompletedQueueItem = async () => { throw new Error('archive failed'); };
+  app.saveState = async () => { throw new Error('state failed'); };
+  app.tryReadSession = async () => {};
+  app.rpc = {
+    request: async () => {
+      app.handleNotification('turn/completed', {
+        threadId: 'session',
+        turn: { id: 'turn-cleanup', status: 'completed' },
+      });
+      return { turn: { id: 'turn-cleanup' } };
+    },
+  };
+
+  await withTimeout(app.sendPrompt(active, { continueQueue: false }));
+
+  assert.equal(active.status, 'completed');
+  assert.equal(app.turnCoordinator.operation, null);
+  assert.equal(app.currentItemId, null);
+  assert.equal(app.currentTurnId, null);
+  assert.equal(app.currentManualSend, false);
+  assert.equal(reported.length, 3);
+  assert.match(reported.join('\n'), /usage cleanup failed/);
+  assert.match(reported.join('\n'), /archive failed/);
+  assert.match(reported.join('\n'), /state failed/);
+});
+
+test('queued compact start failure clears command waiters and active state', async () => {
+  const command = item('compact-failure', 'pending', { text: '/compact' });
+  const app = makeAppWithQueue([command]);
+  app.beginQueuedCommandUsage = async () => {};
+  app.rpc = { request: async () => { throw new Error('compact start failed'); } };
+
+  await app.executeQueuedCommand(command, { continueQueue: false });
+
+  assert.equal(command.status, 'failed');
+  assert.equal(app.currentQueueCommand, null);
+  assert.equal(app.currentQueueCommandResolve, null);
+  assert.equal(app.currentQueueCommandReject, null);
+  assert.equal(app.currentQueueCommandTimer, null);
+  assert.equal(app.currentItemId, null);
+  assert.equal(app.currentManualSend, false);
+});
+
+test('removing a manually scheduled pending item does not block future manual sends', async () => {
+  const first = item('manual-pending');
+  const second = item('next-manual');
+  const app = makeAppWithQueue([first, second]);
+  app.pendingManualSendItemId = first.id;
+  app.currentManualSend = true;
+
+  await app.removeQueueItem(first.id);
+
+  assert.equal(app.pendingManualSendItemId, null);
+  assert.equal(app.currentManualSend, false);
+  app.movePendingToFirst = async () => ({ ok: true, item: second });
+  app.runCountdownAndSend = async () => {};
+  app.rateLimits.status = 'available';
+  const result = await app.sendItemNow(second);
+  assert.equal(result.ok, true);
+});
+
+test('late started and duplicate terminal events are ignored after completion', async () => {
+  const active = item('completed-once', 'sending');
+  const app = makeAppWithQueue([active]);
+  app.tryReadSession = async () => {};
+  app.turnCoordinator.begin({ threadId: 'session', itemId: active.id });
+  app.turnCoordinator.acceptTurn('turn-once');
+
+  app.handleNotification('turn/completed', {
+    threadId: 'session',
+    turn: { id: 'turn-once', status: 'completed' },
+  });
+  const outputCount = app.output.length;
+
+  app.handleNotification('turn/started', {
+    threadId: 'session',
+    turn: { id: 'turn-once' },
+  });
+  app.handleNotification('turn/completed', {
+    threadId: 'session',
+    turn: { id: 'turn-once', status: 'completed' },
+  });
+
+  assert.equal(active.status, 'completed');
+  assert.equal(app.output.length, outputCount);
+});
+
+test('queue move helpers roll back ordering when persistence fails', async () => {
+  const first = item('first');
+  const second = item('second');
+  const app = makeAppWithQueue([first, second]);
+  app.saveQueue = async () => { throw new Error('disk full'); };
+
+  await assert.rejects(() => app.movePendingToNext(second), /disk full/);
+  assert.deepEqual(app.queue.map((queueItem) => queueItem.id), ['first', 'second']);
+
+  await assert.rejects(() => app.movePendingToFirst(app.queue.find((queueItem) => queueItem.id === 'second')), /disk full/);
+  assert.deepEqual(app.queue.map((queueItem) => queueItem.id), ['first', 'second']);
+});

@@ -135,3 +135,21 @@ test('friendlyStartError explains missing codex binary and general failures', ()
   assert.match(friendlyStartError(missing, 'codex').message, /binary was not found/);
   assert.match(friendlyStartError(new Error('boom'), 'codex').message, /Reason: boom/);
 });
+
+test('numeric CLI options reject non-finite and invalid port values', () => {
+  assert.throws(() => parseArgs(['--watch-interval', 'Infinity']), /Invalid numeric value.*watch-interval/);
+  assert.throws(() => parseArgs(['--countdown', 'NaN']), /Invalid numeric value.*countdown/);
+  assert.throws(() => parseArgs(['--session-picker-limit', 'many']), /Invalid numeric value.*session-picker-limit/);
+  assert.throws(() => parseArgs(['--port', '-1']), /Unsupported --port/);
+  assert.throws(() => parseArgs(['--port', '65536']), /Unsupported --port/);
+  assert.throws(() => parseArgs(['--port', '8000.5']), /Unsupported --port/);
+
+  const bounded = parseArgs([
+    '--watch-interval', '999999999',
+    '--countdown', '999999999',
+    '--session-picker-limit', '999999999',
+  ]);
+  assert.equal(bounded.watchInterval, 86400);
+  assert.equal(bounded.countdown, 86400);
+  assert.equal(bounded.sessionPickerLimit, 1000);
+});

@@ -14,6 +14,11 @@ const {
   movePendingToFirst: movePendingToFirstItem,
 } = require('../queue');
 
+function cloneQueue(queue) {
+  if (typeof structuredClone === 'function') return structuredClone(queue);
+  return JSON.parse(JSON.stringify(queue));
+}
+
 async function waitUntilScheduledTime(ctx) {
   if (!ctx.app.scheduledRunAt) return false;
 
@@ -29,8 +34,14 @@ async function waitUntilScheduledTime(ctx) {
     return true;
   }
 
+  const previousScheduledRunAt = ctx.app.scheduledRunAt;
   ctx.app.scheduledRunAt = null;
-  await ctx.saveState();
+  try {
+    await ctx.saveState();
+  } catch (err) {
+    ctx.app.scheduledRunAt = previousScheduledRunAt;
+    throw err;
+  }
   return false;
 }
 
@@ -58,11 +69,30 @@ function updateIdleStateAfterQueueDrain(ctx) {
 }
 
 module.exports = {
+  reconcilePendingManualSend() {
+    const pendingId = this.pendingManualSendItemId;
+    if (!pendingId) return false;
+    const stillPending = this.queue.some((item) => item.id === pendingId && isPendingLikeStatus(item.status));
+    if (stillPending) return false;
+    this.pendingManualSendItemId = null;
+    if (!this.currentItemId && !this.currentTurnId) {
+      this.currentManualSend = false;
+      this.manualSendContinueQueue = false;
+    }
+    return true;
+  },
+
   async movePendingToNext(item) {
+    const previousQueue = cloneQueue(this.queue);
     const result = movePendingToNextItem(this.queue, item, this.currentItemId);
     this.queue = result.queue;
 
-    await this.saveQueue();
+    try {
+      await this.saveQueue();
+    } catch (err) {
+      this.queue = previousQueue;
+      throw err;
+    }
     this.appendOutput(`[queue] next #${item.id}`, 'system');
     this.broadcastAll();
     this.schedulePump(200);
@@ -71,10 +101,16 @@ module.exports = {
   },
 
   async movePendingToFirst(item) {
+    const previousQueue = cloneQueue(this.queue);
     const result = movePendingToFirstItem(this.queue, item);
     this.queue = result.queue;
 
-    await this.saveQueue();
+    try {
+      await this.saveQueue();
+    } catch (err) {
+      this.queue = previousQueue;
+      throw err;
+    }
     this.broadcastAll();
 
     return { ok: true, item: result.item };
@@ -88,6 +124,7 @@ module.exports = {
     if (this.currentItemId || this.currentTurnId) return;
     if (hasStatus(this.queue, RUNNING_QUEUE_STATUSES)) return;
 
+    this.reconcilePendingManualSend();
     const pending = this.queue.find((item) => isPendingLikeStatus(item.status));
     if (!pending) {
       updateIdleStateAfterQueueDrain(this);

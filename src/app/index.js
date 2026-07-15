@@ -80,6 +80,7 @@ class CodexLimitWatchApp {
     this.sessionsLoaded = false;
     this.sessions = [];
     this.sessionPickerReturnState = null;
+    this.sessionOperation = null;
 
     this.modelCatalog = makeFallbackCatalog();
     this.app = createAppState(opts);

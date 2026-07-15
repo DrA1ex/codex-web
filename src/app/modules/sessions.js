@@ -55,8 +55,22 @@ async function mapWithConcurrency(values, limit, mapper) {
   return result;
 }
 
+async function withSessionOperation(ctx, name, callback) {
+  if (ctx.sessionOperation) {
+    throw new Error(`Another session operation is already in progress (${ctx.sessionOperation.name}).`);
+  }
+  const operation = { name, startedAt: Date.now() };
+  ctx.sessionOperation = operation;
+  try {
+    return await callback();
+  } finally {
+    if (ctx.sessionOperation === operation) ctx.sessionOperation = null;
+  }
+}
+
 module.exports = {
   async loadSessions() {
+    return await withSessionOperation(this, 'loadSessions', async () => {
     if (this.app.sessionId && this.app.state !== 'selecting-session' && !this.canChangeSession()) {
       throw new Error('Pause the queue and wait for the current task to finish before changing sessions.');
     }
@@ -110,9 +124,13 @@ module.exports = {
     this.app.message = errors.length ? `Session list loaded with warnings: ${errors.join('; ')}` : 'Select a session';
     this.sessionsLoaded = true;
     this.broadcastAll();
+    });
   },
 
   async selectSession(sessionId, startup = false) {
+    return await withSessionOperation(this, 'selectSession', async () => {
+    sessionId = String(sessionId || '').trim();
+    if (!sessionId) throw new Error('A session id is required.');
     if (!startup && this.app.sessionId && this.app.state !== 'selecting-session' && this.app.sessionId !== sessionId && !this.canChangeSession()) {
       throw new Error('Pause the queue and wait for the current task to finish before changing sessions.');
     }
@@ -142,7 +160,7 @@ module.exports = {
     const selectedSessionId = thread.id || thread.threadId || thread.sessionId || sessionId;
     const selectedSessionTitle = fallbackThreadTitle(thread, this.opts.projectDir);
     try {
-      await this.setupPairState(selectedSessionId);
+      await this.setupPairState(selectedSessionId, selectedSessionTitle);
     } catch (err) {
       await this.failSessionSelection(selectedSessionId, err);
       return;
@@ -151,6 +169,7 @@ module.exports = {
     this.app.sessionTitle = selectedSessionTitle;
     this.app.sessionError = null;
     await this.tryReadSession();
+    await this.saveState();
     const returnState = this.sessionPickerReturnState;
     this.sessionPickerReturnState = null;
     this.app.state = returnState || 'watching';
@@ -159,9 +178,11 @@ module.exports = {
     this.eventLog('info', `session selected ${this.app.sessionId}`);
     this.broadcastAll();
     if (this.app.state !== 'paused') this.schedulePump(200);
+    });
   },
 
   async createSession() {
+    return await withSessionOperation(this, 'createSession', async () => {
     if (this.app.sessionId && this.app.state !== 'selecting-session' && !this.canChangeSession()) {
       throw new Error('Pause the queue and wait for the current task to finish before changing sessions.');
     }
@@ -206,7 +227,7 @@ module.exports = {
     this.app.sessionTitle = fallbackThreadTitle(thread, this.opts.projectDir);
     this.app.sessionError = null;
     try {
-      await this.setupPairState(this.app.sessionId);
+      await this.setupPairState(this.app.sessionId, this.app.sessionTitle);
     } catch (err) {
       await this.failSessionSelection(sessionId, err);
       return;
@@ -220,12 +241,18 @@ module.exports = {
     this.eventLog('info', `session created ${this.app.sessionId}`);
     this.broadcastAll();
     if (this.app.state !== 'paused') this.schedulePump(200);
+    });
   },
 
   async tryReadSession() {
-    if (!this.app.sessionId) return;
+    const sessionId = this.app.sessionId;
+    if (!sessionId) return;
     try {
-      const read = await this.rpc.request('thread/read', { threadId: this.app.sessionId, includeTurns: false }, 6000);
+      const read = await this.rpc.request('thread/read', { threadId: sessionId, includeTurns: false }, 6000);
+      if (this.app.sessionId !== sessionId) {
+        this.debugLog('ignored stale thread/read response', sessionId);
+        return;
+      }
       const thread = read?.thread || read || {};
       this.updateContextTokenCount(read);
       this.app.sessionTitle = fallbackThreadTitle(thread, this.opts.projectDir) || this.app.sessionTitle;
@@ -257,6 +284,12 @@ module.exports = {
     this.eventsLogPath = null;
     this.jsonRpcLogPath = null;
     this.lockPath = null;
+    this.completedArchivePath = null;
+    this.completedArchiveMetaPath = null;
+    this.archivedCompletedIds = new Set();
+    this.completedArchiveRecent = [];
+    this.completedArchiveTotal = 0;
+    this.outputHistory = { sessionId: null, hasMore: false, loadedTurnIds: new Set(), turns: null, cursorIndex: null };
     this.debug.stateDirForPair = null;
     this.debug.queuePath = null;
     this.broadcastAll();

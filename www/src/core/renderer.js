@@ -23,14 +23,14 @@ function queueTime(item) {
   return Number.isFinite(time) ? time : 0;
 }
 
-function mergeCompletedArchiveQueue(queue, archiveItems) {
+export function mergeCompletedArchiveQueue(queue, archiveItems) {
   const byId = new Map();
-  for (const item of queue || []) byId.set(item.id, item);
   for (const item of archiveItems || []) byId.set(item.id, item);
+  for (const item of queue || []) byId.set(item.id, item);
   return [...byId.values()];
 }
 
-function syncCompletedArchiveCache(snapshot) {
+export function syncCompletedArchiveCache(snapshot) {
   const sessionId = snapshot?.app?.sessionId || '';
   const cache = state.completedArchiveCache;
   if (cache.sessionId !== sessionId) {
@@ -58,11 +58,12 @@ function syncCompletedArchiveCache(snapshot) {
 
   const incoming = Array.isArray(archive.items) ? archive.items : [];
   if (incoming.length) {
+    const hadCachedItems = cache.items.length > 0;
     const merged = mergeCompletedArchiveQueue(cache.items, incoming)
       .filter((item) => item?.status === 'completed')
       .sort((left, right) => queueTime(left) - queueTime(right) || String(left.id || '').localeCompare(String(right.id || '')));
     cache.items = merged;
-    cache.cursor = merged[0] ? { id: merged[0].id, finishedAt: merged[0].finishedAt || null } : null;
+    if (!hadCachedItems) cache.cursor = archive.cursor || null;
   } else if (!cache.items.length) {
     cache.cursor = archive.cursor || null;
   }

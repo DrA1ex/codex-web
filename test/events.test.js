@@ -313,3 +313,44 @@ test('serverRequest/resolved clears matching approval and resumes if required', 
   assert.equal(app.clearedApprovalTimeout, true);
   assert.equal(app.app.state, 'watching');
 });
+
+test('manual approval keeps the first request and declines overlapping requests', async () => {
+  const app = makeAppWithQueue([], { approvalResponse: 'manual' });
+  const responses = [];
+  app.rpc = { respond: (...args) => responses.push(args) };
+  app.scheduleApprovalTimeout = () => {};
+
+  await app.handleServerRequest({ id: 1, method: 'item/fileChange/requestApproval', params: { requestId: 'first' } });
+  await app.handleServerRequest({ id: 2, method: 'item/fileChange/requestApproval', params: { requestId: 'second' } });
+
+  assert.equal(app.approval.rpcId, 1);
+  assert.equal(app.approval.requestId, 'first');
+  assert.deepEqual(responses, [[2, 'decline']]);
+  assert.match(app.output.at(-1).text, /overlapping request/);
+});
+
+test('uncorrelated approval resolution cannot clear the active request', async () => {
+  const app = makeAppWithQueue([]);
+  app.approval = { requestId: 'active-request', rpcId: 1 };
+  app.app.state = 'approval-required';
+
+  app.handleNotification('serverRequest/resolved', {});
+  app.handleNotification('serverRequest/resolved', { requestId: 'other-request' });
+
+  assert.equal(app.approval.requestId, 'active-request');
+  assert.equal(app.app.state, 'approval-required');
+});
+
+test('failed approval response remains retryable and gets a fresh timeout', async () => {
+  const app = makeAppWithQueue([]);
+  app.approval = { requestId: 'retry-approval', rpcId: 7 };
+  const scheduled = [];
+  app.clearApprovalTimeout = () => {};
+  app.scheduleApprovalTimeout = (requestId) => scheduled.push(requestId);
+  app.rpc = { respond: () => { throw new Error('stdin closed'); } };
+
+  await assert.rejects(() => app.respondApproval('accept'), /stdin closed/);
+
+  assert.equal(app.approval.requestId, 'retry-approval');
+  assert.deepEqual(scheduled, ['retry-approval']);
+});

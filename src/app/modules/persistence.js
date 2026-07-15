@@ -147,7 +147,7 @@ function completedQueuePage(queue, before = null, limit = 10) {
 }
 
 module.exports = {
-  async setupPairState(sessionId) {
+  async setupPairState(sessionId, sessionTitle = null) {
     const key = sha256(`${stripTrailingSep(this.opts.projectDir)}\n${sessionId}`).slice(0, 32);
     const nextStateDirForPair = path.join(this.opts.stateDir, key);
     if (this.lockAcquired && this.stateDirForPair && this.stateDirForPair !== nextStateDirForPair) {
@@ -169,7 +169,7 @@ module.exports = {
     if (this.syncModelConfigState) await this.syncModelConfigState();
     await this.loadCompletedArchive();
     await this.loadQueue();
-    await this.saveState();
+    await this.saveState({ sessionId, sessionTitle: sessionTitle || this.app.sessionTitle });
   },
 
   async acquireLock() {
@@ -272,10 +272,19 @@ module.exports = {
 
   async finalizeCompletedQueueItem(item) {
     if (!item || item.status !== 'completed' || !this.completedArchivePath) return false;
-    await this.archiveCompletedItem(item);
-    this.queue = this.queue.filter((candidate) => candidate.id !== item.id);
-    await this.saveQueue({ skipArchive: true });
-    return true;
+    const index = this.queue.findIndex((candidate) => candidate.id === item.id);
+    if (index >= 0) this.queue.splice(index, 1);
+    try {
+      await this.archiveCompletedItem(item);
+      await this.saveQueue({ skipArchive: true });
+      return true;
+    } catch (err) {
+      if (!this.queue.some((candidate) => candidate.id === item.id)) {
+        this.queue.splice(Math.max(0, index), 0, item);
+        this.queue = normalizeQueueOrder(this.queue);
+      }
+      throw err;
+    }
   },
 
   async loadCompletedArchivePage(body = {}) {
@@ -366,10 +375,19 @@ module.exports = {
 
     if (!options.skipArchive && this.completedArchivePath) {
       const eligible = this.queue.filter((item) => item.status === 'completed' && item.id !== this.currentItemId);
-      for (const item of eligible) await this.archiveCompletedItem(item);
       if (eligible.length) {
         const ids = new Set(eligible.map((item) => item.id));
         this.queue = this.queue.filter((item) => !ids.has(item.id));
+        try {
+          for (const item of eligible) await this.archiveCompletedItem(item);
+        } catch (err) {
+          const existing = new Set(this.queue.map((item) => item.id));
+          for (const item of eligible) {
+            if (!existing.has(item.id)) this.queue.push(item);
+          }
+          this.queue = normalizeQueueOrder(this.queue);
+          throw err;
+        }
       }
     }
 
@@ -447,13 +465,13 @@ module.exports = {
     });
   },
 
-  async saveState() {
+  async saveState(overrides = {}) {
     if (!this.statePath) return;
     const data = {
       version: VERSION,
       projectDir: this.opts.projectDir,
-      sessionId: this.app.sessionId,
-      sessionTitle: this.app.sessionTitle,
+      sessionId: Object.prototype.hasOwnProperty.call(overrides, 'sessionId') ? overrides.sessionId : this.app.sessionId,
+      sessionTitle: Object.prototype.hasOwnProperty.call(overrides, 'sessionTitle') ? overrides.sessionTitle : this.app.sessionTitle,
       model: this.opts.model || '',
       effort: this.opts.effort || '',
       scheduledRunAt: this.app.scheduledRunAt || null,

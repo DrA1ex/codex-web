@@ -15,6 +15,40 @@ const {
 const { commandByName, commandHelpPayload } = require('../commands');
 const { parseComposerCommand } = require('../command-parser');
 
+
+function cloneValue(value) {
+  if (typeof structuredClone === 'function') return structuredClone(value);
+  return JSON.parse(JSON.stringify(value));
+}
+
+function captureManualState(ctx) {
+  return {
+    pendingManualSendItemId: ctx.pendingManualSendItemId,
+    currentManualSend: ctx.currentManualSend,
+    manualSendContinueQueue: ctx.manualSendContinueQueue,
+  };
+}
+
+async function persistQueueOrRollback(ctx, previousQueue, options = undefined, previousManualState = null) {
+  try {
+    await ctx.saveQueue(options);
+  } catch (err) {
+    ctx.queue = previousQueue;
+    if (previousManualState) Object.assign(ctx, previousManualState);
+    else ctx.reconcilePendingManualSend?.();
+    throw err;
+  }
+}
+
+async function persistStateOrRollback(ctx, previous) {
+  try {
+    await ctx.saveState();
+  } catch (err) {
+    Object.assign(ctx.app, previous);
+    throw err;
+  }
+}
+
 function commandRaw(parsed, fallback) {
   return parsed?.raw || fallback || parsed?.command || '';
 }
@@ -170,9 +204,10 @@ module.exports = {
     }
 
     const queuedCommand = parseQueuedCommand(trimmed);
+    const previousQueue = cloneValue(this.queue);
     const item = makeQueueItem(normalized);
     this.queue.push(item);
-    await this.saveQueue();
+    await persistQueueOrRollback(this, previousQueue);
     if (this.recordPendingUndo) this.recordPendingUndo(item);
     this.app.state = this.app.state === 'done' ? 'watching' : this.app.state;
     this.appendOutput(queuedCommand ? `[queue] added #${item.id} · command ${queuedCommand}` : `[queue] added #${item.id} · ${item.lineCount} lines`, 'system');
@@ -193,10 +228,11 @@ module.exports = {
     const ts = Date.parse(String(value || ''));
     if (!Number.isFinite(ts)) throw new Error('Invalid schedule time.');
     if (ts <= Date.now()) throw new Error('Schedule time must be in the future.');
+    const previousState = { scheduledRunAt: this.app.scheduledRunAt, state: this.app.state, message: this.app.message };
     this.app.scheduledRunAt = new Date(ts).toISOString();
     this.app.state = 'scheduled';
     this.app.message = `Queue scheduled for ${new Date(ts).toLocaleString()}`;
-    await this.saveState();
+    await persistStateOrRollback(this, previousState);
     this.appendOutput(`[queue] scheduled ${this.app.scheduledRunAt}`, 'system');
     this.broadcastAll();
     this.schedulePump(Math.min(Math.max(1000, ts - Date.now()), this.opts.watchInterval * 1000));
@@ -205,10 +241,11 @@ module.exports = {
 
   async resetQueueSchedule() {
     this.clearPumpTimer();
+    const previousState = { scheduledRunAt: this.app.scheduledRunAt, state: this.app.state, message: this.app.message };
     this.app.scheduledRunAt = null;
     if (this.app.state === 'scheduled') this.app.state = 'paused';
     this.app.message = 'Queue schedule reset';
-    await this.saveState();
+    await persistStateOrRollback(this, previousState);
     this.appendOutput('[queue] schedule reset', 'system');
     this.broadcastAll();
     return { ok: true };
@@ -216,11 +253,12 @@ module.exports = {
 
   async cancelQueueRun() {
     this.clearPumpTimer();
+    const previousState = { scheduledRunAt: this.app.scheduledRunAt, state: this.app.state, message: this.app.message };
     this.countdownCancel = true;
     this.app.scheduledRunAt = null;
     this.app.state = 'paused';
     this.app.message = 'Queue cancelled';
-    await this.saveState();
+    await persistStateOrRollback(this, previousState);
     this.appendOutput('[queue] cancelled', 'system');
     this.broadcastAll();
     return { ok: true };
@@ -438,6 +476,8 @@ module.exports = {
 
   async undoLast() {
     if (!Array.isArray(this.undoActions)) this.undoActions = [];
+    const previousQueue = cloneValue(this.queue);
+    const previousUndoActions = cloneValue(this.undoActions);
     while (this.undoActions.length) {
       const action = this.undoActions.pop();
       if (action?.type === 'pending') {
@@ -445,7 +485,12 @@ module.exports = {
         if (!item || !isPendingLikeStatus(item.status)) continue;
 
         this.queue.splice(this.queue.indexOf(item), 1);
-        await this.saveQueue();
+        try {
+          await persistQueueOrRollback(this, previousQueue);
+        } catch (err) {
+          this.undoActions = previousUndoActions;
+          throw err;
+        }
         this.appendOutput(`[queue] undo #${item.id}`, 'system');
         this.broadcastAll();
         return { ok: true, composerText: item.text };
@@ -488,24 +533,35 @@ module.exports = {
         message: 'No pending prompt to undo.',
       });
     }
-    await this.saveQueue();
+    try {
+      await persistQueueOrRollback(this, previousQueue);
+    } catch (err) {
+      this.undoActions = previousUndoActions;
+      throw err;
+    }
     this.appendOutput(`[queue] undo #${result.item.id}`, 'system');
     this.broadcastAll();
     return { ok: true, composerText: result.item.text };
   },
 
   async clearPending() {
+    const previousQueue = cloneValue(this.queue);
+    const previousManualState = captureManualState(this);
     const result = clearPendingItems(this.queue);
     this.queue = result.queue;
-    await this.saveQueue();
+    this.reconcilePendingManualSend?.();
+    await persistQueueOrRollback(this, previousQueue, undefined, previousManualState);
     this.appendOutput(`[queue] cleared ${result.removed} pending prompt(s)`, 'system');
     this.broadcastAll();
   },
 
   async clearCompleted() {
+    const previousQueue = cloneValue(this.queue);
+    const previousManualState = captureManualState(this);
     const activeCompleted = this.queue.filter((item) => item.status === 'completed').length;
     this.queue = this.queue.filter((item) => item.status !== 'completed');
-    await this.saveQueue({ skipArchive: true });
+    this.reconcilePendingManualSend?.();
+    await persistQueueOrRollback(this, previousQueue, { skipArchive: true }, previousManualState);
     const archivedCompleted = typeof this.clearCompletedArchive === 'function'
       ? await this.clearCompletedArchive()
       : 0;
@@ -520,25 +576,32 @@ module.exports = {
       if (!item) throw new Error('Queue item not found');
       return await this.sendItemNow(item);
     }
+    const previousQueue = cloneValue(this.queue);
+    const previousManualState = captureManualState(this);
     const result = updateQueueItemData(this.queue, body);
     this.queue = result.queue;
-    await this.saveQueue();
+    this.reconcilePendingManualSend?.();
+    await persistQueueOrRollback(this, previousQueue, undefined, previousManualState);
     this.broadcastAll();
     this.schedulePump(200);
     return { ok: true, item: result.item };
   },
 
   async removeQueueItem(id) {
+    const previousQueue = cloneValue(this.queue);
+    const previousManualState = captureManualState(this);
     const result = removeQueueItemData(this.queue, id, this.currentItemId);
     this.queue = result.queue;
-    await this.saveQueue();
+    this.reconcilePendingManualSend?.();
+    await persistQueueOrRollback(this, previousQueue, undefined, previousManualState);
     this.broadcastAll();
   },
 
   async reorderQueueItem(id, body = {}) {
+    const previousQueue = cloneValue(this.queue);
     const result = reorderPendingItem(this.queue, id, body);
     this.queue = result.queue;
-    await this.saveQueue();
+    await persistQueueOrRollback(this, previousQueue);
     this.broadcastAll();
   }
 };

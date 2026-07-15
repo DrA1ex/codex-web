@@ -225,3 +225,69 @@ test('atomic lock acquisition allows only one concurrent owner', async () => {
   first.releaseLock();
   second.releaseLock();
 });
+
+test('saveQueue removes completed items before awaiting archive I/O', async () => {
+  const dir = await tempDir();
+  const done = item('archive-race', 'completed');
+  const app = makeAppWithQueue([done]);
+  app.queuePath = path.join(dir, 'queue.json');
+  app.completedArchivePath = path.join(dir, 'completed.jsonl');
+  app.completedArchiveMetaPath = path.join(dir, 'completed.meta.json');
+  app.saveQueue = CodexLimitWatchApp.prototype.saveQueue.bind(app);
+  let releaseArchive;
+  const archiveGate = new Promise((resolve) => { releaseArchive = resolve; });
+  app.archiveCompletedItem = async () => {
+    await archiveGate;
+    return true;
+  };
+
+  const saving = app.saveQueue();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(app.queue.some((entry) => entry.id === done.id), false);
+
+  releaseArchive();
+  await saving;
+  assert.deepEqual(JSON.parse(await fsp.readFile(app.queuePath, 'utf8')), []);
+});
+
+test('saveQueue restores removed completed items when archive append fails', async () => {
+  const dir = await tempDir();
+  const done = item('archive-failure', 'completed');
+  const pending = item('still-pending');
+  const app = makeAppWithQueue([done, pending]);
+  app.queuePath = path.join(dir, 'queue.json');
+  app.completedArchivePath = path.join(dir, 'completed.jsonl');
+  app.completedArchiveMetaPath = path.join(dir, 'completed.meta.json');
+  app.saveQueue = CodexLimitWatchApp.prototype.saveQueue.bind(app);
+  app.archiveCompletedItem = async () => { throw new Error('archive unavailable'); };
+
+  await assert.rejects(app.saveQueue(), /archive unavailable/);
+  assert.deepEqual(app.queue.map((entry) => entry.id), ['archive-failure', 'still-pending']);
+  assert.equal(app.queue[0].status, 'completed');
+});
+
+test('finalizeCompletedQueueItem restores the item if archive persistence fails', async () => {
+  const done = item('finalize-failure', 'completed');
+  const app = makeAppWithQueue([done]);
+  app.completedArchivePath = '/tmp/not-used.jsonl';
+  app.archiveCompletedItem = async () => { throw new Error('cannot append'); };
+
+  await assert.rejects(app.finalizeCompletedQueueItem(done), /cannot append/);
+  assert.equal(app.queue[0], done);
+  assert.equal(done.status, 'completed');
+});
+
+test('setupPairState persists the target session identity before app selection is committed', async () => {
+  const stateDir = await tempDir();
+  const app = makeAppWithQueue([], { stateDir });
+  app.app.sessionId = 'old-session';
+  app.app.sessionTitle = 'Old title';
+  app.saveState = CodexLimitWatchApp.prototype.saveState.bind(app);
+
+  await app.setupPairState('target-session', 'Target title');
+  const saved = JSON.parse(await fsp.readFile(app.statePath, 'utf8'));
+
+  assert.equal(saved.sessionId, 'target-session');
+  assert.equal(saved.sessionTitle, 'Target title');
+  app.releaseLock();
+});

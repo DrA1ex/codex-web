@@ -81,7 +81,9 @@ module.exports = {
 
       sendText(res, 404, 'not found');
     } catch (err) {
-      sendJson(res, 500, {error: err.message || String(err)});
+      if (res.writableEnded) return;
+      const status = Number.isInteger(err.statusCode) ? err.statusCode : 500;
+      sendJson(res, status, {error: err.message || String(err)});
     }
   },
 

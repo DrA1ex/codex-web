@@ -47,9 +47,11 @@ test('readJsonBody parses empty, valid, invalid, and oversized request bodies', 
   const invalid = Readable.from(['{bad']);
   await assert.rejects(() => readJsonBody(invalid), /Invalid JSON body/);
 
-  const huge = Readable.from(['x'.repeat(20 * 1024 * 1024 + 1)]);
-  huge.destroy = () => {};
-  await assert.rejects(() => readJsonBody(huge), /Request body too large/);
+  const huge = Readable.from(['🙂🙂']);
+  await assert.rejects(
+    () => readJsonBody(huge, { maxBytes: 7 }),
+    (err) => err.statusCode === 413 && /Request body too large/.test(err.message),
+  );
 });
 
 test('auth error page does not include runtime token placeholders', () => {
@@ -247,7 +249,7 @@ test('handleHttp validates tokens, handles API routes, and returns JSON errors',
 
   const broken = mockResponse();
   await app.handleHttp({ method: 'POST', url: '/api/queue/add?token=token', headers: { host: 'localhost' }, on(event, handler) { if (event === 'data') handler('{bad'); if (event === 'end') handler(); } }, broken);
-  assert.equal(broken.status, 500);
+  assert.equal(broken.status, 400);
   assert.match(broken.body, /Invalid JSON body/);
 });
 

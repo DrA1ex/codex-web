@@ -292,3 +292,71 @@ test('removeQueueItem deletes inactive prompts and rejects missing ids', async (
 
   await assert.rejects(() => app.removeQueueItem('missing'), /Queue item not found/);
 });
+
+test('queue mutations roll back in-memory state when persistence fails', async () => {
+  const original = [item('first'), item('second')];
+  const app = makeAppWithQueue(structuredClone(original));
+  app.app.state = 'paused';
+  app.saveQueue = async () => { throw new Error('disk full'); };
+
+  await assert.rejects(() => app.addPrompt('third'), /disk full/);
+  assert.deepEqual(app.queue.map((queueItem) => [queueItem.id, queueItem.text, queueItem.status]), original.map((queueItem) => [queueItem.id, queueItem.text, queueItem.status]));
+
+  await assert.rejects(() => app.updateQueueItem({ id: 'first', action: 'edit', text: 'edited' }), /disk full/);
+  assert.equal(app.queue.find((queueItem) => queueItem.id === 'first').text, original[0].text);
+
+  await assert.rejects(() => app.removeQueueItem('first'), /disk full/);
+  assert.deepEqual(app.queue.map((queueItem) => queueItem.id), ['first', 'second']);
+
+  await assert.rejects(() => app.reorderQueueItem('second', { direction: 'up' }), /disk full/);
+  assert.deepEqual(app.queue.map((queueItem) => queueItem.id), ['first', 'second']);
+});
+
+test('failed pending removal restores manual-send ownership', async () => {
+  const app = makeAppWithQueue([item('manual')]);
+  app.pendingManualSendItemId = 'manual';
+  app.currentManualSend = true;
+  app.manualSendContinueQueue = true;
+  app.saveQueue = async () => { throw new Error('disk full'); };
+
+  await assert.rejects(() => app.removeQueueItem('manual'), /disk full/);
+
+  assert.equal(app.queue[0].id, 'manual');
+  assert.equal(app.pendingManualSendItemId, 'manual');
+  assert.equal(app.currentManualSend, true);
+  assert.equal(app.manualSendContinueQueue, true);
+});
+
+test('failed undo restores both queue and undo stack', async () => {
+  const queued = item('undo-me');
+  const app = makeAppWithQueue([queued]);
+  app.recordPendingUndo(queued);
+  const previousUndoActions = structuredClone(app.undoActions);
+  app.saveQueue = async () => { throw new Error('disk full'); };
+
+  await assert.rejects(() => app.undoLast(), /disk full/);
+
+  assert.equal(app.queue.length, 1);
+  assert.equal(app.queue[0].id, 'undo-me');
+  assert.deepEqual(app.undoActions, previousUndoActions);
+});
+
+test('schedule mutations roll back when state persistence fails', async () => {
+  const app = makeAppWithQueue([item('pending')]);
+  app.app.state = 'paused';
+  app.app.message = 'Paused';
+  app.app.scheduledRunAt = null;
+  app.saveState = async () => { throw new Error('state disk full'); };
+
+  await assert.rejects(() => app.setQueueSchedule(new Date(Date.now() + 60_000).toISOString()), /state disk full/);
+  assert.equal(app.app.state, 'paused');
+  assert.equal(app.app.message, 'Paused');
+  assert.equal(app.app.scheduledRunAt, null);
+
+  app.app.state = 'scheduled';
+  app.app.message = 'Scheduled';
+  app.app.scheduledRunAt = new Date(Date.now() + 60_000).toISOString();
+  const previous = { state: app.app.state, message: app.app.message, scheduledRunAt: app.app.scheduledRunAt };
+  await assert.rejects(() => app.resetQueueSchedule(), /state disk full/);
+  assert.deepEqual({ state: app.app.state, message: app.app.message, scheduledRunAt: app.app.scheduledRunAt }, previous);
+});

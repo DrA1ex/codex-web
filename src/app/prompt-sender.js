@@ -66,7 +66,9 @@ function queueAddLabel(item) {
 
 function finishFailedPrompt(ctx, item, err) {
   item.finishedAt = nowIso();
-  if (!err?.preserveItemStatus) transitionQueueItem(item, err?.queueStatus || 'failed');
+  if (!err?.preserveItemStatus && item.status !== 'completed') {
+    transitionQueueItem(item, err?.queueStatus || 'failed');
+  }
   item.error = err.message;
 
   if (err?.code !== 'APP_SERVER_EXITED') {
@@ -82,6 +84,19 @@ function finishFailedPrompt(ctx, item, err) {
 
 function shouldContinueAfterPrompt(ctx, continueQueue) {
   return continueQueue || ctx.manualSendContinueQueue;
+}
+
+async function runCleanupStep(ctx, operation, callback) {
+  try {
+    return await callback();
+  } catch (err) {
+    ctx.reportPersistenceFailure(operation, err);
+    return undefined;
+  }
+}
+
+function outputGroupStatusForItem(item) {
+  return item.status === 'completed' ? 'completed' : 'failed';
 }
 
 module.exports = {
@@ -225,28 +240,32 @@ module.exports = {
 
   async sendPrompt(item, options = {}) {
     const continueQueue = options.continueQueue !== false;
-
-    this.currentManualSend = !continueQueue;
     normalizeQueueItem(item);
-    transitionQueueItem(item, 'sending');
-    item.startedAt = nowIso();
-    item.error = null;
+    if (!isPendingLikeStatus(item.status)) throw new Error('Only pending prompts can be sent');
 
-    const outputGroup = this.createOutputGroupForItem(item);
-    this.turnCoordinator.begin({
-      threadId: this.app.sessionId,
-      itemId: item.id,
-      outputGroupId: outputGroup?.id || null,
-    });
-
-    await this.beginQueueItemUsage(item);
-    await this.saveQueue();
-    this.app.state = 'sending';
-    this.appendOutput(promptSendLabel(this, item), 'send');
-    this.appendOutput(`[prompt]\n${item.text}`, 'prompt');
-    this.broadcastAll();
+    let operationStarted = false;
 
     try {
+      this.currentManualSend = !continueQueue;
+      transitionQueueItem(item, 'sending');
+      item.startedAt = nowIso();
+      item.error = null;
+
+      const outputGroup = this.createOutputGroupForItem(item);
+      this.turnCoordinator.begin({
+        threadId: this.app.sessionId,
+        itemId: item.id,
+        outputGroupId: outputGroup?.id || null,
+      });
+      operationStarted = true;
+
+      await this.beginQueueItemUsage(item);
+      await this.saveQueue();
+      this.app.state = 'sending';
+      this.appendOutput(promptSendLabel(this, item), 'send');
+      this.appendOutput(`[prompt]\n${item.text}`, 'prompt');
+      this.broadcastAll();
+
       const result = await this.rpc.request('turn/start', createTurnStartParams(this, item));
       const turn = result?.turn || result || {};
 
@@ -263,22 +282,30 @@ module.exports = {
       }
       await this.waitForTurnCompletion();
     } catch (err) {
-      finishFailedPrompt(this, item, err);
-      await this.saveQueue();
+      if (operationStarted || ['sending', 'sent'].includes(item.status)) {
+        finishFailedPrompt(this, item, err);
+        await runCleanupStep(this, 'saving failed prompt', () => this.saveQueue());
+      } else {
+        throw err;
+      }
     } finally {
       const continueAfterPrompt = shouldContinueAfterPrompt(this, continueQueue);
 
-      await this.completeQueueItemUsage(item);
-      if (item.status === 'completed') await this.finalizeCompletedQueueItem(item);
+      if (operationStarted) {
+        await runCleanupStep(this, 'completing prompt usage', () => this.completeQueueItemUsage(item));
+      }
+      if (item.status === 'completed') {
+        await runCleanupStep(this, 'archiving completed prompt', () => this.finalizeCompletedQueueItem(item));
+      }
       if (this.currentOutputGroupId) {
-        this.finishCurrentOutputGroup(item.status === 'failed' ? 'failed' : 'completed', item.error || null);
+        this.finishCurrentOutputGroup(outputGroupStatusForItem(item), item.error || null);
       }
       this.currentOutputGroupId = null;
       this.currentManualSend = false;
       this.manualSendContinueQueue = false;
       this.turnCoordinator.reset();
 
-      await this.saveState();
+      await runCleanupStep(this, 'saving prompt state', () => this.saveState());
       this.broadcastAll();
 
       if (continueAfterPrompt && !['paused', 'approval-required', 'error'].includes(this.app.state)) {
@@ -301,21 +328,25 @@ module.exports = {
 
     normalizeQueueItem(item);
     if (item.kind !== 'command' || !item.command) throw new Error('Queue item is not a command');
+    if (!isPendingLikeStatus(item.status)) throw new Error('Only pending commands can be run');
 
-    this.currentManualSend = !continueQueue;
-    transitionQueueItem(item, 'sending');
-    item.startedAt = nowIso();
-    item.error = null;
-
-    this.currentItemId = item.id;
-    this.app.state = 'sending';
-    this.app.message = `Running command ${item.command}`;
-    if (item.command === '/compact') await this.beginQueuedCommandUsage(item);
-    await this.saveQueue();
-    this.appendOutput(`[command] #${this.visibleIndex(item.id)} ${item.command}`, 'system');
-    this.broadcastAll();
+    let operationStarted = false;
 
     try {
+      this.currentManualSend = !continueQueue;
+      transitionQueueItem(item, 'sending');
+      item.startedAt = nowIso();
+      item.error = null;
+
+      this.currentItemId = item.id;
+      operationStarted = true;
+      this.app.state = 'sending';
+      this.app.message = `Running command ${item.command}`;
+      if (item.command === '/compact') await this.beginQueuedCommandUsage(item);
+      await this.saveQueue();
+      this.appendOutput(`[command] #${this.visibleIndex(item.id)} ${item.command}`, 'system');
+      this.broadcastAll();
+
       const commandResult = await this.runQueueCommand(item.command);
       transitionQueueItem(item, 'completed');
       item.finishedAt = nowIso();
@@ -326,25 +357,29 @@ module.exports = {
       this.appendOutput(`[command] ${item.command} completed`, 'system');
       await this.saveQueue();
     } catch (err) {
-      transitionQueueItem(item, 'failed');
-      item.finishedAt = nowIso();
-      item.error = err.message;
-      await this.saveQueue();
-      this.appendOutput(`[error] command ${item.command} failed: ${err.message}`, 'error');
-      this.pause('Auto-send paused after queued command failure. Type /resume after reviewing the error.');
+      if (operationStarted || item.status === 'sending') {
+        if (item.status !== 'completed') transitionQueueItem(item, 'failed');
+        item.finishedAt = nowIso();
+        item.error = err.message;
+        await runCleanupStep(this, 'saving failed queued command', () => this.saveQueue());
+        this.appendOutput(`[error] command ${item.command} failed: ${err.message}`, 'error');
+        this.pause('Auto-send paused after queued command failure. Type /resume after reviewing the error.');
+      } else {
+        throw err;
+      }
     } finally {
       if (this.currentQueueCommandTimer) clearTimeout(this.currentQueueCommandTimer);
       this.currentQueueCommandTimer = null;
       this.currentQueueCommandResolve = null;
       this.currentQueueCommandReject = null;
       this.currentQueueCommand = null;
-      if (item.status === 'completed') await this.finalizeCompletedQueueItem(item);
-      this.currentItemId = null;
-      this.currentTurnId = null;
-      this.turnStarted = false;
+      if (item.status === 'completed') {
+        await runCleanupStep(this, 'archiving completed command', () => this.finalizeCompletedQueueItem(item));
+      }
+      this.turnCoordinator.reset();
       this.currentManualSend = false;
       this.manualSendContinueQueue = false;
-      await this.saveState();
+      await runCleanupStep(this, 'saving queued command state', () => this.saveState());
       this.broadcastAll();
     }
 
@@ -375,7 +410,13 @@ module.exports = {
   async runCompactCommand() {
     if (!this.app.sessionId) throw new Error('No Codex session selected');
     const completion = this.waitForQueuedCommand('/compact');
-    await this.rpc.request('thread/compact/start', { threadId: this.app.sessionId });
+    try {
+      await this.rpc.request('thread/compact/start', { threadId: this.app.sessionId });
+    } catch (err) {
+      if (this.currentQueueCommandReject) this.currentQueueCommandReject(err);
+      await completion.catch(() => {});
+      throw err;
+    }
     return await completion;
   },
 

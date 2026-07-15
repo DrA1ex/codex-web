@@ -145,8 +145,8 @@ function mergeCompletedArchiveItems(items, nextItems) {
 
 function mergeLoadedQueue(queue, archiveItems) {
   const byId = new Map();
-  for (const item of queue || []) byId.set(item.id, item);
   for (const item of archiveItems || []) byId.set(item.id, item);
+  for (const item of queue || []) byId.set(item.id, item);
   return [...byId.values()];
 }
 
@@ -166,10 +166,7 @@ export async function loadCompletedArchiveMore() {
     archive.items = mergeCompletedArchiveItems(archive.items, response.items || []);
     archive.totalCompleted = Number(response.totalCompleted || archive.totalCompleted || state.snap?.app?.queueCounts?.completed || 0);
     archive.hasMore = archive.items.length < archive.totalCompleted && Boolean(response.hasMore);
-    archive.cursor = archive.items[0] ? {
-      id: archive.items[0].id,
-      finishedAt: archive.items[0].finishedAt || null,
-    } : (response.cursor || archive.cursor);
+    archive.cursor = response.cursor || archive.cursor;
     if (state.snap?.queue) state.snap.queue = mergeLoadedQueue(state.snap.queue, archive.items);
     renderQueue();
     await getState().catch(reportError);

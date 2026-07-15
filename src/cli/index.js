@@ -4,6 +4,12 @@ const path = require('node:path');
 const { VERSION } = require('../shared/config');
 const { homeExpand, normalizeProjectDir, toBool } = require('../shared/utils');
 
+function numericArgument(name, value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) throw new Error(`Invalid numeric value for ${name}: ${value}`);
+  return number;
+}
+
 function parseArgs(argv) {
   const opts = {
     host: '127.0.0.1',
@@ -43,15 +49,15 @@ function parseArgs(argv) {
       printHelp();
       process.exit(0);
     } else if (a === '--host') opts.host = next();
-    else if (a === '--port') opts.port = Number(next());
+    else if (a === '--port') opts.port = numericArgument(a, next());
     else if (a === '--no-open') opts.noOpen = true;
     else if (a === '--state-dir') opts.stateDir = next();
     else if (a === '--codex-bin') opts.codexBin = next();
     else if (a === '--project-dir') opts.projectDir = next();
     else if (a === '--all-sessions') opts.allSessions = true;
-    else if (a === '--session-picker-limit') opts.sessionPickerLimit = Number(next());
-    else if (a === '--watch-interval') opts.watchInterval = Number(next());
-    else if (a === '--countdown') opts.countdown = Number(next());
+    else if (a === '--session-picker-limit') opts.sessionPickerLimit = numericArgument(a, next());
+    else if (a === '--watch-interval') opts.watchInterval = numericArgument(a, next());
+    else if (a === '--countdown') opts.countdown = numericArgument(a, next());
     else if (a === '--model' || a === '-m') { opts.model = next(); opts.modelProvided = true; }
     else if (a === '--effort') { opts.effort = next(); opts.effortProvided = true; }
     else if (a === '--sandbox') { opts.sandbox = next(); opts.sandboxProvided = true; }
@@ -66,10 +72,9 @@ function parseArgs(argv) {
     else positional.push(a);
   }
   opts.sessionId = positional[0] || null;
-  opts.port = Number.isFinite(opts.port) ? opts.port : 0;
-  opts.watchInterval = Math.max(5, Number(opts.watchInterval) || 30);
-  opts.countdown = Math.max(0, Number(opts.countdown) || 0);
-  opts.sessionPickerLimit = Math.max(1, Number(opts.sessionPickerLimit) || 50);
+  opts.watchInterval = Math.min(86400, Math.max(5, Math.trunc(opts.watchInterval) || 30));
+  opts.countdown = Math.min(86400, Math.max(0, Math.trunc(opts.countdown) || 0));
+  opts.sessionPickerLimit = Math.min(1000, Math.max(1, Math.trunc(opts.sessionPickerLimit) || 50));
   opts.projectDir = normalizeProjectDir(opts.projectDir);
   opts.stateDir = path.resolve(homeExpand(opts.stateDir));
   opts.addDirs = opts.addDirs.map((d) => normalizeProjectDir(d));
@@ -78,6 +83,9 @@ function parseArgs(argv) {
 }
 
 function validateOptions(opts) {
+  if (opts.port !== undefined && (!Number.isInteger(opts.port) || opts.port < 0 || opts.port > 65535)) {
+    throw new Error(`Unsupported --port: ${opts.port}`);
+  }
   const sandboxes = new Set(['read-only', 'workspace-write', 'danger-full-access']);
   if (!sandboxes.has(opts.sandbox)) throw new Error(`Unsupported --sandbox: ${opts.sandbox}`);
   const approvals = new Set(['on-request', 'never', 'untrusted', 'on-failure']);

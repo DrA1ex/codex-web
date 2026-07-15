@@ -1,6 +1,13 @@
 function applyCollection(currentValues, patch = {}) {
   const values = Array.isArray(currentValues) ? currentValues : [];
-  const map = new Map(values.filter((value) => value?.id).map((value) => [String(value.id), value]));
+  const map = new Map();
+  const currentOrder = [];
+  for (const value of values) {
+    if (!value?.id) continue;
+    const id = String(value.id);
+    if (!map.has(id)) currentOrder.push(id);
+    map.set(id, value);
+  }
   for (const id of patch.remove || []) map.delete(String(id));
   for (const value of patch.upsert || []) {
     if (value?.id) map.set(String(value.id), value);
@@ -21,10 +28,12 @@ function applyCollection(currentValues, patch = {}) {
     return ordered;
   }
 
-  return values
-    .map((value) => map.get(String(value.id)))
-    .filter(Boolean)
-    .concat([...map].filter(([id]) => !values.some((value) => String(value.id) === id)).map(([, value]) => value));
+  const ordered = currentOrder.map((id) => map.get(id)).filter(Boolean);
+  const included = new Set(currentOrder);
+  for (const [id, value] of map) {
+    if (!included.has(id)) ordered.push(value);
+  }
+  return ordered;
 }
 
 export function applyOutputPatch(snapshot, patch) {
@@ -32,7 +41,7 @@ export function applyOutputPatch(snapshot, patch) {
   const currentSequence = Number(snapshot.outputSequence) || 0;
   const nextSequence = Number(patch.sequence) || 0;
   if (nextSequence && nextSequence <= currentSequence) return { applied: false, gap: false };
-  if (nextSequence && currentSequence && nextSequence !== currentSequence + 1) {
+  if (nextSequence && nextSequence !== currentSequence + 1) {
     return { applied: false, gap: true };
   }
 
