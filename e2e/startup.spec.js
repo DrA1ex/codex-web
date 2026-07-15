@@ -1,5 +1,6 @@
 'use strict';
 
+const fsp = require('node:fs/promises');
 const { test, expect, sendComposer } = require('./fixtures');
 
 test('performs documented initialize handshake before other app-server requests', async ({ app }) => {
@@ -36,8 +37,20 @@ test.describe('session picker', () => {
     await expect.poll(async () => (await app.snapshot()).app.sessionId).toMatch(/^mock-thread-\d+$/);
     const requests = await app.clientRequests('thread/start');
     expect(requests).toHaveLength(1);
-    expect(requests[0].params.cwd).toBe(app.projectDir);
+    expect(await fsp.realpath(requests[0].params.cwd)).toBe(await fsp.realpath(app.projectDir));
   });
+
+  test('concurrent create-session requests start only one thread', async ({ app }) => {
+    const results = await Promise.allSettled([
+      app.api('/api/session/create'),
+      app.api('/api/session/create'),
+    ]);
+    expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+    expect(results.filter((result) => result.status === 'rejected')).toHaveLength(1);
+    await expect.poll(async () => (await app.snapshot()).app.sessionId).toMatch(/^mock-thread-\d+$/);
+    expect(await app.clientRequests('thread/start')).toHaveLength(1);
+  });
+
 });
 
 test('runtime model, effort, sandbox and approval selections reach turn/start', async ({ app }) => {

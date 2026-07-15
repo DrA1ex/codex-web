@@ -120,7 +120,7 @@ module.exports = {
   },
 
   async pumpQueue() {
-    if (this.shuttingDown) return;
+    if (this.shuttingDown || this.appServerExited) return;
     if (!this.app.sessionId) return;
     if (this.app.state === 'initializing' || this.app.state === 'selecting-session') return;
     if ((this.app.state === 'paused' && !this.app.scheduledRunAt) || this.app.state === 'approval-required') return;

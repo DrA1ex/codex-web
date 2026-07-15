@@ -14,7 +14,7 @@ A small local web UI for queueing prompts into a Codex session.
 - Codex CLI installed and authenticated
 - macOS, Linux, or another Unix-like shell for the symlink examples below
 
-No npm packages are required at runtime. The application uses only Node.js built-ins; development and browser testing use Playwright as a dev dependency.
+No npm packages are required. The app uses only Node.js built-ins.
 
 ## Quick Start
 
@@ -137,57 +137,33 @@ This includes active prompts in `queue.json`, completed prompt history in append
 
 ## Development
 
-Install development dependencies and the Playwright Chromium build:
-
-```bash
-npm ci
-npx playwright install chromium
-```
-
-Validate backend and frontend syntax, including browser ES modules:
+Validate backend and frontend syntax, including the browser ES modules:
 
 ```bash
 npm run check
 ```
 
-Run the Node.js unit and protocol regression suite:
+Run the Node.js unit and protocol tests:
 
 ```bash
 npm test
 ```
 
-Run the browser E2E suite:
+Run browser E2E tests against the bundled mock `codex app-server`:
 
 ```bash
 npm run e2e
 ```
 
-Run all checks, unit tests, and E2E tests:
+Run syntax checks, unit tests, and Playwright E2E tests:
 
 ```bash
 npm run validate
 ```
 
-Use an already installed Chromium build when Playwright browser downloads are unavailable:
+The E2E runner discovers the number of tests in each spec and splits large specs into isolated browser batches. Every test receives a fresh mock app-server, codex-web process, project directory, state directory, and navigation; the Chromium process and page are reused only within one bounded batch. Each batch has a watchdog, process-tree cleanup, and a short cooldown before the next Chromium launch.
 
-```bash
-PLAYWRIGHT_CHROMIUM_EXECUTABLE=/path/to/chromium npm run e2e
-```
-
-### Mock app-server
-
-The E2E suite launches `e2e/mock-app-server.js` in place of the Codex CLI. The mock follows the public Codex app-server protocol documented at <https://developers.openai.com/codex/app-server/>:
-
-- newline-delimited JSON messages over stdio without a required `jsonrpc` field;
-- `initialize` request followed by the `initialized` notification;
-- thread, turn, and item lifecycle notifications;
-- command and file approval server requests;
-- rate-limit reads and reset-credit consumption;
-- compaction completion through the `contextCompaction` item lifecycle.
-
-The mock is strict enough to reject requests before initialization, unknown methods, invalid threads, overlapping active turns, and mismatched interrupts or steering requests. Scenario prompts cover early completion, foreign and duplicate events, Unicode, long delta streams, failures, interruption, approvals, process exit, and force-steer replacement turns.
-
-Each Playwright test gets an isolated state directory, project directory, mock control file, RPC transcript, app process tree, and browser server. Failed tests attach the application output and JSONL RPC transcript.
+Set `PLAYWRIGHT_CHROMIUM_EXECUTABLE=/path/to/chromium` to use a system browser when the Playwright-managed browser is unavailable. CI hosts can tune `E2E_MAX_TESTS_PER_PROCESS`, `E2E_FILE_TIMEOUT_MS`, and `E2E_BATCH_COOLDOWN_MS` when Chromium startup or teardown is unusually slow.
 
 ## Reliability Notes
 

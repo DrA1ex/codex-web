@@ -128,6 +128,152 @@ test('app-server exit rejects active turn waiters and persists an unknown outcom
   assert.match(active.error, /exited unexpectedly/);
 });
 
+
+test('app-server exit during turn/start cannot be overwritten by manual-send cleanup', async () => {
+  const active = item('exit-during-start');
+  const app = makeAppWithQueue([active]);
+  stubPromptUsage(app);
+  let rejectTurnStart;
+  app.rpc = {
+    request: async () => await new Promise((resolve, reject) => {
+      rejectTurnStart = reject;
+    }),
+  };
+
+  const sending = app.sendPrompt(active, { continueQueue: false });
+  await withTimeout(new Promise((resolve) => {
+    const poll = () => rejectTurnStart ? resolve() : setImmediate(poll);
+    poll();
+  }));
+
+  const exitError = new Error('codex app-server exited: code=42, signal=none');
+  exitError.code = 'APP_SERVER_EXITED';
+  const handlingExit = app.handleRpcExit(exitError);
+  rejectTurnStart(exitError);
+
+  await withTimeout(Promise.all([handlingExit, sending]));
+  assert.equal(active.status, 'unknown');
+  assert.equal(app.app.state, 'error');
+  assert.match(app.app.message, /code=42/);
+  assert.equal(app.currentItemId, null);
+  assert.equal(app.currentTurnId, null);
+});
+
+test('persistent app-server exit error survives coordinator cleanup races', async () => {
+  const active = item('exit-after-coordinator-reset');
+  const app = makeAppWithQueue([active]);
+  stubPromptUsage(app);
+  let rejectTurnStart;
+  app.rpc = {
+    request: async () => await new Promise((resolve, reject) => {
+      rejectTurnStart = reject;
+    }),
+  };
+
+  const sending = app.sendPrompt(active, { continueQueue: false });
+  await withTimeout(new Promise((resolve) => {
+    const poll = () => rejectTurnStart ? resolve() : setImmediate(poll);
+    poll();
+  }));
+
+  const exitError = new Error('codex app-server exited during coordinator cleanup');
+  exitError.code = 'APP_SERVER_EXITED';
+  const handlingExit = app.handleRpcExit(exitError);
+  app.turnCoordinator.reset();
+  rejectTurnStart(new Error('secondary turn/start rejection'));
+
+  await withTimeout(Promise.all([handlingExit, sending]));
+  assert.equal(active.status, 'unknown');
+  assert.equal(active.error, exitError.message);
+  assert.equal(app.app.state, 'error');
+  assert.equal(app.app.message, exitError.message);
+});
+
+test('manual prompt cleanup cannot downgrade a latched app-server failure', async () => {
+  const active = item('generic-error-after-exit');
+  const app = makeAppWithQueue([active]);
+  stubPromptUsage(app);
+  const exitError = new Error('latched app-server failure');
+  exitError.code = 'APP_SERVER_EXITED';
+  exitError.reported = true;
+  app.appServerExited = true;
+  app.appServerExitError = exitError;
+  app.app.state = 'error';
+  app.rpc = { request: async () => { throw new Error('app-server is not running'); } };
+
+  await withTimeout(app.sendPrompt(active, { continueQueue: false }));
+
+  assert.equal(active.status, 'unknown');
+  assert.equal(active.error, exitError.message);
+  assert.equal(app.app.state, 'error');
+  assert.equal(app.app.message, exitError.message);
+});
+
+test('app-server exit during turn metadata persistence preserves the fatal state', async () => {
+  const active = item('exit-during-turn-record');
+  const app = makeAppWithQueue([active]);
+  stubPromptUsage(app);
+
+  let recordStarted;
+  let releaseRecord;
+  const recordEntered = new Promise((resolve) => { recordStarted = resolve; });
+  const recordBlocked = new Promise((resolve) => { releaseRecord = resolve; });
+  app.recordQueueItemTurn = async () => {
+    recordStarted();
+    await recordBlocked;
+  };
+  app.rpc = {
+    request: async (method) => {
+      assert.equal(method, 'turn/start');
+      return { turn: { id: 'turn-record-race' } };
+    },
+  };
+
+  const sending = app.sendPrompt(active, { continueQueue: false });
+  await withTimeout(recordEntered);
+
+  const exitError = new Error('codex app-server exited while recording turn metadata');
+  exitError.code = 'APP_SERVER_EXITED';
+  const handlingExit = app.handleRpcExit(exitError);
+  releaseRecord();
+
+  await withTimeout(Promise.all([handlingExit, sending]));
+  assert.equal(active.status, 'unknown');
+  assert.equal(app.app.state, 'error');
+  assert.match(app.app.message, /recording turn metadata/);
+  assert.equal(app.currentItemId, null);
+  assert.equal(app.currentTurnId, null);
+});
+
+test('app-server exit before turn id assignment marks a sending item unknown', async () => {
+  const active = item('sending-on-exit', 'sending');
+  const app = makeAppWithQueue([active]);
+  app.turnCoordinator.begin({ threadId: 'session', itemId: active.id });
+
+  await app.handleRpcExit(new Error('server disappeared before turn/start response'));
+
+  assert.equal(active.status, 'unknown');
+  assert.equal(app.app.state, 'error');
+  assert.match(active.error, /disappeared/);
+});
+
+test('fatal app-server exit latches queue processing and resume in error state', async () => {
+  const pending = item('pending-after-exit');
+  const app = makeAppWithQueue([pending]);
+  let sends = 0;
+  app.runCountdownAndSend = async () => { sends += 1; };
+
+  await app.handleRpcExit(new Error('app-server terminated'));
+  assert.equal(app.appServerExited, true);
+  assert.equal(app.app.state, 'error');
+
+  app.resume();
+  assert.equal(app.app.state, 'error');
+  await app.pumpQueue();
+  assert.equal(sends, 0);
+  assert.equal(pending.status, 'pending');
+});
+
 test('manual send waiting for limits schedules and performs its own retry', async () => {
   const pending = item('pending');
   const app = makeAppWithQueue([pending]);

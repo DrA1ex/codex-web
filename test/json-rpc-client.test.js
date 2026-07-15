@@ -204,12 +204,54 @@ test('JsonRpcClient child exit rejects pending work and blocks requests after ex
   const pending = client.request('slow/request', {}, 10_000);
   child.emit('exit', 1, 'SIGTERM');
 
-  await assert.rejects(pending, /exited before response/);
+  await assert.rejects(pending, /codex app-server exited/);
   await new Promise((resolve) => setImmediate(resolve));
   assert.equal(exits.length, 1);
   assert.equal(exits[0].code, 'APP_SERVER_EXITED');
   await assert.rejects(() => client.request('after/exit'), /not running/);
   assert.throws(() => client.notify('after/exit'), /not running/);
+});
+
+
+test('JsonRpcClient enters fatal app state before rejecting in-flight requests', async () => {
+  const { EventEmitter } = require('node:events');
+  const { PassThrough } = require('node:stream');
+  const child = new EventEmitter();
+  child.stdin = new PassThrough();
+  child.stdout = new PassThrough();
+  child.stderr = new PassThrough();
+  const order = [];
+  let handledError = null;
+  const app = {
+    opts: { codexBin: 'codex', projectDir: process.cwd(), debug: false },
+    debug: {},
+    shuttingDown: false,
+    debugLog() {},
+    handleRpcExit: async (error) => {
+      handledError = error;
+      order.push('handle-exit');
+    },
+    setError() {},
+  };
+  const client = new JsonRpcClient(app, { spawn: () => child });
+
+  const starting = client.start();
+  child.emit('spawn');
+  await starting;
+  let rejectedError = null;
+  const pending = client.request('slow/request', {}, 10_000).catch((error) => {
+    rejectedError = error;
+    order.push('reject-request');
+    throw error;
+  });
+
+  child.emit('exit', 42, null);
+  await assert.rejects(pending, /code=42/);
+
+  assert.deepEqual(order, ['handle-exit', 'reject-request']);
+  assert.equal(rejectedError, handledError);
+  assert.equal(rejectedError.code, 'APP_SERVER_EXITED');
+  assert.equal(client.pending.size, 0);
 });
 
 test('JsonRpcClient stop escalates from stdin close to TERM and KILL without real delays', async () => {

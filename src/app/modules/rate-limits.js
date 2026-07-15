@@ -177,22 +177,38 @@ module.exports = {
       throw new Error('Rate-limit reset request expired. Request reset again.');
     }
 
-    const result = await this.rpc.request(
-      'account/rateLimitResetCredit/consume',
-      { idempotencyKey: request.idempotencyKey },
-      12000
-    );
-    const outcome = result?.outcome || 'unknown';
-    if (!LIMIT_RESET_SUCCESS_OUTCOMES.has(outcome)) {
-      this.limitResetRequest = null;
-      this.broadcastAll();
-      throw new Error(`Rate-limit reset was not consumed: ${outcome}`);
+    if (this.limitResetConsume) {
+      if (this.limitResetConsume.requestId !== requestId) {
+        throw new Error('Another rate-limit reset is already being consumed.');
+      }
+      return await this.limitResetConsume.promise;
     }
 
-    this.limitResetRequest = null;
-    this.appendOutput(`[limits] reset consumed (${outcome})`, 'system');
-    await this.pollRateLimits();
-    this.broadcastAll();
-    return { ok: true, outcome };
+    const consumePromise = (async () => {
+      const result = await this.rpc.request(
+        'account/rateLimitResetCredit/consume',
+        { idempotencyKey: request.idempotencyKey },
+        12000
+      );
+      const outcome = result?.outcome || 'unknown';
+      if (!LIMIT_RESET_SUCCESS_OUTCOMES.has(outcome)) {
+        this.limitResetRequest = null;
+        this.broadcastAll();
+        throw new Error(`Rate-limit reset was not consumed: ${outcome}`);
+      }
+
+      this.limitResetRequest = null;
+      this.appendOutput(`[limits] reset consumed (${outcome})`, 'system');
+      await this.pollRateLimits();
+      this.broadcastAll();
+      return { ok: true, outcome };
+    })();
+
+    this.limitResetConsume = { requestId, promise: consumePromise };
+    try {
+      return await consumePromise;
+    } finally {
+      if (this.limitResetConsume?.promise === consumePromise) this.limitResetConsume = null;
+    }
   }
 };

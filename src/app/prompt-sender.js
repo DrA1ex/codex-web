@@ -65,18 +65,23 @@ function queueAddLabel(item) {
 }
 
 function finishFailedPrompt(ctx, item, err) {
+  const fatalExit = ctx.appServerExitError || (err?.code === 'APP_SERVER_EXITED' ? err : null);
+  if (fatalExit) err = fatalExit;
+
   item.finishedAt = nowIso();
   if (!err?.preserveItemStatus && item.status !== 'completed') {
-    transitionQueueItem(item, err?.queueStatus || 'failed');
+    const targetStatus = fatalExit ? 'unknown' : (err?.queueStatus || 'failed');
+    if (item.status !== targetStatus) transitionQueueItem(item, targetStatus);
   }
   item.error = err.message;
 
-  if (err?.code !== 'APP_SERVER_EXITED') {
-    if (ctx.turnStarted) {
-      ctx.pause(`Error after turn/started: ${err.message}`);
-    } else {
-      ctx.pause(`turn/start failed before confirmation: ${err.message}`);
-    }
+  if (fatalExit) {
+    ctx.app.state = 'error';
+    ctx.app.message = fatalExit.message;
+  } else if (ctx.turnStarted) {
+    ctx.pause(`Error after turn/started: ${err.message}`);
+  } else {
+    ctx.pause(`turn/start failed before confirmation: ${err.message}`);
   }
 
   if (!err?.reported) ctx.appendOutput(`[error] ${err.message}`, 'error');
@@ -274,6 +279,11 @@ module.exports = {
       this.debug.lastTurnId = this.currentTurnId;
       await this.recordQueueItemTurn(item, this.currentTurnId);
 
+      // `handleRpcExit()` may have already moved the item to `unknown` while
+      // recordQueueItemTurn/saveQueue was in flight. Do not attempt the stale
+      // sending -> sent transition; surface the original fatal error instead.
+      if (this.turnCoordinator.failure) throw this.turnCoordinator.failure;
+
       if (!this.turnCompletionSeen) {
         transitionQueueItem(item, 'sent');
         await this.saveQueue();
@@ -282,6 +292,10 @@ module.exports = {
       }
       await this.waitForTurnCompletion();
     } catch (err) {
+      // A process exit can reject the turn waiter while another awaited cleanup
+      // step is still resuming. Prefer the coordinator's original fatal error so
+      // a secondary state-transition error cannot downgrade `error` to `paused`.
+      err = this.appServerExitError || this.turnCoordinator.failure || err;
       if (operationStarted || ['sending', 'sent'].includes(item.status)) {
         finishFailedPrompt(this, item, err);
         await runCleanupStep(this, 'saving failed prompt', () => this.saveQueue());
@@ -306,6 +320,14 @@ module.exports = {
       this.turnCoordinator.reset();
 
       await runCleanupStep(this, 'saving prompt state', () => this.saveState());
+
+      // An app-server process exit is terminal for this application instance.
+      // Cleanup from a manual send must never downgrade it to a normal pause,
+      // even if the turn coordinator was already reset or another error surfaced.
+      if (this.appServerExited) {
+        this.app.state = 'error';
+        this.app.message = this.appServerExitError?.message || this.app.message || 'codex app-server is not running';
+      }
       this.broadcastAll();
 
       if (continueAfterPrompt && !['paused', 'approval-required', 'error'].includes(this.app.state)) {

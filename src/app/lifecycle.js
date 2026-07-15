@@ -106,6 +106,13 @@ module.exports = {
   resume() {
     this.clearPumpTimer();
 
+    if (this.appServerExited) {
+      this.app.state = 'error';
+      this.app.message = this.appServerExitError?.message || this.app.message || 'codex app-server is not running';
+      this.broadcastAll();
+      return;
+    }
+
     if (this.approval) {
       this.app.state = 'approval-required';
       this.app.message = 'Resolve approval request first';
@@ -135,6 +142,7 @@ module.exports = {
 
   async handleRpcExit(error) {
     if (this.shuttingDown) return;
+    this.appServerExited = true;
     this.clearPumpTimer();
     this.clearApprovalTimeout();
     if (this.approval) {
@@ -144,9 +152,13 @@ module.exports = {
     if (this.currentQueueCommandTimer) clearTimeout(this.currentQueueCommandTimer);
     this.currentQueueCommandTimer = null;
     const exitError = error instanceof Error ? error : new Error(String(error || 'codex app-server exited'));
+    const item = this.currentItem();
     exitError.code = exitError.code || 'APP_SERVER_EXITED';
     exitError.reported = true;
-    exitError.queueStatus = this.turnStarted || this.currentTurnId ? 'unknown' : 'failed';
+    this.appServerExitError = exitError;
+    exitError.queueStatus = item && (item.status === 'sending' || item.status === 'sent')
+      ? 'unknown'
+      : (this.turnStarted || this.currentTurnId ? 'unknown' : 'failed');
 
     if (this.currentQueueCommandReject) this.currentQueueCommandReject(exitError);
     this.currentQueueCommandReject = null;
@@ -154,7 +166,6 @@ module.exports = {
     this.currentQueueCommand = null;
     this.turnCoordinator.fail(exitError);
 
-    const item = this.currentItem();
     if (item && (item.status === 'sending' || item.status === 'sent')) {
       transitionQueueItem(item, exitError.queueStatus);
       item.finishedAt = new Date().toISOString();

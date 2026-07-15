@@ -36,7 +36,7 @@ class JsonRpcClient {
         cwd: opts.projectDir,
         stdio: ['pipe', 'pipe', 'pipe'],
         env: process.env,
-        detached: process.platform !== 'win32',
+        detached: process.platform !== 'win32' && process.env.CODEX_APP_SERVER_DETACHED !== '0',
       });
       this.proc = child;
       const onSpawn = () => {
@@ -60,19 +60,33 @@ class JsonRpcClient {
         this.exited = true;
         this.started = false;
         this.app.debug.appServerStatus = `exited code=${code} signal=${signal || ''}`;
-        for (const [id, p] of this.pending) {
-          if (p.timeout) clearTimeout(p.timeout);
-          p.reject(new Error(`app-server exited before response to request ${id}`));
-        }
-        this.pending.clear();
+
         const error = new Error(`codex app-server exited: code=${code}, signal=${signal || 'none'}`);
         error.code = 'APP_SERVER_EXITED';
-        if (!started && settle(reject, error)) return;
+
+        if (!started && settle(reject, error)) {
+          for (const [, pending] of this.pending) {
+            if (pending.timeout) clearTimeout(pending.timeout);
+            pending.reject(error);
+          }
+          this.pending.clear();
+          return;
+        }
+
+        // Enter the terminal application state before rejecting in-flight RPCs.
+        // Their promise handlers run in microtasks and must not be able to replace
+        // the fatal state with a normal pause during prompt cleanup.
         if (!this.app.shuttingDown) {
           Promise.resolve(this.app.handleRpcExit(error)).catch((err) => {
             this.app.setError(err.message || String(err));
           });
         }
+
+        for (const [, pending] of this.pending) {
+          if (pending.timeout) clearTimeout(pending.timeout);
+          pending.reject(error);
+        }
+        this.pending.clear();
       });
       startupTimer = setTimeout(() => {
         settle(reject, new Error('codex app-server did not emit spawn event in time'));
@@ -88,7 +102,11 @@ class JsonRpcClient {
     this.notify('initialized', {});
   }
   request(method, params = undefined, timeoutMs = 0) {
-    if (!this.proc || this.exited || !this.proc.stdin.writable) return Promise.reject(new Error('app-server is not running'));
+    if (!this.proc || this.exited || !this.proc.stdin.writable) {
+      const error = this.app.appServerExitError || new Error('app-server is not running');
+      if (this.exited && !error.code) error.code = 'APP_SERVER_EXITED';
+      return Promise.reject(error);
+    }
     const id = this.nextId++;
     const msg = { method, id };
     if (params !== undefined) msg.params = params;

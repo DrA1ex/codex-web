@@ -116,6 +116,10 @@ class TurnCoordinator {
     return this.operation?.terminal?.status || this.legacy.completionStatus || null;
   }
 
+  get failure() {
+    return this.operation?.deferred?.error || null;
+  }
+
   set completionStatus(value) {
     this.legacy.completionStatus = value || null;
   }

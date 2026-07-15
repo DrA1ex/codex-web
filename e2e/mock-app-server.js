@@ -46,6 +46,11 @@ function send(message) {
   process.stdout.write(JSON.stringify(message) + '\n');
 }
 
+function sendRaw(line) {
+  appendLog({ direction: 'server-raw', line: String(line) });
+  process.stdout.write(String(line) + '\n');
+}
+
 function respond(id, result) {
   send({ id, result });
 }
@@ -447,6 +452,29 @@ function startScenario(active) {
   const prompt = active.prompt;
   const scenario = /^MOCK:([A-Z_]+)/.exec(prompt)?.[1] || 'DEFAULT';
 
+  if (scenario === 'TERMINAL_WITHOUT_STARTED') {
+    const itemId = `item-${nextItem++}`;
+    notify('item/started', {
+      threadId: active.threadId,
+      turnId: active.id,
+      item: { id: itemId, type: 'agentMessage', text: '', phase: 'final_answer' },
+    });
+    notify('item/agentMessage/delta', {
+      threadId: active.threadId,
+      turnId: active.id,
+      itemId,
+      delta: 'Terminal event without turn/started.',
+    });
+    notify('item/completed', {
+      threadId: active.threadId,
+      turnId: active.id,
+      item: { id: itemId, type: 'agentMessage', text: 'Terminal event without turn/started.', phase: 'final_answer' },
+    });
+    emitTokenUsage(active, 60);
+    finishTurn(active, 'completed');
+    return;
+  }
+
   if (scenario === 'COMPLETION_BEFORE_RESPONSE') {
     emitTurnStarted(active);
     const itemId = `item-${nextItem++}`;
@@ -507,6 +535,31 @@ function startScenario(active) {
         });
       });
       return;
+    case 'MALFORMED_PROTOCOL':
+      sendRaw('{not-json');
+      send({ id: 999999, result: { orphan: true } });
+      notify('mock/unknownNotification', { threadId: active.threadId, turnId: active.id });
+      emitAgentCompletion(active, 'Recovered after malformed protocol input.', { startDelay: 10 });
+      return;
+    case 'DELTA_BEFORE_ITEM':
+      notify('item/agentMessage/delta', {
+        threadId: active.threadId,
+        turnId: active.id,
+        itemId: 'not-started-yet',
+        delta: 'orphan delta',
+      });
+      emitAgentCompletion(active, 'Recovered after out-of-order item delta.', { startDelay: 10 });
+      return;
+    case 'UNKNOWN_ITEM_TYPE': {
+      const item = { id: `item-${nextItem++}`, type: 'futureUnknownItem', payload: { value: 1 } };
+      emitItemStarted(active, item);
+      notify('item/completed', { threadId: active.threadId, turnId: active.id, item });
+      emitAgentCompletion(active, 'Unknown item type did not break the turn.', { startDelay: 10 });
+      return;
+    }
+    case 'REMOTE_INTERRUPTED':
+      schedule(active, 10, () => finishTurn(active, 'interrupted'));
+      return;
     case 'FAIL':
       schedule(active, 5, () => notify('error', {
         threadId: active.threadId,
@@ -517,6 +570,14 @@ function startScenario(active) {
       return;
     case 'EXIT':
       schedule(active, 10, () => process.exit(42));
+      return;
+    case 'COMPLETE_THEN_EXIT':
+      emitAgentCompletion(active, 'Completed immediately before app-server exit.', { startDelay: 5 });
+      later(30, () => process.exit(44));
+      return;
+    case 'APPROVAL_THEN_EXIT':
+      emitApprovalScenario(active, 'command');
+      schedule(active, 500, () => process.exit(45));
       return;
     case 'FOREIGN_EVENTS':
       notify('turn/started', { threadId: SECOND_THREAD_ID, turn: { id: 'foreign-turn', threadId: SECOND_THREAD_ID, status: 'inProgress', items: [] } });
@@ -636,6 +697,15 @@ function handleRequest(message) {
       }
       const prompt = inputText(params);
       const active = createTurn(threadId, prompt);
+      if (/^MOCK:EXIT_BEFORE_RESPONSE/.test(prompt)) {
+        later(0, () => process.exit(43));
+        return;
+      }
+      if (/^MOCK:EXIT_BEFORE_STARTED/.test(prompt)) {
+        respond(id, { turn: { ...active.turn } });
+        later(0, () => process.exit(46));
+        return;
+      }
       if (/^MOCK:COMPLETION_BEFORE_RESPONSE/.test(prompt)) {
         startScenario(active);
         respond(id, { turn: { ...active.turn } });

@@ -99,6 +99,52 @@ test('rate-limit reset request is required, delayed, short-lived, and consumes a
   assert.equal(app.rateLimits.buckets.length, 1);
 });
 
+
+test('concurrent rate-limit reset consumption shares one RPC request', async () => {
+  let now = 1_700_000_000_000;
+  let releaseConsume;
+  const calls = [];
+  const app = makeAppWithQueue([]);
+  app.nowMs = () => now;
+  app.rateLimits = normalizeRateLimits({
+    rateLimits: {
+      limitId: 'codex',
+      primary: { usedPercent: 100, windowDurationMins: 300 },
+      secondary: { usedPercent: 10, windowDurationMins: 10080 },
+    },
+    rateLimitResetCredits: { availableCount: 1 },
+  });
+  app.rpc = {
+    exited: false,
+    request: async (method, params) => {
+      calls.push({ method, params });
+      if (method === 'account/rateLimitResetCredit/consume') {
+        return await new Promise((resolve) => { releaseConsume = () => resolve({ outcome: 'reset' }); });
+      }
+      if (method === 'account/rateLimits/read') {
+        return { rateLimits: { limitId: 'codex', primary: { usedPercent: 0 } }, rateLimitResetCredits: { availableCount: 0 } };
+      }
+      return {};
+    },
+  };
+
+  const request = app.requestLimitReset().resetRequest;
+  now += 5000;
+  const first = app.consumeLimitReset({ requestId: request.requestId });
+  const second = app.consumeLimitReset({ requestId: request.requestId });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(calls.filter((call) => call.method === 'account/rateLimitResetCredit/consume').length, 1);
+
+  releaseConsume();
+  const results = await Promise.all([first, second]);
+  assert.deepEqual(results, [
+    { ok: true, outcome: 'reset' },
+    { ok: true, outcome: 'reset' },
+  ]);
+  assert.equal(calls.filter((call) => call.method === 'account/rateLimits/read').length, 1);
+  assert.equal(app.limitResetConsume, null);
+});
+
 test('rate-limit reset requests expire after one minute and can be requested again', async () => {
   let now = 1_700_000_000_000;
   const app = makeAppWithQueue([]);

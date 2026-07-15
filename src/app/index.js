@@ -39,6 +39,8 @@ class CodexLimitWatchApp {
     this.rpc = new JsonRpcClient(this);
     this.clients = new Set();
     this.shuttingDown = false;
+    this.appServerExited = false;
+    this.appServerExitError = null;
 
     this.stateDirForPair = null;
     this.settingsPath = path.join(opts.stateDir, 'settings.json');
@@ -99,6 +101,7 @@ class CodexLimitWatchApp {
     this.commandOutputByItemId = new Map();
     this.rateLimits = createInitialRateLimits();
     this.limitResetRequest = null;
+    this.limitResetConsume = null;
     this.approval = null;
     this.debug = createDebugState();
   }

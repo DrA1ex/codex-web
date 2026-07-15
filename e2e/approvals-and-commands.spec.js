@@ -50,6 +50,49 @@ test('overlapping server approval is declined while the first remains actionable
   expect(results).toContain('accept');
 });
 
+
+test('approval remains actionable after browser reload', async ({ app }) => {
+  await sendComposer(app.page, 'MOCK:APPROVAL_COMMAND');
+  await expect(app.page.locator('#approvalBox')).not.toHaveClass(/hidden/);
+
+  await app.page.reload({ waitUntil: 'domcontentloaded' });
+  await expect(app.page.locator('#approvalBox')).not.toHaveClass(/hidden/);
+  await expect(app.page.locator('#approvalBox')).toContainText('Run mock command');
+  await app.page.locator('[data-approval="accept"]').click();
+  await waitCount(app, 'completed', 1);
+
+  const responses = clientResponses(await app.rpcLog());
+  expect(responses.filter((response) => response.result === 'accept')).toHaveLength(1);
+});
+
+test('concurrent approval responses produce exactly one app-server response', async ({ app }) => {
+  await sendComposer(app.page, 'MOCK:APPROVAL_COMMAND');
+  await expect(app.page.locator('#approvalBox')).not.toHaveClass(/hidden/);
+
+  const results = await Promise.allSettled([
+    app.api('/api/approval/respond', { decision: 'accept' }),
+    app.api('/api/approval/respond', { decision: 'decline' }),
+  ]);
+  expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+  expect(results.filter((result) => result.status === 'rejected')).toHaveLength(1);
+  await waitCount(app, 'completed', 1);
+
+  const responses = clientResponses(await app.rpcLog())
+    .filter((response) => response.result === 'accept' || response.result === 'decline');
+  expect(responses).toHaveLength(1);
+});
+
+test('app-server exit clears a pending approval and marks the prompt unknown', async ({ app }) => {
+  await sendComposer(app.page, 'MOCK:APPROVAL_THEN_EXIT');
+  await expect(app.page.locator('#approvalBox')).not.toHaveClass(/hidden/);
+  await waitCount(app, 'unknown', 1);
+  await expect(app.page.locator('#approvalBox')).toHaveClass(/hidden/);
+  await expect(app.page.locator('#stateBadge')).toHaveText('error');
+
+  const responses = clientResponses(await app.rpcLog());
+  expect(responses.filter((response) => ['accept', 'decline', 'cancel', 'acceptForSession'].includes(response.result))).toHaveLength(0);
+});
+
 test.describe('automatic approval mode', () => {
   test.use({ appOptions: { approvalResponse: 'accept-for-session' } });
 

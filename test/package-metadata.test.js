@@ -21,7 +21,7 @@ test('package lock uses only public npm registry URLs', () => {
 test('development scripts expose unit, E2E, and aggregate validation commands', () => {
   const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
   assert.equal(pkg.scripts.test, 'node --test test/*.test.js');
-  assert.equal(pkg.scripts.e2e, 'playwright test');
+  assert.equal(pkg.scripts.e2e, 'node scripts/run-e2e.js');
   assert.match(pkg.scripts.validate, /npm run check/);
   assert.match(pkg.scripts.validate, /npm test/);
   assert.match(pkg.scripts.validate, /npm run e2e/);

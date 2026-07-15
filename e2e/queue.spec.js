@@ -55,7 +55,7 @@ test('duplicate and confirmed remove mutate only the selected pending item', asy
   await waitCount(app, 'pending', 2);
 
   const cards = app.page.locator('.queue-item[data-queue-status="pending"]', { hasText: 'copy me' });
-  expect(await cards.count()).toBe(2);
+  await expect(cards).toHaveCount(2);
   await cards.nth(1).locator('[data-act="remove"]').click();
   await expect(app.page.locator('#confirmBox')).not.toHaveClass(/hidden/);
   await app.page.locator('#confirmYesBtn').click();
@@ -64,6 +64,89 @@ test('duplicate and confirmed remove mutate only the selected pending item', asy
   const snapshot = await app.snapshot();
   expect(snapshot.queue).toHaveLength(1);
   expect(snapshot.queue[0].text).toBe('copy me');
+});
+
+
+test('repeated duplicate actions create distinct items and survive reload', async ({ app }) => {
+  await pause(app);
+  await addToQueue(app.page, 'repeat duplicate');
+  const original = (await app.snapshot()).queue.find((item) => item.text === 'repeat duplicate');
+  expect(original).toBeTruthy();
+
+  for (let index = 0; index < 3; index += 1) {
+    await app.page.locator(`[data-queue-id="${original.id}"] [data-act="duplicate"]`).click();
+    await waitCount(app, 'pending', index + 2);
+    await expect(app.page.locator('.queue-item[data-queue-status="pending"]', { hasText: 'repeat duplicate' })).toHaveCount(index + 2);
+  }
+
+  let snapshot = await app.snapshot();
+  const duplicates = snapshot.queue.filter((item) => item.text === 'repeat duplicate');
+  expect(duplicates).toHaveLength(4);
+  expect(new Set(duplicates.map((item) => item.id)).size).toBe(4);
+
+  await app.page.reload({ waitUntil: 'domcontentloaded' });
+  await expect(app.page.locator('.queue-item[data-queue-status="pending"]', { hasText: 'repeat duplicate' })).toHaveCount(4);
+  snapshot = await app.snapshot();
+  expect(new Set(snapshot.queue.filter((item) => item.text === 'repeat duplicate').map((item) => item.id)).size).toBe(4);
+});
+
+test('removing one of identical prompts targets its queue id only', async ({ app }) => {
+  await pause(app);
+  await addToQueue(app.page, 'same text');
+  const originalId = (await app.snapshot()).queue[0].id;
+  await app.page.locator(`[data-queue-id="${originalId}"] [data-act="duplicate"]`).click();
+  await waitCount(app, 'pending', 2);
+
+  const before = (await app.snapshot()).queue.filter((item) => item.text === 'same text');
+  expect(before).toHaveLength(2);
+  const removeId = before.find((item) => item.id !== originalId).id;
+
+  await app.page.locator(`[data-queue-id="${removeId}"] [data-act="remove"]`).click();
+  await expect(app.page.locator('#confirmBox')).not.toHaveClass(/hidden/);
+  await app.page.locator('#confirmYesBtn').click();
+  await waitCount(app, 'pending', 1);
+
+  const after = (await app.snapshot()).queue.filter((item) => item.text === 'same text');
+  expect(after.map((item) => item.id)).toEqual([originalId]);
+  await expect(app.page.locator(`[data-queue-id="${originalId}"]`)).toHaveCount(1);
+  await expect(app.page.locator(`[data-queue-id="${removeId}"]`)).toHaveCount(0);
+});
+
+
+test('concurrent duplicate requests create unique queue items without loss', async ({ app }) => {
+  await pause(app);
+  await addToQueue(app.page, 'concurrent duplicate');
+  const original = (await app.snapshot()).queue[0];
+
+  const results = await Promise.all([
+    app.api('/api/queue/update', { id: original.id, action: 'duplicate' }),
+    app.api('/api/queue/update', { id: original.id, action: 'duplicate' }),
+  ]);
+  expect(results.every((result) => result.ok)).toBe(true);
+  await waitCount(app, 'pending', 3);
+
+  const items = (await app.snapshot()).queue.filter((item) => item.text === 'concurrent duplicate');
+  expect(items).toHaveLength(3);
+  expect(new Set(items.map((item) => item.id)).size).toBe(3);
+  await expect(app.page.locator('.queue-item[data-queue-status="pending"]', { hasText: 'concurrent duplicate' })).toHaveCount(3);
+});
+
+test('concurrent manual-send requests start a pending prompt only once', async ({ app }) => {
+  await pause(app);
+  await addToQueue(app.page, 'single concurrent send');
+  const itemId = (await app.snapshot()).queue[0].id;
+
+  const results = await Promise.allSettled([
+    app.api('/api/queue/update', { id: itemId, action: 'sendNow' }),
+    app.api('/api/queue/update', { id: itemId, action: 'sendNow' }),
+  ]);
+  expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+  expect(results.filter((result) => result.status === 'rejected')).toHaveLength(1);
+  await waitCount(app, 'completed', 1);
+
+  const starts = await app.clientRequests('turn/start');
+  expect(starts).toHaveLength(1);
+  expect(starts[0].params.input[0].text).toBe('single concurrent send');
 });
 
 test('manual Send button runs one paused item and leaves remaining queue paused', async ({ app }) => {
@@ -149,4 +232,39 @@ test('editing a failed item resets it to pending and allows completion', async (
   await waitCount(app, 'completed', 1);
   await waitCount(app, 'failed', 0);
   await expect(app.page.locator('#output')).toContainText('Mock response: recovered prompt');
+});
+
+test('concurrent removal of the same pending item succeeds exactly once', async ({ app }) => {
+  await pause(app);
+  await addToQueue(app.page, 'remove once');
+  const itemId = (await app.snapshot()).queue.find((item) => item.text === 'remove once').id;
+
+  const results = await Promise.allSettled([
+    app.api('/api/queue/remove', { id: itemId }),
+    app.api('/api/queue/remove', { id: itemId }),
+  ]);
+  expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+  expect(results.filter((result) => result.status === 'rejected')).toHaveLength(1);
+  await waitCount(app, 'pending', 0);
+  await expect(app.page.locator(`[data-queue-id="${itemId}"]`)).toHaveCount(0);
+});
+
+test('rapid duplicate and remove actions target queue ids rather than identical text', async ({ app }) => {
+  await pause(app);
+  await addToQueue(app.page, 'rapid identical prompt');
+  const originalId = (await app.snapshot()).queue[0].id;
+
+  await app.page.locator(`[data-queue-id="${originalId}"] [data-act="duplicate"]`).click();
+  await waitCount(app, 'pending', 2);
+  const duplicate = (await app.snapshot()).queue.find((item) => item.id !== originalId);
+  expect(duplicate).toBeTruthy();
+
+  await app.page.locator(`[data-queue-id="${duplicate.id}"] [data-act="remove"]`).click();
+  await expect(app.page.locator('#confirmBox')).not.toHaveClass(/hidden/);
+  await app.page.locator('#confirmYesBtn').click();
+  await waitCount(app, 'pending', 1);
+
+  const remaining = (await app.snapshot()).queue;
+  expect(remaining.map((item) => item.id)).toEqual([originalId]);
+  await expect(app.page.locator(`[data-queue-id="${originalId}"]`)).toHaveCount(1);
 });

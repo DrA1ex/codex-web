@@ -21,20 +21,20 @@ The app is CommonJS and intentionally has no runtime dependencies.
 
 ## App-Server API Facts
 
-The app starts `codex app-server` and exchanges newline-delimited JSON messages through `src/codex/json-rpc-client.js`. The protocol is JSON-RPC-like but app-server messages do not require a `jsonrpc` field. The client must send `initialize` and then the `initialized` notification before normal requests.
+The app starts `codex app-server` and talks JSON-RPC through `src/codex/json-rpc-client.js`.
 
 Methods currently used:
 
 - Sessions: `thread/list`, `thread/resume`, `thread/start`, `thread/read`, `thread/loaded/list`
 - Prompt turns: `turn/start`, `turn/interrupt`
-- Queued commands: `thread/compact/start`; current completion is observed through the `contextCompaction` item lifecycle
+- Queued commands: `thread/compact/start`, completion via the `contextCompaction` item lifecycle
 - Account/model data: `account/rateLimits/read`, `account/rateLimitResetCredit/consume`, `model/list`
 
 Important verified protocol details:
 
 - `turn/start` input shape is `input: [{ type: 'text', text }]`.
 - `turn/steer` exists and accepts `{ threadId, expectedTurnId, input }`. It can fail with `activeTurnNotSteerable`.
-- `thread/compact/start` takes `{ threadId }`. Current servers emit a `contextCompaction` item; `item/completed` followed by terminal turn lifecycle completes the command. `thread/compacted` is legacy compatibility only.
+- `thread/compact/start` takes `{ threadId }`; completion is observed through `item/started` and `item/completed` for a `contextCompaction` item, followed by terminal `turn/completed`.
 - Approval policy values are mapped in `src/codex/policies.js`; do not send raw CLI values blindly.
 - Sandbox policy values are mapped before sending.
 
@@ -51,7 +51,7 @@ Commands:
 
 - Immediate standalone commands are parsed by `parseExactCommand`.
 - Queued commands are parsed by `parseQueuedCommand`.
-- `/compact` is a queued command, not immediate; it runs in queue order and waits for the `contextCompaction` item lifecycle.
+- `/compact` is a queued command, not immediate; it runs in queue order and waits for the `contextCompaction` item lifecycle and terminal turn event.
 
 Prompt sending:
 
@@ -105,23 +105,16 @@ Always check `git status --short` before editing. This repo may have user change
 
 ## Development
 
-Development dependencies and browser:
-
-```bash
-npm ci
-npx playwright install chromium
-```
-
 Validation:
 
 ```bash
-npm run check       # CommonJS and browser ESM syntax/import graph
-npm test            # Node.js unit and protocol regression tests
-npm run e2e         # Playwright against e2e/mock-app-server.js
-npm run validate    # all of the above
+npm run check       # backend and browser-module syntax
+npm test            # Node.js unit and protocol tests
+npm run e2e         # Playwright with the isolated mock app-server
+npm run validate    # all checks and tests
 ```
 
-The mock app-server and E2E fixtures are under `e2e/`. Keep mock behavior aligned with the public app-server documentation rather than guessing from current application assumptions. Add a mock protocol test and a browser regression whenever a lifecycle or race-condition bug is fixed.
+The E2E runner counts tests per spec and splits large specs into bounded browser batches. Every test gets a fresh codex-web process, mock app-server, state directory, project directory, and page navigation; a browser/page is reused only within its batch. Each batch has a watchdog, recursive process-tree cleanup, and a configurable cooldown. Use `E2E_MAX_TESTS_PER_PROCESS`, `E2E_FILE_TIMEOUT_MS`, and `E2E_BATCH_COOLDOWN_MS` only for host-specific stability tuning.
 
 Run locally:
 

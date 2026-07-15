@@ -7,7 +7,8 @@ module.exports = defineConfig({
   testMatch: '**/*.spec.js',
   timeout: 35_000,
   expect: { timeout: 8_000 },
-  fullyParallel: false,
+  // Keep one worker for deterministic process-level tests, while allowing balanced sharding by test.
+  fullyParallel: true,
   workers: 1,
   retries: 0,
   reporter: [['line']],

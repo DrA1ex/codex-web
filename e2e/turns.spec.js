@@ -112,3 +112,46 @@ test('/think! interrupts and starts a replacement turn', async ({ app }) => {
   expect(starts).toHaveLength(2);
   expect(interrupts).toHaveLength(1);
 });
+
+test('recovers from malformed JSON, orphan responses and unknown notifications', async ({ app }) => {
+  await sendComposer(app.page, 'MOCK:MALFORMED_PROTOCOL');
+  await expect(app.page.locator('#output')).toContainText('Recovered after malformed protocol input.');
+  await waitForCount(app, 'completed', 1);
+  expect(app.pageErrors).toEqual([]);
+
+  const log = await app.rpcLog();
+  expect(log.some((entry) => entry.direction === 'server-raw' && entry.line === '{not-json')).toBe(true);
+  expect(log.some((entry) => entry.direction === 'server' && entry.message?.id === 999999)).toBe(true);
+});
+
+test('accepts a correlated terminal event even when turn/started is omitted', async ({ app }) => {
+  await sendComposer(app.page, 'MOCK:TERMINAL_WITHOUT_STARTED');
+  await expect(app.page.locator('#output')).toContainText('Terminal event without turn/started.');
+  await waitForCount(app, 'completed', 1);
+
+  const log = await app.rpcLog();
+  const started = log.filter((entry) => entry.direction === 'server' && entry.message?.method === 'turn/started');
+  expect(started).toHaveLength(0);
+});
+
+test('ignores an out-of-order item delta and continues rendering later items', async ({ app }) => {
+  await sendComposer(app.page, 'MOCK:DELTA_BEFORE_ITEM');
+  await expect(app.page.locator('#output')).toContainText('Recovered after out-of-order item delta.');
+  await waitForCount(app, 'completed', 1);
+  expect(app.pageErrors).toEqual([]);
+});
+
+test('unknown future item types do not break the active turn', async ({ app }) => {
+  await sendComposer(app.page, 'MOCK:UNKNOWN_ITEM_TYPE');
+  await expect(app.page.locator('#output')).toContainText('Unknown item type did not break the turn.');
+  await waitForCount(app, 'completed', 1);
+  expect(app.pageErrors).toEqual([]);
+});
+
+test('server-originated interrupted status remains interrupted', async ({ app }) => {
+  await sendComposer(app.page, 'MOCK:REMOTE_INTERRUPTED');
+  await waitForCount(app, 'interrupted', 1);
+  await expect(app.page.locator('#stateBadge')).toHaveText('paused');
+  const item = await queueItemByText(app, 'MOCK:REMOTE_INTERRUPTED');
+  expect(item.status).toBe('interrupted');
+});
