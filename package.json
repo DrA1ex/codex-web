@@ -12,5 +12,8 @@
   },
   "devDependencies": {
     "playwright": "1.61.1"
+  },
+  "bin": {
+    "codex-web": "./codex-web"
   }
 }

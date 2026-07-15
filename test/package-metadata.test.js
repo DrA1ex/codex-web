@@ -27,3 +27,24 @@ test('development scripts expose unit, E2E, and aggregate validation commands', 
   assert.match(pkg.scripts.validate, /npm run e2e/);
   assert.equal(pkg.devDependencies.playwright, '1.61.1');
 });
+
+
+test('package exposes the codex-web executable for npm link', () => {
+  const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
+  assert.deepEqual(pkg.bin, { 'codex-web': './codex-web' });
+  const launcher = path.join(ROOT, pkg.bin['codex-web']);
+  assert.equal(fs.statSync(launcher).isFile(), true);
+  if (process.platform !== 'win32') {
+    assert.notEqual(fs.statSync(launcher).mode & 0o111, 0);
+  }
+});
+
+test('README is user-focused and links contributor documentation', () => {
+  const readme = fs.readFileSync(path.join(ROOT, 'README.md'), 'utf8');
+  const development = fs.readFileSync(path.join(ROOT, 'docs', 'DEVELOPMENT.md'), 'utf8');
+  assert.match(readme, /npm link/);
+  assert.match(readme, /docs\/DEVELOPMENT\.md/);
+  assert.doesNotMatch(readme, /E2E_PARALLEL_PROCESSES|E2E_FILE_TIMEOUT_MS|mock app-server process/);
+  assert.match(development, /E2E_PARALLEL_PROCESSES/);
+  assert.match(development, /Mock app-server/);
+});

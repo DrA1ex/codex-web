@@ -1,101 +1,69 @@
 # codex-web
 
-A small local web UI for queueing prompts into a Codex session.
+A local browser UI for working with Codex sessions and prompt queues.
 
-`codex-web` runs on your machine, starts `codex app-server`, and opens a browser UI where you can queue prompts, watch rate limits, approve requests, interrupt running work, and manage queued tasks.
+`codex-web` starts `codex app-server` on your machine and opens a local web interface where you can send and queue prompts, monitor usage limits, approve requests, interrupt active work, and return to existing sessions.
 
+<img width="720" alt="codex-web interface" src="https://github.com/user-attachments/assets/5ef1b364-be92-4ad8-96f6-3618d98813c1" />
 
-<img width="720" alt="web-ui" src="https://github.com/user-attachments/assets/5ef1b364-be92-4ad8-96f6-3618d98813c1" />
+## Features
 
+- Queue multiple prompts for a Codex session.
+- Send an urgent prompt ahead of the queue.
+- Interrupt or steer active work.
+- Review command, file, and permission approvals in the browser.
+- Monitor rate limits and automatically continue when capacity returns.
+- Resume existing Codex sessions or create a new one.
+- Persist active queues and completed history per project and session.
+- Keep the web server local and protected by a generated access token.
 
 ## Requirements
 
 - Node.js 18 or newer
+- npm
 - Codex CLI installed and authenticated
-- macOS, Linux, or another Unix-like shell for the symlink examples below
+- macOS, Linux, or another environment supported by the Codex CLI
 
-No npm packages are required. The app uses only Node.js built-ins.
+The application itself uses only Node.js built-ins at runtime. npm is used to create the global `codex-web` command.
+
+## Install
+
+Clone the repository and create a global npm link:
+
+```bash
+git clone https://github.com/DrA1ex/codex-web.git
+cd codex-web
+npm link
+```
+
+The `codex-web` command is now available from any directory:
+
+```bash
+codex-web --help
+```
+
+`npm link` points the global command at this checkout. After pulling newer code, the command uses the updated files without copying them elsewhere.
+
+To remove the global command:
+
+```bash
+npm unlink --global codex-web
+```
 
 ## Quick Start
 
-Clone the repo:
-
-```bash
-git clone https://github.com/DrA1ex/codex-web
-cd codex-web
-```
-
-Run it directly:
-
-```bash
-./codex-web
-```
-
-The script prints a local URL and opens the browser unless `--no-open` is used.
-
-## Install as `codex-web`
-
-### Option 1: symlink into `~/.local/bin`
-
-```bash
-mkdir -p ~/.local/bin
-ln -sf "$(pwd)/codex-web" ~/.local/bin/codex-web
-```
-
-Make sure `~/.local/bin` is on your `PATH`:
-
-```bash
-echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc
-```
-
-Restart your shell, then run:
+Open a terminal in the project Codex should work on, then run:
 
 ```bash
 codex-web
 ```
 
-### Option 2: symlink into `/usr/local/bin`
+The command prints a local URL and opens it in the default browser. Use `--no-open` when the browser should not open automatically.
 
-```bash
-ln -sf "$(pwd)/codex-web" /usr/local/bin/codex-web
-```
-
-Restart your shell, then run:
-
-```bash
-codex-web
-```
-
-## Common Usage
-
-Start in the current directory:
-
-```bash
-codex-web
-```
-
-Start for a specific project:
+Start for a different project directory:
 
 ```bash
 codex-web --project-dir /path/to/project
-```
-
-Do not open the browser automatically:
-
-```bash
-codex-web --no-open
-```
-
-Use a fixed port:
-
-```bash
-codex-web --port 8092
-```
-
-Start with a model override:
-
-```bash
-codex-web --model gpt-5.4
 ```
 
 Resume a known Codex session:
@@ -104,70 +72,149 @@ Resume a known Codex session:
 codex-web SESSION_ID
 ```
 
-## Useful Options
+When no session ID is supplied, the browser can show recent sessions or create a new one.
 
-```text
---project-dir <dir>       Project directory Codex should work in
---port <number>           Local web server port, default is random
---no-open                 Print the URL without opening a browser
---model <model>           Model override, for example gpt-5.5
---sandbox <mode>          read-only, workspace-write, or danger-full-access
---approval-policy <mode>  on-request, never, untrusted, or on-failure
---approval-response <x>   manual, accept, accept-for-session, decline, cancel
---state-dir <dir>         Where queues, settings, and session state are stored
+## Common Usage
+
+Use a fixed local port:
+
+```bash
+codex-web --port 8092
 ```
 
-## Where Data Is Stored
+Start without opening a browser:
 
-By default, state is stored under:
+```bash
+codex-web --no-open
+```
+
+Override the model and reasoning effort:
+
+```bash
+codex-web --model gpt-5.5 --effort high
+```
+
+Start in a read-only sandbox:
+
+```bash
+codex-web --sandbox read-only
+```
+
+Allow workspace changes while keeping approvals manual:
+
+```bash
+codex-web \
+  --sandbox workspace-write \
+  --approval-policy on-request \
+  --approval-response manual
+```
+
+Show sessions outside the current project:
+
+```bash
+codex-web --all-sessions
+```
+
+## Command-Line Options
+
+```text
+codex-web [session_id] [options]
+
+--host <address>          Address for the local web server, default 127.0.0.1
+--port <number>           Local web server port, default is a random free port
+--no-open                 Print the URL without opening a browser
+--state-dir <dir>         Queue, settings, history, and session state directory
+--codex-bin <path>        Codex executable, default codex
+--project-dir <dir>       Project directory Codex should work in
+--all-sessions            Include sessions outside the selected project
+--session-picker-limit N  Maximum recent sessions shown in the picker
+--watch-interval N        Usage-limit polling interval in seconds
+--countdown N             Countdown before an automatically queued prompt starts
+--model <model-id>        Model override
+--effort <effort-id>      Reasoning-effort override
+--sandbox <mode>          read-only, workspace-write, or danger-full-access
+--approval-policy <mode>  on-request, never, untrusted, or on-failure
+--approval-response <x>   manual, accept, accept-for-session, decline, or cancel
+--network true|false      Override network permission
+--add-dir <dir>           Add another writable directory
+--log-jsonrpc             Save Codex JSON-RPC traffic to the application log
+--debug                   Enable additional diagnostic output
+```
+
+Run `codex-web --help` to see the options supported by the installed checkout.
+
+## Security
+
+- The server listens on `127.0.0.1` by default and is not exposed to the network.
+- Browser access is protected by a generated token included in the local URL.
+- Approval requests are manual by default.
+- Explicit CLI values for model, effort, sandbox, and approval policy take precedence over saved settings.
+- `danger-full-access` and automatic approvals should be enabled only when their consequences are understood.
+
+## Data Storage
+
+By default, application data is stored under:
 
 ```text
 ~/.local/state/codex-web
 ```
 
-This includes active prompts in `queue.json`, completed prompt history in append-only `completed.jsonl`, per-session state, theme settings, and logs. Browser local storage is not used for app settings.
+The directory contains active queues, append-only completed history, per-session state, saved interface settings, and optional logs. Queues are separated by project and Codex session.
 
-## Notes
+To use another location:
 
-- The UI is token-protected and listens on `127.0.0.1` by default.
-- Approval requests are handled manually in the browser by default. Automatic approval requires an explicit `--approval-response` option.
-- Queued prompts are persisted per project/session pair.
-- Theme selection is saved in the app state directory and works across ports.
+```bash
+codex-web --state-dir /path/to/codex-web-state
+```
 
+## Updating
+
+Because `npm link` points to the cloned repository, updating normally requires only:
+
+```bash
+cd /path/to/codex-web
+git pull
+```
+
+Run `npm link` again only if the global link was removed, the package location changed, or npm itself was reinstalled with a different global prefix.
+
+## Troubleshooting
+
+### `codex-web: command not found`
+
+Check that npm's global binary directory is on `PATH`:
+
+```bash
+npm prefix --global
+npm bin --global 2>/dev/null || true
+```
+
+Then run `npm link` again from the repository root. On installations where `npm bin --global` is unavailable, the executable is normally under the `bin` directory associated with `npm prefix --global`.
+
+### Codex does not start
+
+Verify that the Codex CLI is installed and authenticated:
+
+```bash
+codex --version
+```
+
+Use `--codex-bin /absolute/path/to/codex` when the executable is not discoverable through `PATH`.
+
+### The browser should not open automatically
+
+```bash
+codex-web --no-open
+```
+
+### A fixed port is already in use
+
+Omit `--port` to select a free port automatically, or choose another port:
+
+```bash
+codex-web --port 8093
+```
 
 ## Development
 
-Validate backend and frontend syntax, including the browser ES modules:
-
-```bash
-npm run check
-```
-
-Run the Node.js unit and protocol tests:
-
-```bash
-npm test
-```
-
-Run browser E2E tests against the bundled mock `codex app-server`:
-
-```bash
-npm run e2e
-```
-
-Run syntax checks, unit tests, and Playwright E2E tests:
-
-```bash
-npm run validate
-```
-
-The E2E runner discovers the number of tests in each spec and splits large specs into isolated browser batches. By default, two batches run concurrently. Every test still receives a fresh mock app-server, codex-web process, port, project directory, state directory, and navigation; the Chromium process and page are reused only within one bounded batch. Each concurrent batch writes artifacts to its own `test-results/e2e-batches/batch-*` directory and has an independent watchdog and process-tree cleanup.
-
-Use `E2E_PARALLEL_PROCESSES=1 npm run e2e` for serial troubleshooting, or raise the value on a host with enough CPU and memory. The runner caps the value at the host's available CPU parallelism. Set `PLAYWRIGHT_CHROMIUM_EXECUTABLE=/path/to/chromium` to use a system browser when the Playwright-managed browser is unavailable. CI hosts can also tune `E2E_MAX_TESTS_PER_PROCESS`, `E2E_FILE_TIMEOUT_MS`, and `E2E_BATCH_COOLDOWN_MS` when Chromium startup or teardown is unusually slow.
-
-## Reliability Notes
-
-- Explicit CLI values for model, effort, sandbox, and approval policy take precedence over saved settings.
-- Turn events are correlated to the selected thread and active turn before they can change queue state.
-- Output updates use sequenced incremental SSE patches; clients resynchronize from `/api/state` if a sequence gap is detected.
-- Slow SSE clients are bounded and disconnected instead of allowing an unbounded server-side buffer.
+Contributor setup, project structure, the mock app-server, Playwright E2E tests, test parallelism, and validation commands are documented in [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).

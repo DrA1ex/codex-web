@@ -16,6 +16,8 @@
 - `www/app.js`: minimal ES-module entrypoint.
 - `www/src/*`: modular frontend implementation.
 - `www/styles.css`: main responsive layout and theme styling.
+- `README.md`: user installation, operation, security, and troubleshooting.
+- `docs/DEVELOPMENT.md`: contributor setup, architecture notes, mock server, and E2E workflow.
 
 The app is CommonJS and intentionally has no runtime dependencies.
 
